@@ -77,6 +77,63 @@ def sanitize_attributes(attrs: Dict[str, Any]) -> Dict[str, Any]:
     return sanitized
 
 
+def _normalize_structured_response(result: Any, response_model: Any) -> Any:
+    """
+    把裸数组等"形状不符"的 LLM 响应规范化为 response_model 期望的 dict。
+
+    本地分支为兼容部分网关（如 OpenCode）禁用了严格 JSON Schema 模式，
+    模型可能把 {"entity_resolutions": [...]} 直接输出成 [...]。
+    这里在 response_model 有且仅有一个 list 字段时自动包装。
+    """
+    if response_model is None or not isinstance(result, list):
+        return result
+    try:
+        list_fields = [
+            name
+            for name, field in response_model.model_fields.items()
+            if "list" in str(field.annotation).lower()
+        ]
+    except Exception:
+        return result
+    if len(list_fields) == 1:
+        return {list_fields[0]: result}
+    return result
+
+
+def _apply_response_normalization_patch() -> bool:
+    """
+    Patch OpenAIGenericClient._generate_response：
+    在解析出 JSON 后按 response_model 规范化结构，兼容裸数组响应。
+    """
+    try:
+        from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
+    except ImportError:
+        return False
+
+    original_generate = OpenAIGenericClient._generate_response
+
+    @functools.wraps(original_generate)
+    async def patched_generate(
+        self,
+        messages,
+        response_model=None,
+        max_tokens=None,
+        model_size=None,
+    ):
+        result = await original_generate(
+            self,
+            messages,
+            response_model=response_model,
+            max_tokens=max_tokens,
+            model_size=model_size,
+        )
+        return _normalize_structured_response(result, response_model)
+
+    OpenAIGenericClient._generate_response = patched_generate
+    logger.info("Graphiti LLM 响应规范化 patch 应用成功")
+    return True
+
+
 def apply_patch() -> bool:
     """
     应用 monkey-patch 到 graphiti-core
@@ -135,6 +192,9 @@ def apply_patch() -> bool:
 
         # 应用 patch
         bulk_utils.add_nodes_and_edges_bulk_tx = patched_add_nodes_and_edges_bulk_tx
+
+        # 响应规范化 patch（兼容裸数组等非标准 JSON 结构）
+        _apply_response_normalization_patch()
 
         _patch_applied = True
         logger.info("Graphiti bulk_utils patch 应用成功")

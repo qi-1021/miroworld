@@ -44,13 +44,13 @@ ONTOLOGY_SYSTEM_PROMPT = """你是一个专业的知识图谱本体设计专家�
 {
     "entity_types": [
         {
-            "name": "实体类型名称（英文，PascalCase）",
-            "description": "简短描述（英文，不超过100字符）",
+            "name": "实体类型名称（使用文档主要语言命名：中文文档用中文，如 学生、大学；英文文档用英文）",
+            "description": "简短描述（使用与名称相同的语言，不超过100字符）",
             "attributes": [
                 {
                     "name": "属性名（英文，snake_case）",
                     "type": "text",
-                    "description": "属性描述"
+                    "description": "属性描述（与名称相同的语言）"
                 }
             ],
             "examples": ["示例实体1", "示例实体2"]
@@ -58,8 +58,8 @@ ONTOLOGY_SYSTEM_PROMPT = """你是一个专业的知识图谱本体设计专家�
     ],
     "edge_types": [
         {
-            "name": "关系类型名称（英文，UPPER_SNAKE_CASE）",
-            "description": "简短描述（英文，不超过100字符）",
+            "name": "关系类型名称（使用文档主要语言命名，如 就读于、就职于；英文文档用英文）",
+            "description": "简短描述（与名称相同的语言，不超过100字符）",
             "source_targets": [
                 {"source": "源实体类型", "target": "目标实体类型"}
             ],
@@ -76,23 +76,25 @@ ONTOLOGY_SYSTEM_PROMPT = """你是一个专业的知识图谱本体设计专家�
 
 **数量要求：必须正好10个实体类型**
 
+**语言要求：所有类型名称和描述必须使用文档的主要语言**（文档是中文就用中文，如 学生、大学、媒体；不要用英文 Student/University）。
+
 **层次结构要求（必须同时包含具体类型和兜底类型）**：
 
 你的10个实体类型必须包含以下层次：
 
 A. **兜底类型（必须包含，放在列表最后2个）**：
-   - `Person`: 任何自然人个体的兜底类型。当一个人不属于其他更具体的人物类型时，归入此类。
-   - `Organization`: 任何组织机构的兜底类型。当一个组织不属于其他更具体的组织类型时，归入此类。
+   - `个人`: 任何自然人个体的兜底类型。当一个人不属于其他更具体的人物类型时，归入此类。
+   - `组织`: 任何组织机构的兜底类型。当一个组织不属于其他更具体的组织类型时，归入此类。
 
 B. **具体类型（8个，根据文本内容设计）**：
    - 针对文本中出现的主要角色，设计更具体的类型
-   - 例如：如果文本涉及学术事件，可以有 `Student`, `Professor`, `University`
-   - 例如：如果文本涉及商业事件，可以有 `Company`, `CEO`, `Employee`
+   - 例如：如果文本涉及学术事件，可以有 `学生`, `教授`, `大学`（英文文档则用英文）
+   - 例如：如果文本涉及商业事件，可以有 `公司`, `高管`, `员工`（英文文档则用英文）
 
 **为什么需要兜底类型**：
 - 文本中会出现各种人物，如"中小学教师"、"路人甲"、"某位网友"
-- 如果没有专门的类型匹配，他们应该被归入 `Person`
-- 同理，小型组织、临时团体等应该归入 `Organization`
+- 如果没有专门的类型匹配，他们应该被归入 `个人`
+- 同理，小型组织、临时团体等应该归入 `组织`
 
 **具体类型的设计原则**：
 - 从文本中识别出高频出现或关键的角色类型
@@ -102,18 +104,18 @@ B. **具体类型（8个，根据文本内容设计）**：
 ### 2. 关系类型设计
 
 - 数量：6-10个
-- 关系应该反映社媒互动中的真实联系
+- 关系应该反映文本内容中的真实联系（文档是中文就用中文命名，如 就读于、就职于、位于）
 - 确保关系的 source_targets 涵盖你定义的实体类型
 
 ### 3. 属性设计
 
 - 每个实体类型1-3个关键属性
-- **注意**：属性名不能使用 `name`、`uuid`、`group_id`、`created_at`、`summary`（这些是系统保留字）
-- 推荐使用：`full_name`, `title`, `role`, `position`, `location`, `description` 等
+- **注意**：属性名不能使用 `name`、`uuid`、`group_id`、`created_at`、`summary`、`entity_type`、`fact`、`fact_type`、`valid_at`、`invalid_at`、`attributes`（这些是系统保留字）
+- 推荐使用：`full_name`, `title`, `role`, `position`, `location`, `description` 等（属性名保持英文 snake_case）
 
 ## 参考类型（不要照搬，按文本内容设计）
 
-常见具体类型示例：个人类 Student/Professor/Journalist/Celebrity/Executive/Official/Doctor；组织类 University/Company/GovernmentAgency/MediaOutlet/Hospital/School/NGO。兜底类型固定为 Person 和 Organization。
+常见具体类型示例：个人类 学生/教授/记者/名人/高管/官员/医生；组织类 大学/公司/政府机构/媒体/医院/学校/NGO。兜底类型固定为 `个人` 和 `组织`。
 """
 
 
@@ -250,31 +252,31 @@ class OntologyGenerator:
         MAX_ENTITY_TYPES = 10
         MAX_EDGE_TYPES = 10
 
-        # 兜底类型定义
+        # 兜底类型定义（跟随文档语言，默认中文）
         person_fallback = {
-            "name": "Person",
-            "description": "Any individual person not fitting other specific person types.",
+            "name": "个人",
+            "description": "不属于任何更具体类型的自然人个体。",
             "attributes": [
-                {"name": "full_name", "type": "text", "description": "Full name of the person"},
-                {"name": "role", "type": "text", "description": "Role or occupation"}
+                {"name": "full_name", "type": "text", "description": "人物姓名"},
+                {"name": "role", "type": "text", "description": "角色或职业"}
             ],
-            "examples": ["ordinary citizen", "anonymous netizen"]
+            "examples": ["普通市民", "匿名网友"]
         }
 
         organization_fallback = {
-            "name": "Organization",
-            "description": "Any organization not fitting other specific organization types.",
+            "name": "组织",
+            "description": "不属于任何更具体类型的组织机构。",
             "attributes": [
-                {"name": "org_name", "type": "text", "description": "Name of the organization"},
-                {"name": "org_type", "type": "text", "description": "Type of organization"}
+                {"name": "org_name", "type": "text", "description": "组织名称"},
+                {"name": "org_type", "type": "text", "description": "组织类型"}
             ],
-            "examples": ["small business", "community group"]
+            "examples": ["小企业", "社区团体"]
         }
 
-        # 检查是否已有兜底类型
+        # 检查是否已有兜底类型（兼容英文旧数据）
         entity_names = {e["name"] for e in result["entity_types"]}
-        has_person = "Person" in entity_names
-        has_organization = "Organization" in entity_names
+        has_person = "个人" in entity_names or "Person" in entity_names
+        has_organization = "组织" in entity_names or "Organization" in entity_names
 
         # 需要添加的兜底类型
         fallbacks_to_add = []

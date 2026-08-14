@@ -250,19 +250,25 @@ class GraphitiClient(ZepClientAdapter):
         """
         构建 Graphiti 默认 LLM client（OpenAI-compatible）
 
-        Graphiti 默认会用 `gpt-4.1-mini`，对 DashScope 这类 OpenAI-compatible 服务通常不适用；
-        这里优先使用：
-        - GRAPHITI_LLM_MODEL（如有）
-        - 否则使用 LLM_MODEL_NAME（与 MiroFish 现有配置保持一致）
+        优先使用模型注册表中已验证的聊天模型（graphiti_llm 角色，或第一个
+        已验证的 chat 模型），这样网页里配置的模型（如 OpenCode/百炼）直接生效；
+        注册表不可用时回退到环境变量（GRAPHITI_LLM_MODEL / LLM_MODEL_NAME）。
         """
         from graphiti_core.llm_client.config import LLMConfig
         from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
 
-        api_key = os.environ.get('OPENAI_API_KEY')
-        base_url = os.environ.get('OPENAI_BASE_URL')
-        model = os.environ.get('GRAPHITI_LLM_MODEL') or os.environ.get('LLM_MODEL_NAME')
-        small_model = os.environ.get('GRAPHITI_LLM_SMALL_MODEL') or None
+        # 1) 模型注册表优先（已验证的聊天模型 + 连接密钥）
+        registry_entry = self._resolve_registry_chat_model()
+        if registry_entry is not None:
+            api_key, base_url, model = registry_entry
+            logger.info("Graphiti LLM 使用模型注册表配置: %s (%s)", model, base_url)
+        else:
+            # 2) 回退到环境变量
+            api_key = os.environ.get('OPENAI_API_KEY')
+            base_url = os.environ.get('OPENAI_BASE_URL')
+            model = os.environ.get('GRAPHITI_LLM_MODEL') or os.environ.get('LLM_MODEL_NAME')
 
+        small_model = os.environ.get('GRAPHITI_LLM_SMALL_MODEL') or None
         temperature = float(os.environ.get('GRAPHITI_LLM_TEMPERATURE', '0') or '0')
         max_tokens = int(os.environ.get('GRAPHITI_LLM_MAX_TOKENS', '8192') or '8192')
 
@@ -275,6 +281,60 @@ class GraphitiClient(ZepClientAdapter):
             max_tokens=max_tokens,
         )
         return OpenAIGenericClient(config=config)
+
+    @staticmethod
+    def _resolve_registry_chat_model():
+        """从模型注册表解析一个已验证的聊天模型，返回 (api_key, base_url, model)。
+
+        优先 graphiti_llm 角色的绑定（若有项目级绑定则用项目绑定），
+        否则使用第一个已验证的 chat 模型。注册表不可用或没有合适模型时返回 None。
+        """
+        try:
+            from ..models.model_config import ModelRole, RoleBindings
+            from .model_registry import ModelRegistryService
+
+            registry = ModelRegistryService()
+            state = registry.get_redacted_registry()
+            models = state.get("models", [])
+            chat_models = [
+                m for m in models
+                if m.get("verified") and "chat" in m.get("capabilities", [])
+            ]
+            if not chat_models:
+                return None
+
+            # 优先 graphiti_llm 角色绑定（预设或项目绑定）
+            chosen = None
+            for binding in state.get("project_bindings", []):
+                roles = binding.get("roles") or {}
+                graphiti_id = roles.get(ModelRole.GRAPHITI_LLM.value) or roles.get(ModelRole.PRIMARY.value)
+                if graphiti_id:
+                    match = next((m for m in chat_models if m["id"] == graphiti_id), None)
+                    if match:
+                        chosen = match
+                        break
+            if chosen is None:
+                # 预设中的 graphiti_llm
+                for preset in state.get("presets", []):
+                    roles = preset.get("roles") or {}
+                    graphiti_id = roles.get(ModelRole.GRAPHITI_LLM.value)
+                    if graphiti_id:
+                        match = next((m for m in chat_models if m["id"] == graphiti_id), None)
+                        if match:
+                            chosen = match
+                            break
+            if chosen is None:
+                chosen = chat_models[0]
+
+            connection_id = chosen.get("connection_id")
+            if not connection_id:
+                return None
+            api_key = registry.resolve_connection_secret(connection_id)
+            connection = registry.get_connection(connection_id)
+            return api_key, connection.get("endpoint"), chosen.get("model_id")
+        except Exception as exc:
+            logger.warning("从模型注册表解析 Graphiti LLM 失败，回退环境变量: %s", exc)
+            return None
 
     def _build_default_embedder(self) -> Any:
         """
@@ -453,6 +513,54 @@ class GraphitiClient(ZepClientAdapter):
 
     # ==================== Episode 操作 ====================
 
+    def _build_graphiti_type_models(self, graph_id: str):
+        """把缓存的本体转换为 graphiti 的 entity_types/edge_types 模型字典。
+
+        模型名使用本体中的原始名称（支持中文，如 学生/大学），
+        描述写入模型 __doc__（graphiti 抽取提示会展示），
+        属性来自本体 attributes（英文 snake_case，已避开保留字段）。
+        """
+        from pydantic import BaseModel, Field
+
+        ontology = self._ontology_cache.get(graph_id) or {}
+        entity_types: Dict[str, Any] = {}
+        edge_types: Dict[str, Any] = {}
+
+        for item in ontology.get("entities") or []:
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            annotations: Dict[str, Any] = {}
+            field_defs: Dict[str, Any] = {}
+            for attr in item.get("attributes") or []:
+                attr_name = str(attr.get("name") or "").strip()
+                if not attr_name:
+                    continue
+                annotations[attr_name] = str
+                field_defs[attr_name] = Field(
+                    description=str(attr.get("description") or ""),
+                    default=None,
+                )
+            entity_types[name] = type(
+                name,
+                (BaseModel,),
+                {
+                    "__doc__": str(item.get("description") or ""),
+                    "__annotations__": annotations,
+                    **field_defs,
+                },
+            )
+
+        for item in ontology.get("edges") or []:
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            edge_types[name] = type(
+                name, (BaseModel,), {"__doc__": str(item.get("description") or "")}
+            )
+
+        return entity_types, edge_types
+
     def add_episode(self, graph_id: str, data: str, episode_type: str = "text") -> str:
         """添加单条 episode"""
         self._ensure_initialized()
@@ -466,6 +574,8 @@ class GraphitiClient(ZepClientAdapter):
         elif episode_type == "json":
             source_type = EpisodeType.json
 
+        entity_types, edge_types = self._build_graphiti_type_models(graph_id)
+
         async def _add():
             result = await self._graphiti.add_episode(
                 name=f"episode_{graph_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}",
@@ -474,6 +584,8 @@ class GraphitiClient(ZepClientAdapter):
                 source_description="mirofish_simulation",
                 reference_time=datetime.now(timezone.utc),
                 group_id=graph_id,
+                entity_types=entity_types or None,
+                edge_types=edge_types or None,
             )
             return result.episode.uuid if result and result.episode else ""
 
@@ -510,10 +622,14 @@ class GraphitiClient(ZepClientAdapter):
                 )
             )
 
+        entity_types, edge_types = self._build_graphiti_type_models(graph_id)
+
         async def _add_bulk():
             result = await self._graphiti.add_episode_bulk(
                 bulk_episodes=raw_episodes,
                 group_id=graph_id,
+                entity_types=entity_types or None,
+                edge_types=edge_types or None,
             )
             # 返回所有 episode UUID
             return [ep.uuid for ep in result.episodes] if result and result.episodes else []
