@@ -28,9 +28,19 @@
           <strong>{{ connection.name }}</strong>
           <code>{{ connection.endpoint }}</code>
         </div>
-        <span class="secret-state" :class="connection.has_secret ? 'ready' : 'local'">
-          {{ connection.has_secret ? $t('modelSettings.keyConfigured') : $t('modelSettings.noKey') }}
-        </span>
+        <div class="header-actions">
+          <span class="secret-state" :class="connection.has_secret ? 'ready' : 'local'">
+            {{ connection.has_secret ? $t('modelSettings.keyConfigured') : $t('modelSettings.noKey') }}
+          </span>
+          <button
+            type="button"
+            class="delete-button"
+            :title="$t('modelSettings.deleteConnection')"
+            @click="$emit('delete-connection', connection.id)"
+          >
+            <Trash2 :size="13" />
+          </button>
+        </div>
       </header>
       <div class="connection-meta">
         <span>{{ connection.provider_id }}</span>
@@ -44,6 +54,14 @@
           <span>{{ model.capabilities.join(' · ') }}</span>
           <CircleCheck v-if="model.verified" :size="14" />
           <CircleDashed v-else :size="14" />
+          <button
+            type="button"
+            class="model-delete"
+            :title="$t('modelSettings.deleteModel')"
+            @click="$emit('delete-model', model.id)"
+          >
+            <X :size="12" />
+          </button>
         </div>
         <p v-if="!modelsFor(connection.id).length">{{ $t('modelSettings.noRegisteredModels') }}</p>
       </div>
@@ -53,13 +71,13 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Box, CircleCheck, CircleDashed, PlugZap, RefreshCw } from '@lucide/vue'
+import { Box, CircleCheck, CircleDashed, PlugZap, RefreshCw, Trash2, X } from '@lucide/vue'
 
 const props = defineProps({
   connections: { type: Array, default: () => [] },
   models: { type: Array, default: () => [] }
 })
-defineEmits(['refresh'])
+defineEmits(['refresh', 'delete-connection', 'delete-model'])
 
 const verifiedCount = computed(() => props.models.filter(item => item.verified).length)
 const modelsFor = (connectionId) => props.models.filter(item => item.connection_id === connectionId)
@@ -87,11 +105,16 @@ h3 { margin-top: 4px; font-size: 17px; }
 .secret-state { align-self: start; padding: 4px 6px; font-size: 8px; font-weight: 800; }
 .secret-state.ready { background: #dff4e7; color: #147342; }
 .secret-state.local { background: #ececec; color: #555; }
+.header-actions { display: flex; align-items: center; gap: 6px; }
+.delete-button { display: grid; width: 24px; height: 24px; place-items: center; border: 1px solid #d9534f; background: #fff; color: #d9534f; cursor: pointer; }
+.delete-button:hover { background: #d9534f; color: #fff; }
 .connection-meta { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 11px; border-top: 1px solid #ddd; border-bottom: 1px solid #ddd; }
 .connection-meta span { padding: 3px 5px; background: #eee; font-size: 8px; }
 .connection-models { padding: 5px 11px 9px; }
-.model-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto 18px; gap: 6px; align-items: center; padding: 7px 0; border-bottom: 1px solid #eee; font-size: 9px; }
+.model-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto 18px 18px; gap: 6px; align-items: center; padding: 7px 0; border-bottom: 1px solid #eee; font-size: 9px; }
 .model-row code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-row span { color: #666; }
+.model-delete { display: grid; width: 18px; height: 18px; place-items: center; border: none; background: transparent; color: #b0b0b0; cursor: pointer; }
+.model-delete:hover { color: #d9534f; }
 .connection-models p { padding: 10px 0 5px; color: #777; font-size: 9px; }
 </style>

@@ -121,7 +121,12 @@
     "probeOk": "Probe OK: {dimension} dims in {seconds}s",
     "localScanFailed": "Local model scan failed",
     "testFailed": "Model test failed",
-    "registerFailed": "Model registration failed"
+    "registerFailed": "Model registration failed",
+    "deleteConnection": "Delete connection",
+    "deleteModel": "Delete model",
+    "confirmDeleteConnection": "Delete connection {name}? Its models and API key will also be removed.",
+    "confirmDeleteModel": "Delete model {name}?",
+    "deleteFailed": "Delete failed"
   },
   "meta": {
     "title": "MiroFish - Predict Everything",

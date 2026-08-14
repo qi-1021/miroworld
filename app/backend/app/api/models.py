@@ -177,6 +177,19 @@ def test_connection(connection_id: str):
     return discover_connection_models(connection_id)
 
 
+@models_bp.route("/connections/<connection_id>", methods=["DELETE"])
+def delete_connection(connection_id: str):
+    """删除连接（级联删除其模型条目与密钥）。"""
+    try:
+        result = registry_service.delete_connection(
+            connection_id=connection_id,
+            expected_revision=request.args.get("revision", type=int),
+        )
+        return _success(result)
+    except Exception as exc:
+        return _handle_exception(exc)
+
+
 @models_bp.route("/entries", methods=["POST"])
 def create_model_entry():
     try:
@@ -207,7 +220,6 @@ def test_model_entry(entry_id: str):
             raise ValueError("模型条目不存在")
         if "chat" not in entry.get("capabilities", []):
             raise ValueError("该模型未声明聊天能力，无法测试")
-
         connection = registry_service.get_connection(entry["connection_id"])
         if not connection:
             raise ValueError("模型关联的连接不存在")
@@ -245,6 +257,19 @@ def test_model_entry(entry_id: str):
         return _handle_exception(exc)
 
 
+@models_bp.route("/entries/<entry_id>", methods=["DELETE"])
+def delete_model_entry(entry_id: str):
+    """删除模型条目（若被项目绑定、预设或快照引用则拒绝）。"""
+    try:
+        result = registry_service.delete_model_entry(
+            model_entry_id=entry_id,
+            expected_revision=request.args.get("revision", type=int),
+        )
+        return _success(result)
+    except Exception as exc:
+        return _handle_exception(exc)
+
+
 @models_bp.route("/presets", methods=["POST"])
 def create_preset():
     try:
@@ -256,6 +281,19 @@ def create_preset():
             expected_revision=body.get("revision"),
         )
         return _success(result, 201)
+    except Exception as exc:
+        return _handle_exception(exc)
+
+
+@models_bp.route("/presets/<preset_id>", methods=["DELETE"])
+def delete_preset(preset_id: str):
+    """删除预设。"""
+    try:
+        result = registry_service.delete_preset(
+            preset_id=preset_id,
+            expected_revision=request.args.get("revision", type=int),
+        )
+        return _success(result)
     except Exception as exc:
         return _handle_exception(exc)
 

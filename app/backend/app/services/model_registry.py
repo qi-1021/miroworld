@@ -14,7 +14,7 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from ..models.model_config import (
     ConnectionDraft,
@@ -365,6 +365,86 @@ class ModelRegistryService:
             registry["revision"] = int(registry.get("revision", 0)) + 1
             self._atomic_write(self.registry_path, registry)
             return {"revision": registry["revision"], "model": entry}
+
+    def _referencing_owners(self, registry: Dict[str, Any], model_entry_id: str) -> List[str]:
+        """返回引用某模型条目的所有者描述列表（项目绑定/预设/任务快照）。"""
+        references = []
+        for binding in registry.get("project_bindings", []):
+            if model_entry_id in (binding.get("roles") or {}).values():
+                references.append(f"项目 {binding['project_id']}")
+        for preset in registry.get("presets", []):
+            if model_entry_id in (preset.get("roles") or {}).values():
+                references.append(f"预设 {preset.get('name', preset['id'])}")
+        for snapshot in registry.get("snapshots", []):
+            if model_entry_id in (snapshot.get("bindings") or {}).values():
+                references.append(f"{snapshot.get('owner_type', '任务')} {snapshot.get('owner_id', '?')} 的快照")
+        return references
+
+    def delete_model_entry(
+        self, *, model_entry_id: str, expected_revision: Optional[int]
+    ) -> Dict[str, Any]:
+        """删除模型条目；若被项目绑定、预设或任务快照引用则拒绝。"""
+        with self._lock:
+            registry = self._read_registry()
+            self._check_revision(registry, expected_revision)
+            entry = next((item for item in registry["models"] if item["id"] == model_entry_id), None)
+            if entry is None:
+                raise ValueError("模型条目不存在")
+            references = self._referencing_owners(registry, model_entry_id)
+            if references:
+                raise ValueError(
+                    f"模型 {entry.get('name', model_entry_id)} 正被引用：{', '.join(references)}；"
+                    f"请先解除引用再删除"
+                )
+            registry["models"] = [item for item in registry["models"] if item["id"] != model_entry_id]
+            registry["revision"] = int(registry.get("revision", 0)) + 1
+            self._atomic_write(self.registry_path, registry)
+            return {"revision": registry["revision"], "deleted": model_entry_id}
+
+    def delete_connection(
+        self, *, connection_id: str, expected_revision: Optional[int]
+    ) -> Dict[str, Any]:
+        """删除连接：级联删除其模型条目与密钥；若模型被引用则拒绝。"""
+        with self._lock:
+            registry = self._read_registry()
+            secrets = self._read_secrets()
+            self._check_revision(registry, expected_revision)
+            connection = next((item for item in registry["connections"] if item["id"] == connection_id), None)
+            if connection is None:
+                raise ValueError("连接不存在")
+            entries = [item for item in registry["models"] if item.get("connection_id") == connection_id]
+            referenced = []
+            for entry in entries:
+                for ref in self._referencing_owners(registry, entry["id"]):
+                    referenced.append(f"{entry.get('name', entry['id'])}（被{ref}引用）")
+            if referenced:
+                raise ValueError(
+                    f"连接 {connection['name']} 下的模型正被引用：{'；'.join(referenced)}；"
+                    f"请先解除引用再删除"
+                )
+            registry["connections"] = [item for item in registry["connections"] if item["id"] != connection_id]
+            registry["models"] = [item for item in registry["models"] if item.get("connection_id") != connection_id]
+            secrets["connections"].pop(connection_id, None)
+            registry["revision"] = int(registry.get("revision", 0)) + 1
+            self._atomic_write(self.registry_path, registry)
+            self._atomic_write(self.secrets_path, secrets)
+            self._restrict_secret_permissions()
+            return {"revision": registry["revision"], "deleted": connection_id, "removed_models": len(entries)}
+
+    def delete_preset(
+        self, *, preset_id: str, expected_revision: Optional[int]
+    ) -> Dict[str, Any]:
+        """删除预设。"""
+        with self._lock:
+            registry = self._read_registry()
+            self._check_revision(registry, expected_revision)
+            preset = next((item for item in registry["presets"] if item["id"] == preset_id), None)
+            if preset is None:
+                raise ValueError("预设不存在")
+            registry["presets"] = [item for item in registry["presets"] if item["id"] != preset_id]
+            registry["revision"] = int(registry.get("revision", 0)) + 1
+            self._atomic_write(self.registry_path, registry)
+            return {"revision": registry["revision"], "deleted": preset_id}
 
     def create_snapshot(
         self,

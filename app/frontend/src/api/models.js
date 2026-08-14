@@ -14,12 +14,20 @@ export const updateModelConnection = (connectionId, draft) => (
   service.patch(`/api/models/connections/${connectionId}`, draft)
 )
 
+export const deleteModelConnection = (connectionId, revision) => (
+  service.delete(`/api/models/connections/${connectionId}`, { params: { revision } })
+)
+
 export const discoverConnectionModels = (connectionId) => (
   service.post(`/api/models/connections/${connectionId}/discover`)
 )
 
 export const createModelEntry = (entry) => (
   service.post('/api/models/entries', entry)
+)
+
+export const deleteModelEntry = (entryId, revision) => (
+  service.delete(`/api/models/entries/${entryId}`, { params: { revision } })
 )
 
 export const getProjectModelBindings = (projectId) => (

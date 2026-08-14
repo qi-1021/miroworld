@@ -50,6 +50,8 @@ def _parser() -> argparse.ArgumentParser:
     detect.add_argument("--allow-private-network", action="store_true")
     discover = connection_commands.add_parser("discover", help="发现已保存连接的模型")
     discover.add_argument("connection_id")
+    remove_connection = connection_commands.add_parser("remove", help="删除连接（级联删除其模型与密钥）")
+    remove_connection.add_argument("connection_id")
 
     models = groups.add_parser("models", help="管理模型条目")
     model_commands = models.add_subparsers(dest="action", required=True)
@@ -60,6 +62,14 @@ def _parser() -> argparse.ArgumentParser:
     model_add.add_argument("--name")
     model_add.add_argument("--capability", action="append", default=[])
     model_add.add_argument("--verified", action="store_true")
+    remove_model = model_commands.add_parser("remove", help="删除模型条目")
+    remove_model.add_argument("entry_id")
+
+    presets = groups.add_parser("presets", help="管理预设")
+    preset_commands = presets.add_subparsers(dest="action", required=True)
+    preset_commands.add_parser("list", help="列出预设")
+    remove_preset = preset_commands.add_parser("remove", help="删除预设")
+    remove_preset.add_argument("preset_id")
 
     bindings = groups.add_parser("bindings", help="管理项目角色绑定")
     binding_commands = bindings.add_subparsers(dest="action", required=True)
@@ -138,6 +148,20 @@ def _execute(args, registry: ModelRegistryService) -> Any:
             ),
             expected_revision=revision,
         )
+    if args.group == "connections" and args.action == "remove":
+        return registry.delete_connection(
+            connection_id=args.connection_id, expected_revision=revision
+        )
+    if args.group == "models" and args.action == "remove":
+        return registry.delete_model_entry(
+            model_entry_id=args.entry_id, expected_revision=revision
+        )
+    if args.group == "presets" and args.action == "list":
+        return {"revision": revision, "presets": state["presets"]}
+    if args.group == "presets" and args.action == "remove":
+        return registry.delete_preset(
+            preset_id=args.preset_id, expected_revision=revision
+        )
     if args.group == "bindings" and args.action == "show":
         value = registry.get_project_bindings(args.project_id)
         return {"project_id": args.project_id, "roles": value.to_dict() if value else {}}
@@ -180,6 +204,14 @@ def _human_text(args, result: Any) -> str:
             return "尚未登记模型。"
         return "\n".join(
             f"{item['id']}  {item['name']}  {item['model_id']}  {'已验证' if item['verified'] else '未验证'}"
+            for item in items
+        )
+    if args.group == "presets" and args.action == "list":
+        items = result["presets"]
+        if not items:
+            return "尚未创建预设。"
+        return "\n".join(
+            f"{item['id']}  {item.get('name', '未命名')}  角色数:{len(item.get('roles', {}))}"
             for item in items
         )
     return json.dumps(result, ensure_ascii=False, indent=2)

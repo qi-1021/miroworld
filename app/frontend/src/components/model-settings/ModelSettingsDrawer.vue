@@ -69,6 +69,8 @@
               :connections="registry.connections"
               :models="registry.models"
               @refresh="loadRegistry"
+              @delete-connection="handleDeleteConnection"
+              @delete-model="handleDeleteModel"
             />
             <LocalEmbeddingPanel
               v-if="activeTab === 'library'"
@@ -95,7 +97,7 @@
 import { computed, markRaw, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Boxes, Cable, LoaderCircle, RefreshCw, SlidersHorizontal, X } from '@lucide/vue'
-import { getModelRegistry, getProjectModelBindings } from '../../api/models'
+import { getModelRegistry, getProjectModelBindings, deleteModelConnection, deleteModelEntry } from '../../api/models'
 import ConnectionManager from './ConnectionManager.vue'
 import LocalEmbeddingPanel from './LocalEmbeddingPanel.vue'
 import RoleBindingsEditor from './RoleBindingsEditor.vue'
@@ -157,6 +159,32 @@ const loadRegistry = async () => {
 const handleConnectionSaved = async () => {
   await loadRegistry()
   activeTab.value = 'library'
+}
+
+const handleDeleteConnection = async (connectionId) => {
+  const connection = registry.value.connections.find(item => item.id === connectionId)
+  const name = connection ? connection.name : connectionId
+  if (!window.confirm(t('modelSettings.confirmDeleteConnection', { name }))) return
+  error.value = ''
+  try {
+    await deleteModelConnection(connectionId, registry.value.revision)
+    await loadRegistry()
+  } catch (err) {
+    error.value = err.message || t('modelSettings.deleteFailed')
+  }
+}
+
+const handleDeleteModel = async (modelId) => {
+  const model = registry.value.models.find(item => item.id === modelId)
+  const name = model ? model.model_id : modelId
+  if (!window.confirm(t('modelSettings.confirmDeleteModel', { name }))) return
+  error.value = ''
+  try {
+    await deleteModelEntry(modelId, registry.value.revision)
+    await loadRegistry()
+  } catch (err) {
+    error.value = err.message || t('modelSettings.deleteFailed')
+  }
 }
 
 const handleBindingsSaved = async () => {

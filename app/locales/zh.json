@@ -121,7 +121,12 @@
     "probeOk": "探测成功：{dimension} 维，耗时 {seconds} 秒",
     "localScanFailed": "本地模型扫描失败",
     "testFailed": "模型测试失败",
-    "registerFailed": "模型注册失败"
+    "registerFailed": "模型注册失败",
+    "deleteConnection": "删除连接",
+    "deleteModel": "删除模型",
+    "confirmDeleteConnection": "确定删除连接 {name}？其下的模型与密钥将一并删除。",
+    "confirmDeleteModel": "确定删除模型 {name}？",
+    "deleteFailed": "删除失败"
   },
   "meta": {
     "title": "MiroFish - 预测万物",
