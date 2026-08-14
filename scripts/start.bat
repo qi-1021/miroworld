@@ -39,18 +39,49 @@ if errorlevel 1 (
     echo [WARN] uv 未安装，启动脚本会自动尝试安装
 )
 
-echo.
-echo [INFO] 启动 Neo4j...
-
-REM 检查 Neo4j 是否存在
-if not exist "%NEO4J_DIR%\neo4j\bin\neo4j.bat" (
-    echo [ERROR] Neo4j 未安装。请运行 install-neo4j.bat
+REM 检查 Java（Neo4j 需要 JVM）
+where java >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] Java 未安装。Neo4j 需要 JVM，请先安装 Java 17+
     pause
     exit /b 1
 )
+echo [INFO] ✓ Java 已就绪
+
+echo.
+echo [INFO] 启动 Neo4j...
+
+REM 兼容两种安装布局：neo4j\neo4j（安装脚本默认）或 neo4j\neo4j-program（已有便携部署）
+set NEO4J_HOME=%NEO4J_DIR%\neo4j
+if not exist "%NEO4J_HOME%\bin\neo4j.bat" (
+    if exist "%NEO4J_DIR%\neo4j-program\bin\neo4j.bat" (
+        set NEO4J_HOME=%NEO4J_DIR%\neo4j-program
+        echo [INFO] 检测到 Neo4j 安装在 %NEO4J_HOME%
+    )
+)
+
+REM 检查 Neo4j 是否存在
+if not exist "%NEO4J_HOME%\bin\neo4j.bat" (
+    REM 自修复：Homebrew 拷贝布局下从 libexec 复制启动脚本
+    if exist "%NEO4J_HOME%\libexec\bin\neo4j.bat" (
+        echo [INFO] 检测到缺失的 bin 启动脚本，正在从 libexec 恢复...
+        copy /y "%NEO4J_HOME%\libexec\bin\neo4j.bat" "%NEO4J_HOME%\bin\neo4j.bat" >nul
+        copy /y "%NEO4J_HOME%\libexec\bin\neo4j-admin.bat" "%NEO4J_HOME%\bin\neo4j-admin.bat" >nul
+    ) else (
+        echo [ERROR] Neo4j 未安装。请运行 install-neo4j.bat
+        pause
+        exit /b 1
+    )
+)
+
+REM 数据目录跟随便携文件夹（存在持久化数据时使用）
+if exist "%NEO4J_DIR%\neo4j-data-persistent" (
+    set NEO4J_server_directories_data=%NEO4J_DIR%\neo4j-data-persistent
+    echo [INFO] 使用便携数据目录: neo4j-data-persistent
+)
 
 REM 启动 Neo4j
-cd /d "%NEO4J_DIR%\neo4j\bin"
+cd /d "%NEO4J_HOME%\bin"
 start "" neo4j.bat console
 
 echo [INFO] Neo4j 启动中... (请稍候 10 秒初始化)

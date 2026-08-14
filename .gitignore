@@ -11,7 +11,10 @@ app/.env
 app/data/model-config/
 
 # 便携运行时：Neo4j 二进制与数据（通过 scripts/install-neo4j.sh 安装）
-neo4j/
+neo4j/*
+!neo4j/README.md
+!neo4j/conf-template/
+!neo4j/conf-template/neo4j.conf
 
 # Python 环境与缓存
 app/backend/.venv/

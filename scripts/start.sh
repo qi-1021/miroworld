@@ -51,11 +51,28 @@ check_dependencies() {
         curl -LsSf https://astral.sh/uv/install.sh | sh
     fi
     log_info "✓ uv $(uv --version)"
+    
+    # 检查 Java（Neo4j 需要 JVM）
+    if ! command -v java &> /dev/null; then
+        log_error "Java 未安装。Neo4j 需要 JVM，请先安装 Java 17+"
+        exit 1
+    fi
+    JAVA_VER=$(java -version 2>&1 | head -1 | sed 's/.*version "//;s/".*//')
+    log_info "✓ Java $JAVA_VER"
 }
 
 # 检查并启动 Neo4j
 start_neo4j() {
     log_info "启动 Neo4j..."
+    
+    # Neo4j（JVM）无法在含中文等非 ASCII 字符的路径下运行
+    if printf '%s' "$PROJECT_ROOT" | LC_ALL=C grep -q '[^ -~]'; then
+        log_error "项目路径包含非 ASCII 字符：$PROJECT_ROOT"
+        log_error "Neo4j 无法在中文等非英文路径下运行（JVM 限制），请选择："
+        log_error "  1) 将整个项目移动到纯英文路径（推荐，如 /Volumes/Data/mirofish-portable）"
+        log_error "  2) 改用系统安装的 Neo4j：brew install neo4j 并启动后，再运行本脚本"
+        exit 1
+    fi
     
     # 检查 Neo4j 是否已经运行
     if lsof -Pi :7687 -sTCP:LISTEN -t >/dev/null 2>&1; then
@@ -63,14 +80,43 @@ start_neo4j() {
         return 0
     fi
     
+    # 兼容两种安装布局：neo4j/neo4j（安装脚本默认）或 neo4j/neo4j-program（已有便携部署）
+    NEO4J_HOME="$NEO4J_DIR/neo4j"
+    if [ ! -d "$NEO4J_HOME" ] && [ -d "$NEO4J_DIR/neo4j-program" ]; then
+        NEO4J_HOME="$NEO4J_DIR/neo4j-program"
+        log_info "检测到 Neo4j 安装在 $NEO4J_HOME"
+    fi
+    
     # 检查 Neo4j 是否存在
-    if [ ! -d "$NEO4J_DIR/neo4j" ]; then
+    if [ ! -d "$NEO4J_HOME" ]; then
         log_error "Neo4j 未安装。请运行 ./scripts/install-neo4j.sh"
         exit 1
     fi
     
+    # 自修复：Homebrew 拷贝布局下 bin/neo4j 可能是损坏的占位文件，恢复为 libexec 软链
+    if [ -f "$NEO4J_HOME/libexec/bin/neo4j" ] && [ ! -L "$NEO4J_HOME/bin/neo4j" ]; then
+        if [ -f "$NEO4J_HOME/bin/neo4j" ] && [ "$(wc -l < "$NEO4J_HOME/bin/neo4j" 2>/dev/null || echo 999)" -lt 10 ]; then
+            log_warn "检测到损坏的 bin/neo4j 启动脚本，正在恢复..."
+            rm -f "$NEO4J_HOME/bin/neo4j" "$NEO4J_HOME/bin/neo4j-admin"
+            ln -s ../libexec/bin/neo4j "$NEO4J_HOME/bin/neo4j"
+            ln -s ../libexec/bin/neo4j-admin "$NEO4J_HOME/bin/neo4j-admin"
+        fi
+    fi
+    
+    # 数据目录检查
+    if [ ! -d "$NEO4J_DIR/neo4j-data/data" ]; then
+        log_warn "未找到数据目录 $NEO4J_DIR/neo4j-data/data，将使用空数据库启动"
+    fi
+    
+    # 生成便携配置：数据/日志目录跟随项目（Neo4j 要求规范化路径，不能写死绝对路径）
+    mkdir -p "$NEO4J_DIR/run" "$NEO4J_DIR/neo4j-data/data" "$NEO4J_DIR/neo4j-data/logs"
+    sed -e "s|__NEO4J_DATA_DIR__|$NEO4J_DIR/neo4j-data/data|g" \
+        -e "s|__NEO4J_LOG_DIR__|$NEO4J_DIR/neo4j-data/logs|g" \
+        "$NEO4J_DIR/conf-template/neo4j.conf" > "$NEO4J_DIR/run/neo4j.conf"
+    export NEO4J_CONF="$NEO4J_DIR/run"
+    
     # 启动 Neo4j
-    cd "$NEO4J_DIR/neo4j/bin"
+    cd "$NEO4J_HOME/bin"
     
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
