@@ -81,7 +81,8 @@
         </template>
 
         <footer class="drawer-footer">
-          <span v-if="error">{{ error }}</span>
+          <span v-if="error" class="footer-error">{{ error }}</span>
+          <span v-else-if="success" class="footer-success">{{ success }}</span>
           <span v-else>{{ $t('modelSettings.secretFooter') }}</span>
           <button type="button" @click="loadRegistry">
             <RefreshCw :size="14" />
@@ -116,6 +117,7 @@ const registry = ref(null)
 const bindings = ref({})
 const loading = ref(false)
 const error = ref('')
+const success = ref('')
 const activeTab = ref('roles')
 const tabs = [
   { id: 'roles', label: 'modelSettings.tabRoles', icon: markRaw(SlidersHorizontal) },
@@ -166,9 +168,16 @@ const handleDeleteConnection = async (connectionId) => {
   const name = connection ? connection.name : connectionId
   if (!window.confirm(t('modelSettings.confirmDeleteConnection', { name }))) return
   error.value = ''
+  success.value = ''
   try {
-    await deleteModelConnection(connectionId, registry.value.revision)
+    // 操作前取最新 revision，避免配置版本过期导致 409
+    const latest = await getModelRegistry()
+    const response = await deleteModelConnection(connectionId, latest.data.revision)
+    const cleaned = response.data.cleaned_bindings + response.data.cleaned_presets
     await loadRegistry()
+    if (cleaned > 0) {
+      success.value = t('modelSettings.deletedWithCleanup', { name, count: cleaned })
+    }
   } catch (err) {
     error.value = err.message || t('modelSettings.deleteFailed')
   }
@@ -179,9 +188,15 @@ const handleDeleteModel = async (modelId) => {
   const name = model ? model.model_id : modelId
   if (!window.confirm(t('modelSettings.confirmDeleteModel', { name }))) return
   error.value = ''
+  success.value = ''
   try {
-    await deleteModelEntry(modelId, registry.value.revision)
+    const latest = await getModelRegistry()
+    const response = await deleteModelEntry(modelId, latest.data.revision)
+    const cleaned = response.data.cleaned_bindings + response.data.cleaned_presets
     await loadRegistry()
+    if (cleaned > 0) {
+      success.value = t('modelSettings.deletedWithCleanup', { name, count: cleaned })
+    }
   } catch (err) {
     error.value = err.message || t('modelSettings.deleteFailed')
   }
@@ -220,6 +235,8 @@ watch(() => props.projectId, () => {
 .drawer-loading { display: flex; flex: 1; align-items: center; justify-content: center; gap: 10px; color: #666; }
 .drawer-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; padding: 9px 14px; border-top: 1px solid #ddd; background: #fafaf8; color: #666; font-size: 9px; }
 .drawer-footer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drawer-footer .footer-error { color: #d9534f; font-weight: 800; }
+.drawer-footer .footer-success { color: #147342; font-weight: 800; }
 .drawer-footer button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; cursor: pointer; font-weight: 800; }
 .drawer-enter-active, .drawer-leave-active, .fade-enter-active, .fade-leave-active { transition: .2s ease; }
 .drawer-enter-from, .drawer-leave-to { transform: translateX(100%); }

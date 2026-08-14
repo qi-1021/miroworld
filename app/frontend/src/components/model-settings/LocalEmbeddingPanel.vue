@@ -88,7 +88,7 @@ import { useI18n } from 'vue-i18n'
 import {
   CircleAlert, CircleCheckBig, Database, FlaskConical, LoaderCircle, RefreshCw, Save
 } from '@lucide/vue'
-import { registerLocalModel, scanLocalModels, testLocalModel } from '../../api/models'
+import { registerLocalModel, scanLocalModels, testLocalModel, getModelRegistry } from '../../api/models'
 
 const props = defineProps({
   revision: { type: Number, required: true }
@@ -135,7 +135,9 @@ const register = async (model) => {
   registering.value = model.name
   error.value = ''
   try {
-    await registerLocalModel(model.name, { revision: props.revision })
+    // 注册前取最新 revision，避免配置版本过期导致 409
+    const latest = await getModelRegistry()
+    await registerLocalModel(model.name, { revision: latest.data.revision })
     emit('registered')
   } catch (err) {
     error.value = err.message || t('modelSettings.registerFailed')

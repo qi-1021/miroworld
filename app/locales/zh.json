@@ -126,7 +126,8 @@
     "deleteModel": "删除模型",
     "confirmDeleteConnection": "确定删除连接 {name}？其下的模型与密钥将一并删除。",
     "confirmDeleteModel": "确定删除模型 {name}？",
-    "deleteFailed": "删除失败"
+    "deleteFailed": "删除失败",
+    "deletedWithCleanup": "已删除 {name}，并自动清理了 {count} 处引用"
   },
   "meta": {
     "title": "MiroFish - 预测万物",

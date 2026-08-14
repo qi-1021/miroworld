@@ -63,7 +63,7 @@ def test_delete_model_entry_success(registry):
     assert len(state["connections"]) == 1  # 连接保留
 
 
-def test_delete_model_entry_blocked_when_bound_to_project(registry):
+def test_delete_model_entry_cleans_project_bindings(registry):
     connection_id, model_id = _seed_connection_and_model(registry)
     registry.save_project_bindings(
         project_id="proj_x",
@@ -71,11 +71,15 @@ def test_delete_model_entry_blocked_when_bound_to_project(registry):
         expected_revision=None,
     )
 
-    with pytest.raises(ValueError, match="正被引用"):
-        registry.delete_model_entry(model_entry_id=model_id, expected_revision=None)
+    result = registry.delete_model_entry(model_entry_id=model_id, expected_revision=None)
+
+    assert result["cleaned_bindings"] == 1
+    state = registry.get_redacted_registry()
+    assert all(item["id"] != model_id for item in state["models"])
+    assert registry.get_project_bindings("proj_x") is None
 
 
-def test_delete_model_entry_blocked_when_bound_to_snapshot(registry):
+def test_delete_model_entry_allowed_when_bound_to_snapshot(registry):
     connection_id, model_id = _seed_connection_and_model(registry)
     registry.create_snapshot(
         owner_type="simulation",
@@ -84,8 +88,12 @@ def test_delete_model_entry_blocked_when_bound_to_snapshot(registry):
         expected_revision=None,
     )
 
-    with pytest.raises(ValueError, match="正被引用"):
-        registry.delete_model_entry(model_entry_id=model_id, expected_revision=None)
+    result = registry.delete_model_entry(model_entry_id=model_id, expected_revision=None)
+
+    assert result["deleted"] == model_id
+    # 快照属于历史审计数据，删除模型后保持原样（不阻止）
+    state = registry.get_redacted_registry()
+    assert len(state["snapshots"]) == 1
 
 
 def test_delete_connection_cascades_models_and_secret(registry):
@@ -101,7 +109,7 @@ def test_delete_connection_cascades_models_and_secret(registry):
     assert registry.resolve_connection_secret(connection_id) is None
 
 
-def test_delete_connection_blocked_when_models_bound(registry):
+def test_delete_connection_cleans_bindings(registry):
     connection_id, model_id = _seed_connection_and_model(registry)
     registry.save_project_bindings(
         project_id="proj_x",
@@ -109,10 +117,12 @@ def test_delete_connection_blocked_when_models_bound(registry):
         expected_revision=None,
     )
 
-    with pytest.raises(ValueError, match="正被引用"):
-        registry.delete_connection(connection_id=connection_id, expected_revision=None)
-    # 连接应原样保留
-    assert registry.get_connection(connection_id) is not None
+    result = registry.delete_connection(connection_id=connection_id, expected_revision=None)
+
+    assert result["cleaned_bindings"] == 1
+    state = registry.get_redacted_registry()
+    assert all(item["id"] != connection_id for item in state["connections"])
+    assert registry.get_project_bindings("proj_x") is None
 
 
 def test_delete_connection_missing_raises(registry):
@@ -163,7 +173,7 @@ def test_api_delete_connection(api_client):
     assert registry.get_redacted_registry()["revision"] == payload["data"]["revision"]
 
 
-def test_api_delete_model_blocked_returns_400(api_client):
+def test_api_delete_model_cleans_bindings(api_client):
     http, registry = api_client
     connection_id, model_id = _seed_connection_and_model(registry)
     registry.save_project_bindings(
@@ -177,8 +187,10 @@ def test_api_delete_model_blocked_returns_400(api_client):
         query_string={"revision": registry.get_redacted_registry()["revision"]},
     )
 
-    assert response.status_code == 400
-    assert "正被引用" in response.get_json()["error"]["message"]
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["data"]["cleaned_bindings"] == 1
+    assert registry.get_project_bindings("proj_x") is None
 
 
 def test_api_delete_stale_revision_returns_409(api_client):
@@ -210,7 +222,7 @@ def test_cli_remove_connection(tmp_path, capsys):
     assert registry.get_redacted_registry()["connections"] == []
 
 
-def test_cli_remove_model_blocked_prints_error(tmp_path, capsys):
+def test_cli_remove_model_cleans_bindings(tmp_path, capsys):
     registry = ModelRegistryService(tmp_path / "model-config")
     connection_id, model_id = _seed_connection_and_model(registry)
     registry.save_project_bindings(
@@ -221,9 +233,10 @@ def test_cli_remove_model_blocked_prints_error(tmp_path, capsys):
 
     exit_code = main(["--json", "models", "remove", model_id], registry=registry)
 
-    assert exit_code == 1
-    payload = json.loads(capsys.readouterr().err)
-    assert "正被引用" in payload["error"]["message"]
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["data"]["cleaned_bindings"] == 1
+    assert registry.get_project_bindings("proj_x") is None
 
 
 def test_cli_presets_list_and_remove(tmp_path, capsys):

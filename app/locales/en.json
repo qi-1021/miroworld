@@ -126,7 +126,8 @@
     "deleteModel": "Delete model",
     "confirmDeleteConnection": "Delete connection {name}? Its models and API key will also be removed.",
     "confirmDeleteModel": "Delete model {name}?",
-    "deleteFailed": "Delete failed"
+    "deleteFailed": "Delete failed",
+    "deletedWithCleanup": "Deleted {name} and automatically cleaned up {count} references"
   },
   "meta": {
     "title": "MiroFish - Predict Everything",

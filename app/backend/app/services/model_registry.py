@@ -366,45 +366,56 @@ class ModelRegistryService:
             self._atomic_write(self.registry_path, registry)
             return {"revision": registry["revision"], "model": entry}
 
-    def _referencing_owners(self, registry: Dict[str, Any], model_entry_id: str) -> List[str]:
-        """返回引用某模型条目的所有者描述列表（项目绑定/预设/任务快照）。"""
-        references = []
-        for binding in registry.get("project_bindings", []):
-            if model_entry_id in (binding.get("roles") or {}).values():
-                references.append(f"项目 {binding['project_id']}")
-        for preset in registry.get("presets", []):
-            if model_entry_id in (preset.get("roles") or {}).values():
-                references.append(f"预设 {preset.get('name', preset['id'])}")
-        for snapshot in registry.get("snapshots", []):
-            if model_entry_id in (snapshot.get("bindings") or {}).values():
-                references.append(f"{snapshot.get('owner_type', '任务')} {snapshot.get('owner_id', '?')} 的快照")
-        return references
+    @staticmethod
+    def _prune_references(registry: Dict[str, Any], model_entry_id: str) -> Dict[str, int]:
+        """从项目绑定与预设中移除对某模型的引用，返回清理统计。
+
+        任务快照属于历史审计数据，不参与引用保护（删除模型后快照保持原样）。
+        """
+        cleaned_bindings = 0
+        cleaned_presets = 0
+        bindings = registry.get("project_bindings", [])
+        for binding in bindings:
+            roles = binding.get("roles") or {}
+            if model_entry_id in roles.values():
+                binding["roles"] = {r: m for r, m in roles.items() if m != model_entry_id}
+                cleaned_bindings += 1
+        registry["project_bindings"] = [
+            binding for binding in bindings if binding.get("roles")
+        ]
+        presets = registry.get("presets", [])
+        for preset in presets:
+            roles = preset.get("roles") or {}
+            if model_entry_id in roles.values():
+                preset["roles"] = {r: m for r, m in roles.items() if m != model_entry_id}
+                cleaned_presets += 1
+        registry["presets"] = [preset for preset in presets if preset.get("roles")]
+        return {"cleaned_bindings": cleaned_bindings, "cleaned_presets": cleaned_presets}
 
     def delete_model_entry(
         self, *, model_entry_id: str, expected_revision: Optional[int]
     ) -> Dict[str, Any]:
-        """删除模型条目；若被项目绑定、预设或任务快照引用则拒绝。"""
+        """删除模型条目，并自动清理项目绑定与预设中对它的引用。"""
         with self._lock:
             registry = self._read_registry()
             self._check_revision(registry, expected_revision)
             entry = next((item for item in registry["models"] if item["id"] == model_entry_id), None)
             if entry is None:
                 raise ValueError("模型条目不存在")
-            references = self._referencing_owners(registry, model_entry_id)
-            if references:
-                raise ValueError(
-                    f"模型 {entry.get('name', model_entry_id)} 正被引用：{', '.join(references)}；"
-                    f"请先解除引用再删除"
-                )
+            cleaned = self._prune_references(registry, model_entry_id)
             registry["models"] = [item for item in registry["models"] if item["id"] != model_entry_id]
             registry["revision"] = int(registry.get("revision", 0)) + 1
             self._atomic_write(self.registry_path, registry)
-            return {"revision": registry["revision"], "deleted": model_entry_id}
+            return {
+                "revision": registry["revision"],
+                "deleted": model_entry_id,
+                **cleaned,
+            }
 
     def delete_connection(
         self, *, connection_id: str, expected_revision: Optional[int]
     ) -> Dict[str, Any]:
-        """删除连接：级联删除其模型条目与密钥；若模型被引用则拒绝。"""
+        """删除连接：级联删除其模型条目与密钥，并清理所有引用。"""
         with self._lock:
             registry = self._read_registry()
             secrets = self._read_secrets()
@@ -413,15 +424,11 @@ class ModelRegistryService:
             if connection is None:
                 raise ValueError("连接不存在")
             entries = [item for item in registry["models"] if item.get("connection_id") == connection_id]
-            referenced = []
+            cleaned = {"cleaned_bindings": 0, "cleaned_presets": 0}
             for entry in entries:
-                for ref in self._referencing_owners(registry, entry["id"]):
-                    referenced.append(f"{entry.get('name', entry['id'])}（被{ref}引用）")
-            if referenced:
-                raise ValueError(
-                    f"连接 {connection['name']} 下的模型正被引用：{'；'.join(referenced)}；"
-                    f"请先解除引用再删除"
-                )
+                result = self._prune_references(registry, entry["id"])
+                cleaned["cleaned_bindings"] += result["cleaned_bindings"]
+                cleaned["cleaned_presets"] += result["cleaned_presets"]
             registry["connections"] = [item for item in registry["connections"] if item["id"] != connection_id]
             registry["models"] = [item for item in registry["models"] if item.get("connection_id") != connection_id]
             secrets["connections"].pop(connection_id, None)
@@ -429,7 +436,12 @@ class ModelRegistryService:
             self._atomic_write(self.registry_path, registry)
             self._atomic_write(self.secrets_path, secrets)
             self._restrict_secret_permissions()
-            return {"revision": registry["revision"], "deleted": connection_id, "removed_models": len(entries)}
+            return {
+                "revision": registry["revision"],
+                "deleted": connection_id,
+                "removed_models": len(entries),
+                **cleaned,
+            }
 
     def delete_preset(
         self, *, preset_id: str, expected_revision: Optional[int]
