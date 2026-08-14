@@ -1,0 +1,41 @@
+{
+  "world": {
+    "name": "龙脊城 · 小镇清晨",
+    "time_step_minutes": 30,
+    "total_steps": 6,
+    "initial_time": "2026-01-01 08:00"
+  },
+  "locations": [
+    {"id": "market", "name": "龙脊城集市", "description": "热闹的广场，商贩云集，城门口传来铁匠铺的敲打声。"},
+    {"id": "tavern", "name": "老橡木酒馆", "description": "旅人歇脚的地方，炉火正旺，飘着麦酒的味道。"},
+    {"id": "gate", "name": "城门", "description": "城防要地，士兵巡逻，门上挂着修缮告示。"}
+  ],
+  "connections": [["market", "tavern"], ["market", "gate"], ["tavern", "gate"]],
+  "characters": [
+    {
+      "id": "kara",
+      "name": "卡拉",
+      "persona": "龙脊城的年轻铁匠，性格直率，手艺好，关心城防修缮。",
+      "location": "market",
+      "goal": "打听城门修缮的进展，看看今天有没有新的委托",
+      "knowledge": ["龙脊城", "铁匠", "城防"]
+    },
+    {
+      "id": "eldrin",
+      "name": "埃尔德里",
+      "persona": "来自东境的游吟诗人，见多识广，性格开朗，喜欢讲述远方见闻。",
+      "location": "tavern",
+      "goal": "找一个听众，分享旅途中的故事",
+      "knowledge": ["东境", "游吟诗人", "旅途见闻"]
+    }
+  ],
+  "rules": [
+    {"id": "no_fire", "description": "城镇内禁止施放火焰类魔法"},
+    {"id": "magic_cost", "description": "高阶魔法消耗施法者寿命"}
+  ],
+  "llm": {
+    "model": "",
+    "base_url": "",
+    "api_key": ""
+  }
+}

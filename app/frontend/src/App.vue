@@ -17,11 +17,12 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import ModelSettingsDrawer from './components/model-settings/ModelSettingsDrawer.vue'
 import ModelSettingsLauncher from './components/model-settings/ModelSettingsLauncher.vue'
+import { getModelRegistry, getProjectModelBindings } from './api/models'
 import { getReport } from './api/report'
 import { getSimulation } from './api/simulation'
 
@@ -69,7 +70,39 @@ const handleModelUpdate = ({ summary, registry }) => {
   modelStatus.value = usable ? 'ready' : registry?.connections?.length ? 'warning' : 'idle'
 }
 
+// 页面加载时主动查询模型配置状态，避免右上角一直显示"尚未配置"
+const refreshModelSummary = async () => {
+  try {
+    const response = await getModelRegistry()
+    const registryData = response.data
+    let summaryText = t('modelSettings.notConfigured')
+    if (modelContext.value.type === 'project' && modelContext.value.id) {
+      try {
+        const bindingResponse = await getProjectModelBindings(modelContext.value.id)
+        const primaryId = bindingResponse.data?.roles?.primary
+        const primary = registryData.models.find(item => item.id === primaryId)
+        if (primary) summaryText = primary.model_id
+      } catch {
+        // 项目绑定查询失败则回退到全局判断
+      }
+    }
+    if (summaryText === t('modelSettings.notConfigured')) {
+      // 无项目绑定：取第一个已验证模型作为全局状态
+      const firstVerified = registryData.models.find(item => item.verified)
+      if (firstVerified) summaryText = firstVerified.model_id
+    }
+    modelSummary.value = summaryText
+    const usable = registryData.models?.some(item => item.verified)
+    modelStatus.value = usable ? 'ready' : registryData.connections?.length ? 'warning' : 'idle'
+  } catch {
+    modelSummary.value = t('modelSettings.notConfigured')
+    modelStatus.value = 'idle'
+  }
+}
+
 watch(() => route.fullPath, resolveProjectContext, { immediate: true })
+watch(() => route.fullPath, refreshModelSummary, { immediate: true })
+onMounted(refreshModelSummary)
 </script>
 
 <style>

@@ -50,6 +50,17 @@
 
       <!-- Right Panel: Step Components -->
       <div class="panel-wrapper right" :style="rightPanelStyle">
+        <!-- 世界设定入口 -->
+        <div class="world-entry" @click="router.push(`/world/${currentProjectId}`)">
+          <div class="world-entry-info">
+            <span class="world-entry-num">WORLD</span>
+            <div class="world-entry-text">
+              <span class="world-entry-title">世界设定库</span>
+              <span class="world-entry-desc">背景文档 / 小说正文 · 冲突检测 · 设定检索</span>
+            </div>
+          </div>
+          <span class="world-entry-btn">打开 ➝</span>
+        </div>
         <!-- Step 1: 图谱构建 -->
         <Step1GraphBuild
           v-if="currentStep === 1"
@@ -541,5 +552,69 @@ onUnmounted(() => {
 
 .panel-wrapper.left {
   border-right: 1px solid #EAEAEA;
+}
+
+/* 世界设定入口条（与 step-card 视觉一致） */
+.world-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 16px 12px;
+  padding: 12px 14px;
+  border: 1px solid #EAEAEA;
+  border-radius: 8px;
+  background: #FFF;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.2s ease;
+}
+.world-entry:hover {
+  border-color: #FF5722;
+}
+.world-entry-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.world-entry-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: #E0E0E0;
+  flex-shrink: 0;
+}
+.world-entry:hover .world-entry-num {
+  color: #000;
+}
+.world-entry-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.world-entry-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #000;
+  letter-spacing: 0.3px;
+}
+.world-entry-desc {
+  font-size: 11px;
+  color: #999;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.world-entry-btn {
+  flex-shrink: 0;
+  background: #000;
+  color: #FFF;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 4px;
 }
 </style>
