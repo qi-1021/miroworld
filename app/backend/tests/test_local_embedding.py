@@ -262,3 +262,65 @@ def test_graphiti_skips_local_model_with_missing_directory(fake_models_root, mon
     monkeypatch.setattr(local_embedding, "LOCAL_MODELS_ROOT", fake_models_root)
 
     assert zep_graphiti_impl.GraphitiClient._try_build_local_embedder() is None
+
+
+# ==================== JSON 序列化与去重注册 ====================
+
+
+class _FakeSTModel:
+    """模拟 sentence-transformers 模型：返回 numpy 数组（float32）。"""
+
+    def encode(self, texts, batch_size=None, show_progress_bar=False):
+        import numpy as np
+
+        return [np.array([0.1, 0.2, 0.3], dtype=np.float32) for _ in texts]
+
+
+def test_encode_returns_json_serializable_floats(monkeypatch):
+    """numpy float32 向量必须转为 Python float，否则 jsonify 会 500。"""
+    import threading
+
+    embedder = local_embedding.LocalSentenceTransformerEmbedder("/tmp/fake-dir", dimension=3)
+    embedder._model = _FakeSTModel()
+    embedder._lock = threading.Lock()
+
+    vectors = embedder._encode(["a", "b"])
+
+    assert all(isinstance(x, float) for v in vectors for x in v)
+    # json.dumps 不应抛 TypeError
+    json.dumps(vectors)
+
+
+def test_register_local_model_updates_existing_entry(api_client, monkeypatch):
+    """同一本地目录重复注册应更新已有条目，而不是新增重复条目。"""
+    http, registry = api_client
+    monkeypatch.setattr(
+        models_api,
+        "inspect_local_model",
+        lambda name: {
+            "name": name,
+            "dimension": 512,
+            "max_length": 512,
+            "model_type": "bert",
+        },
+    )
+
+    first = http.post(
+        "/api/models/local/bge-small-zh/register",
+        json={"revision": 0},
+    )
+    assert first.status_code == 201
+    first_model = first.get_json()["data"]["model"]
+    revision = first.get_json()["data"]["revision"]
+
+    second = http.post(
+        "/api/models/local/bge-small-zh/register",
+        json={"revision": revision},
+    )
+    assert second.status_code == 200
+    second_model = second.get_json()["data"]["model"]
+    assert second_model["id"] == first_model["id"]
+
+    state = registry.get_redacted_registry()
+    local_entries = [m for m in state["models"] if m.get("local_path") == "bge-small-zh"]
+    assert len(local_entries) == 1

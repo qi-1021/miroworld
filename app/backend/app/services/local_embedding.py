@@ -198,7 +198,11 @@ class LocalSentenceTransformerEmbedder:
         model = self._load()
         vectors = model.encode(texts, batch_size=self.batch_size, show_progress_bar=False)
         dim = self._dimension
-        return [list(v[:dim]) if dim else list(v) for v in vectors]
+        # numpy float32 无法 JSON 序列化，统一转为 Python float
+        return [
+            [float(x) for x in (v[:dim] if dim else v)]
+            for v in vectors
+        ]
 
     async def create(
         self, input_data: str | list[str] | Any

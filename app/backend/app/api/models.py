@@ -382,7 +382,10 @@ def test_local_model_route(name: str):
 
 @models_bp.route("/local/<name>/register", methods=["POST"])
 def register_local_model_route(name: str):
-    """把本地模型注册为模型库条目（向量能力，无需连接）。"""
+    """把本地模型注册为模型库条目（向量能力，无需连接）。
+
+    同一本地目录重复注册时更新已有条目，而不是新增重复条目。
+    """
     try:
         body = _json_body()
         info = inspect_local_model(name)
@@ -407,6 +410,20 @@ def register_local_model_route(name: str):
             },
             local_path=name,
         )
+        # 已注册过同一本地目录时更新，避免产生重复条目
+        existing = None
+        state = registry_service.get_redacted_registry()
+        for entry in state.get("models", []):
+            if entry.get("local_path") == name:
+                existing = entry
+                break
+        if existing is not None:
+            result = registry_service.save_model_entry(
+                draft,
+                model_id=existing["id"],
+                expected_revision=body.get("revision"),
+            )
+            return _success(result)
         result = registry_service.save_model_entry(
             draft, expected_revision=body.get("revision")
         )
