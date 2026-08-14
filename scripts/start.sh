@@ -121,6 +121,12 @@ start_app() {
         cd "$APP_DIR"
     fi
     
+    # 初始化模型配置（导入旧 .env、检查模型库状态）
+    if [ -f "$SCRIPT_DIR/init-models.sh" ]; then
+        log_info "初始化模型配置..."
+        bash "$SCRIPT_DIR/init-models.sh" || log_warn "模型配置初始化未完成，可稍后在网页中手动配置"
+    fi
+    
     # 启动应用
     log_info "启动前端和后端..."
     npm run dev &
@@ -134,6 +140,7 @@ start_app() {
         log_info "前端: http://localhost:3000"
         log_info "后端: http://localhost:5001"
         log_info "Neo4j: http://localhost:7474"
+        log_info "模型设置: 打开前端后点击右下角「模型设置」"
     else
         log_warn "部分端口未监听，请检查日志"
     fi

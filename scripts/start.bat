@@ -84,6 +84,12 @@ if not exist "backend\.venv-simulation" (
     cd /d "%APP_DIR%"
 )
 
+REM 初始化模型配置（导入旧 .env、检查模型库状态）
+if exist "%SCRIPT_DIR%init-models.bat" (
+    echo [INFO] 初始化模型配置...
+    call "%SCRIPT_DIR%init-models.bat"
+)
+
 echo [INFO] 启动前端和后端...
 call npm run dev
 
@@ -92,6 +98,7 @@ echo [INFO] 所有服务已启动！
 echo [INFO] 前端: http://localhost:3000
 echo [INFO] 后端: http://localhost:5001
 echo [INFO] Neo4j: http://localhost:7474
+echo [INFO] 模型设置: 打开前端后点击右下角「模型设置」
 echo [INFO] 按 CTRL+C 停止服务
 
 pause
