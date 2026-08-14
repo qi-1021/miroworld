@@ -80,7 +80,7 @@ def _run_async(coro):
     """
     _ensure_async_loop()
     future = asyncio.run_coroutine_threadsafe(coro, _async_loop)
-    return future.result(timeout=300)  # 5分钟超时
+    return future.result(timeout=600)  # 10分钟超时（兼容网关慢响应+重试）
 
 
 class DashScopeEmbedderWrapper:
@@ -280,7 +280,27 @@ class GraphitiClient(ZepClientAdapter):
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        return OpenAIGenericClient(config=config)
+        # 显式传入不走系统代理的 http_client：
+        # httpx 在 macOS 上会通过 urllib 自动读取系统代理（如 Clash 127.0.0.1:7890），
+        # 代理对长连接偶发断开会导致图谱构建随机失败（RemoteProtocolError）。
+        # 本地部署的 LLM 端点应直连；用户如需代理，可在 .env 显式设置 HTTP(S)_PROXY。
+        try:
+            import httpx
+            from openai import AsyncOpenAI
+            # timeout=45 + max_retries=0：OpenCode 等网关在负载高时可能
+            # 长时间无响应（实测单次调用可挂 60-240 秒）。让 openai SDK
+            # 不做内部重试，统一由 graphiti_patch 的重试/降级逻辑处理，
+            # 避免"超时 × 重试"叠加导致整体构建长时间卡死。
+            http_client = httpx.AsyncClient(trust_env=False, timeout=45)
+            return OpenAIGenericClient(config=config, client=AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                http_client=http_client,
+                max_retries=0,
+            ))
+        except Exception as exc:
+            logger.warning(f"创建直连 http_client 失败，回退默认客户端: {exc}")
+            return OpenAIGenericClient(config=config)
 
     @staticmethod
     def _resolve_registry_chat_model():
@@ -370,7 +390,22 @@ class GraphitiClient(ZepClientAdapter):
                 base_url=base_url,
             )
 
-        base_embedder = OpenAIEmbedder(config=config)
+        # 同样显式直连（避免 macOS 系统代理导致偶发断连）
+        try:
+            import httpx
+            from openai import AsyncOpenAI
+            http_client = httpx.AsyncClient(trust_env=False, timeout=300)
+            base_embedder = OpenAIEmbedder(
+                config=config,
+                client=AsyncOpenAI(
+                    api_key=api_key,
+                    base_url=base_url,
+                    http_client=http_client,
+                ),
+            )
+        except Exception as exc:
+            logger.warning(f"创建 embedder 直连 http_client 失败，回退默认: {exc}")
+            base_embedder = OpenAIEmbedder(config=config)
 
         # DashScope API 有批次大小限制，需要包装
         if self._is_openai_compatible_only():
@@ -596,45 +631,40 @@ class GraphitiClient(ZepClientAdapter):
         graph_id: str,
         episodes: List[Dict[str, Any]]
     ) -> List[str]:
-        """批量添加 episode"""
+        """
+        批量添加 episode（串行实现）。
+
+        注意：graphiti 的 add_episode_bulk 会以 SEMAPHORE_LIMIT（默认 20）并发
+        调用 LLM（实体提取、关系提取、去重、摘要等多个阶段）。部分网关
+        （如 OpenCode / DeepSeek 兼容端点）在并发请求下会返回空内容或断开连接，
+        导致整个批次失败。这里改为逐条串行调用 add_episode——单条流程内
+        graphiti 本身是顺序的，稳定得多；批次数量不大时耗时差异可接受。
+        """
         self._ensure_initialized()
 
-        from graphiti_core.nodes import EpisodeType
-        from graphiti_core.utils.bulk_utils import RawEpisode
-
-        # 构建 RawEpisode 列表
-        raw_episodes = []
+        episode_uuids: List[str] = []
+        failed = 0
         for i, ep in enumerate(episodes):
             ep_type = ep.get("type", "text")
-            source_type = EpisodeType.text
-            if ep_type == "message":
-                source_type = EpisodeType.message
-            elif ep_type == "json":
-                source_type = EpisodeType.json
-
-            raw_episodes.append(
-                RawEpisode(
-                    name=f"episode_{graph_id}_{i}_{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                    content=ep.get("data", ""),
-                    source=source_type,
-                    source_description="mirofish_simulation",
-                    reference_time=datetime.now(timezone.utc),
+            data = ep.get("data", "")
+            try:
+                uuid = self.add_episode(
+                    graph_id=graph_id,
+                    data=data,
+                    episode_type=ep_type,
                 )
-            )
+                if uuid:
+                    episode_uuids.append(uuid)
+                else:
+                    failed += 1
+                    logger.warning(f"episode {i} 返回空 uuid（可能是空内容），跳过")
+            except Exception as e:
+                failed += 1
+                logger.error(f"episode {i} 添加失败: {e}，继续处理剩余批次")
 
-        entity_types, edge_types = self._build_graphiti_type_models(graph_id)
-
-        async def _add_bulk():
-            result = await self._graphiti.add_episode_bulk(
-                bulk_episodes=raw_episodes,
-                group_id=graph_id,
-                entity_types=entity_types or None,
-                edge_types=edge_types or None,
-            )
-            # 返回所有 episode UUID
-            return [ep.uuid for ep in result.episodes] if result and result.episodes else []
-
-        return _run_async(_add_bulk())
+        if failed:
+            logger.warning(f"批次完成: 成功 {len(episode_uuids)}/{len(episodes)}，失败 {failed}")
+        return episode_uuids
 
     def get_episode_status(self, episode_uuid: str) -> EpisodeStatus:
         """

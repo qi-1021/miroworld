@@ -35,3 +35,4 @@ app/backend/logs/
 app/models/embeddings/**
 !app/models/embeddings/.gitkeep
 **/mirofish-model.json
+app/backend/data/world/

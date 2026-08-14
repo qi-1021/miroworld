@@ -33,10 +33,21 @@ class LLMClient:
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
 
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url
-        )
+        # 显式直连：httpx 在 macOS 上会自动读取系统代理（如 Clash），
+        # 代理对长连接偶发断开会导致调用随机失败。本地部署应直连。
+        try:
+            import httpx
+            http_client = httpx.Client(trust_env=False, timeout=300)
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+                http_client=http_client,
+            )
+        except Exception:
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url
+            )
 
     def chat(
         self,
