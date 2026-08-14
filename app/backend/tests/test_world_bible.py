@@ -278,3 +278,64 @@ def test_search_source_filter_preserved_with_semantic(semantic_embedder, world_r
     assert bg and all(r["source"] == "background" for r in bg)
     st = WorldBibleService.search("p1", "城门", source="story")
     assert st and all(r["source"] == "story" for r in st)
+
+
+def test_search_degrades_to_keyword_when_query_embedding_raises(world_root, monkeypatch):
+    """查询向量化抛异常时应优雅降级为纯关键词，不向上抛错。"""
+    WorldBibleService._reset_embeddings_cache()
+    WorldBibleService._reset_embedder_cache()
+
+    # 保存时用可用假嵌入生成向量，随后搜索时让查询向量化抛异常
+    ok_embedder = FakeEmbedder()
+    monkeypatch.setattr(
+        WorldBibleService, "_get_embedder",
+        classmethod(lambda cls: ok_embedder),
+    )
+    WorldBibleService.save_input("p1", background=BG_TEXT)
+
+    # 让 embedder 在查询时抛异常（create 抛）→ 应回退关键词
+    class BrokenEmbedder:
+        dimension = FakeEmbedder.DIM
+        model_dir = "/fake/bge-m3"
+        async def create(self, *a, **k):
+            raise RuntimeError("模型加载失败")
+        async def create_batch(self, *a, **k):
+            raise RuntimeError("模型加载失败")
+        def _encode(self, *a, **k):
+            raise RuntimeError("模型加载失败")
+
+    monkeypatch.setattr(
+        WorldBibleService, "_get_embedder",
+        classmethod(lambda cls: BrokenEmbedder()),
+    )
+    # 不抛异常，且仍能按关键词命中
+    results = WorldBibleService.search("p1", "龙脊城")
+    assert results, "查询向量化失败后仍应返回关键词结果"
+    assert all(r["score"] > 0 for r in results)
+
+
+def test_save_input_degrades_when_embedding_generation_raises(world_root, monkeypatch):
+    """save_input 向量生成抛异常时仍应成功保存主体，降级为纯关键词。"""
+    WorldBibleService._reset_embeddings_cache()
+    WorldBibleService._reset_embedder_cache()
+
+    class ExplodingEmbedder:
+        dimension = FakeEmbedder.DIM
+        model_dir = "/fake/bge-m3"
+        async def create_batch(self, *a, **k):
+            raise RuntimeError("编码器不可用")
+
+    monkeypatch.setattr(
+        WorldBibleService, "_get_embedder",
+        classmethod(lambda cls: ExplodingEmbedder()),
+    )
+    # 不应抛出；bible 仍保存
+    bible = WorldBibleService.save_input("p1", background=BG_TEXT)
+    assert bible.project_id == "p1"
+    assert bible.chunks
+    # 未生成向量
+    assert not any(c.embedding for c in bible.chunks)
+    assert bible.metadata.get("embedding_model") is None
+    # 检索仍可用（降级为关键词）
+    results = WorldBibleService.search("p1", "龙脊城")
+    assert results
