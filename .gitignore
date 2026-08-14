@@ -36,3 +36,4 @@ app/models/embeddings/**
 !app/models/embeddings/.gitkeep
 **/mirofish-model.json
 app/backend/data/world/
+app/backend/data/world-sim/
