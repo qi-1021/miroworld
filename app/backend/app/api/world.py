@@ -373,6 +373,52 @@ def get_world_simulation(project_id: str, simulation_id: str):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@world_bp.route('/<project_id>/simulation/<simulation_id>/control', methods=['POST'])
+def control_world_simulation(project_id: str, simulation_id: str):
+    """
+    世界模拟控制（暂停/恢复/停止/采访）
+
+    请求（JSON）：
+        {
+            "action": "pause" | "resume" | "stop" | "interview",
+            "character_name": "角色名或id",   // interview 必填
+            "prompt": "采访问题"              // interview 必填
+        }
+
+    返回：
+        interview 成功：{"success": true, "command_id": ..., "action": ..., "result": {...}}
+        其余动作：{"success": true, "command_id": ..., "action": ...}
+    """
+    try:
+        from ..services.world_simulation import WorldSimulationService
+
+        data = request.get_json(silent=True) or {}
+        action = str(data.get('action', '')).strip()
+        if action not in ('pause', 'resume', 'stop', 'interview'):
+            return jsonify({
+                "success": False,
+                "error": "action 必须是 pause/resume/stop/interview",
+            }), 400
+
+        result = WorldSimulationService.control_simulation(
+            project_id=project_id,
+            simulation_id=simulation_id,
+            action=action,
+            character_name=data.get('character_name'),
+            prompt=data.get('prompt'),
+        )
+        response_body = {"success": True, **result}
+        return jsonify(response_body)
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except TimeoutError as e:
+        logger.error(f"世界模拟采访超时: {e}")
+        return jsonify({"success": False, "error": str(e)}), 504
+    except Exception as e:
+        logger.error(f"世界模拟控制失败: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # ---------------------------------------------------------------- 删除
 
 @world_bp.route('/<project_id>', methods=['DELETE'])

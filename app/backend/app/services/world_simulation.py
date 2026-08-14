@@ -16,6 +16,8 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
+import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -29,6 +31,16 @@ logger = get_logger('mirofish.world_sim')
 
 # 世界模拟数据目录
 WORLD_SIM_ROOT = os.path.join(os.path.dirname(__file__), '../../data/world-sim')
+
+# IPC 命令类型（与 run_world_simulation.py 保持一致）
+IPC_CMD_PAUSE = "pause"
+IPC_CMD_RESUME = "resume"
+IPC_CMD_STOP = "stop"
+IPC_CMD_INTERVIEW = "interview"
+
+# IPC 目录名（纯文件系统）
+IPC_COMMANDS_DIR = "ipc_commands"
+IPC_RESPONSES_DIR = "ipc_responses"
 
 # 世界配置生成提示词
 WORLD_CONFIG_PROMPT = """你是一名小说世界模拟专家。请根据给定的"世界背景设定"和"小说正文"，提取出用于世界模拟的配置。
@@ -80,7 +92,8 @@ class WorldSimulationState:
     """世界模拟状态"""
     simulation_id: str
     project_id: str
-    status: str = "created"   # created | preparing | running | completed | failed
+    status: str = "created"   # created | preparing | running | paused | completed | failed | stopped
+    paused: bool = False      # 是否处于暂停状态
     config_path: str = ""
     events_path: str = ""
     result: Dict[str, Any] = field(default_factory=dict)
@@ -145,6 +158,149 @@ class WorldSimulationService:
                     if len(results) >= limit:
                         break
         return results
+
+    # ---------------- IPC 控制 ----------------
+
+    @classmethod
+    def _sim_dir(cls, project_id: str, simulation_id: str) -> str:
+        """模拟数据目录（state.json 所在目录）"""
+        return os.path.dirname(cls._state_path(project_id, simulation_id))
+
+    @classmethod
+    def _send_world_command(
+        cls,
+        project_id: str,
+        simulation_id: str,
+        command_type: str,
+        args: Dict[str, Any] = None,
+    ) -> str:
+        """
+        写入一条 IPC 命令文件，返回 command_id。
+        命令文件位于 <sim_dir>/ipc_commands/<command_id>.json。
+        """
+        sim_dir = cls._sim_dir(project_id, simulation_id)
+        commands_dir = os.path.join(sim_dir, IPC_COMMANDS_DIR)
+        responses_dir = os.path.join(sim_dir, IPC_RESPONSES_DIR)
+        os.makedirs(commands_dir, exist_ok=True)
+        os.makedirs(responses_dir, exist_ok=True)
+
+        command_id = str(uuid.uuid4())
+        command = {
+            "command_id": command_id,
+            "command_type": command_type,
+            "args": args or {},
+            "timestamp": datetime.now().isoformat(timespec='seconds'),
+        }
+        with open(os.path.join(commands_dir, f"{command_id}.json"), 'w', encoding='utf-8') as f:
+            json.dump(command, f, ensure_ascii=False, indent=2)
+        logger.info(f"发送世界模拟 IPC 命令: {command_type}, {simulation_id}, command_id={command_id}")
+        return command_id
+
+    @classmethod
+    def _read_world_response(
+        cls,
+        project_id: str,
+        simulation_id: str,
+        command_id: str,
+        timeout: float = 60.0,
+        poll_interval: float = 0.5,
+    ) -> Dict[str, Any]:
+        """
+        轮询读取一条 IPC 响应，超时抛出 TimeoutError。
+        响应文件位于 <sim_dir>/ipc_responses/<command_id>.json。
+        """
+        responses_dir = os.path.join(cls._sim_dir(project_id, simulation_id), IPC_RESPONSES_DIR)
+        response_file = os.path.join(responses_dir, f"{command_id}.json")
+        start = time.time()
+        while time.time() - start < timeout:
+            if os.path.exists(response_file):
+                try:
+                    with open(response_file, 'r', encoding='utf-8') as f:
+                        return json.load(f)
+                except (json.JSONDecodeError, OSError) as e:
+                    logger.warning(f"解析世界模拟 IPC 响应失败: {e}")
+            time.sleep(poll_interval)
+        raise TimeoutError(f"等待世界模拟 IPC 命令响应超时 ({timeout} 秒): {command_id}")
+
+    @classmethod
+    def control_simulation(
+        cls,
+        project_id: str,
+        simulation_id: str,
+        action: str,
+        character_name: str = None,
+        prompt: str = None,
+        timeout: float = 60.0,
+        poll_interval: float = 0.5,
+    ) -> Dict[str, Any]:
+        """
+        世界模拟控制：执行 pause / resume / stop / interview。
+
+        Args:
+            project_id: 项目 ID
+            simulation_id: 模拟 ID
+            action: pause | resume | stop | interview
+            character_name: interview 时指定角色名（或 id）
+            prompt: interview 时的采访问题
+            timeout: interview 响应等待超时（秒）
+            poll_interval: 响应轮询间隔（秒）
+
+        Returns:
+            Dict，含 command_id / action，interview 额外含响应的 result
+        """
+        if action not in (IPC_CMD_PAUSE, IPC_CMD_RESUME, IPC_CMD_STOP, IPC_CMD_INTERVIEW):
+            raise ValueError(f"不支持的控制动作: {action}")
+
+        state = cls.get_state(simulation_id)
+        if state is None or state.project_id != project_id:
+            raise ValueError("模拟不存在")
+
+        # interview 需要角色名与采访问题
+        if action == IPC_CMD_INTERVIEW:
+            if not prompt:
+                raise ValueError("采访模式必须提供 prompt（采访问题）")
+            if not character_name:
+                raise ValueError("采访模式必须提供 character_name（角色名/id）")
+
+        args = {}
+        if action == IPC_CMD_INTERVIEW:
+            args = {"character_name": character_name, "prompt": prompt}
+
+        command_id = cls._send_world_command(project_id, simulation_id, action, args)
+
+        if action == IPC_CMD_PAUSE:
+            state.status = "paused"
+            state.paused = True
+            state.updated_at = datetime.now().isoformat(timespec='seconds')
+            cls._save_state(state)
+            return {"command_id": command_id, "action": action}
+
+        if action == IPC_CMD_RESUME:
+            state.status = "running"
+            state.paused = False
+            state.updated_at = datetime.now().isoformat(timespec='seconds')
+            cls._save_state(state)
+            return {"command_id": command_id, "action": action}
+
+        if action == IPC_CMD_STOP:
+            state.status = "stopped"
+            state.paused = False
+            state.updated_at = datetime.now().isoformat(timespec='seconds')
+            cls._save_state(state)
+            return {"command_id": command_id, "action": action}
+
+        # interview：等待子进程响应
+        response = cls._read_world_response(
+            project_id, simulation_id, command_id,
+            timeout=timeout, poll_interval=poll_interval,
+        )
+        return {
+            "command_id": command_id,
+            "action": action,
+            "status": response.get("status"),
+            "result": response.get("result"),
+            "error": response.get("error"),
+        }
 
     # ---------------- 配置生成 ----------------
 
@@ -292,6 +448,7 @@ class WorldSimulationService:
                     sim_python, script,
                     "--config", config_path,
                     "--out", events_path,
+                    "--ipc-dir", sim_dir,
                 ]
                 logger.info(f"启动世界模拟子进程: {cmd}")
 

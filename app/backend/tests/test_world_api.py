@@ -1,6 +1,7 @@
 """世界设定库 API 测试"""
 
 import json
+import os
 
 import pytest
 
@@ -255,3 +256,111 @@ def test_multipart_with_text_fields(client):
     bible = WorldBibleService.get_bible("p1")
     assert "烈焰女神" in bible.background_text
     assert "清晨的龙脊城" in bible.story_text
+
+
+# ---------------------------------------------------------------- 世界模拟控制 API
+
+@pytest.fixture()
+def world_sim_client(tmp_path):
+    """构造 Flask 客户端，同时隔离世界设定目录与模拟目录"""
+    import app.services.world_bible as wb
+    import app.services.world_simulation as ws
+
+    original_wb = wb.WORLD_DATA_ROOT
+    original_ws = ws.WORLD_SIM_ROOT
+    wb.WORLD_DATA_ROOT = str(tmp_path / "world")
+    ws.WORLD_SIM_ROOT = str(tmp_path / "world-sim")
+
+    from app import create_app
+    app = create_app()
+    app.config["TESTING"] = True
+    with app.test_client() as c:
+        yield c
+
+    wb.WORLD_DATA_ROOT = original_wb
+    ws.WORLD_SIM_ROOT = original_ws
+
+
+def _world_sim_state(sim_id="wctl", project="p1", status="running"):
+    """构造并保存一个世界模拟状态"""
+    from app.services.world_simulation import (
+        WorldSimulationService,
+        WorldSimulationState,
+    )
+    state = WorldSimulationState(
+        simulation_id=sim_id,
+        project_id=project,
+        status=status,
+    )
+    WorldSimulationService._save_state(state)
+    return state
+
+
+def test_control_requires_valid_action(world_sim_client):
+    _world_sim_state()
+    rv = world_sim_client.post(
+        "/api/world/p1/simulation/wctl/control",
+        json={"action": "teleport"},
+    )
+    assert rv.status_code == 400
+    assert "action 必须是" in rv.get_json()["error"]
+
+
+def test_control_missing_simulation(world_sim_client):
+    rv = world_sim_client.post(
+        "/api/world/p1/simulation/nope/control",
+        json={"action": "pause"},
+    )
+    assert rv.status_code == 400
+    assert "模拟不存在" in rv.get_json()["error"]
+
+
+def test_control_pause(world_sim_client):
+    _world_sim_state()
+    rv = world_sim_client.post(
+        "/api/world/p1/simulation/wctl/control",
+        json={"action": "pause"},
+    )
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body["success"] is True
+    assert body["action"] == "pause"
+    # 命令文件已写入
+    from app.services.world_simulation import WorldSimulationService
+    cmd_dir = os.path.join(
+        WorldSimulationService._sim_dir("p1", "wctl"), "ipc_commands"
+    )
+    assert os.path.isdir(cmd_dir)
+    assert len([f for f in os.listdir(cmd_dir) if f.endswith(".json")]) == 1
+
+
+def test_control_stop(world_sim_client):
+    _world_sim_state()
+    rv = world_sim_client.post(
+        "/api/world/p1/simulation/wctl/control",
+        json={"action": "stop"},
+    )
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body["action"] == "stop"
+    assert body["command_id"]
+
+
+def test_control_interview_requires_fields(world_sim_client):
+    _world_sim_state()
+    rv = world_sim_client.post(
+        "/api/world/p1/simulation/wctl/control",
+        json={"action": "interview", "character_name": "卡拉"},
+    )
+    assert rv.status_code == 400
+    assert "prompt" in rv.get_json()["error"]
+
+
+def test_control_resume_not_writing_extra(world_sim_client):
+    _world_sim_state()
+    rv = world_sim_client.post(
+        "/api/world/p1/simulation/wctl/control",
+        json={"action": "resume"},
+    )
+    assert rv.status_code == 200
+    assert rv.get_json()["success"] is True

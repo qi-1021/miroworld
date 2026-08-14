@@ -294,3 +294,124 @@ def test_write_events_to_graph_get_project_raises(world_root, monkeypatch):
     )
     assert result["status"] == "error"
     assert "meta 丢失" in result["error"]
+
+
+# ---------------- 世界模拟 IPC 控制 ----------------
+
+def _make_state(world_root, sim_id="ws_ctl"):
+    """构造一个 running 状态的模拟并落盘"""
+    from app.services.world_simulation import WorldSimulationState
+    state = WorldSimulationState(
+        simulation_id=sim_id,
+        project_id="p1",
+        status="running",
+    )
+    WorldSimulationService._save_state(state)
+    return state
+
+
+def test_control_rejects_invalid_action(world_root):
+    _make_state(world_root)
+    with pytest.raises(ValueError, match="不支持的控制动作"):
+        WorldSimulationService.control_simulation("p1", "ws_ctl", "dance")
+
+
+def test_control_pause_requires_state(world_root):
+    # 模拟不存在
+    with pytest.raises(ValueError, match="模拟不存在"):
+        WorldSimulationService.control_simulation("p1", "missing", "pause")
+
+
+def test_control_pause_writes_command(world_root):
+    _make_state(world_root)
+    result = WorldSimulationService.control_simulation("p1", "ws_ctl", "pause")
+    sim_dir = WorldSimulationService._sim_dir("p1", "ws_ctl")
+    cmd_dir = os.path.join(sim_dir, "ipc_commands")
+    assert os.path.isdir(cmd_dir)
+    # 命令文件存在
+    files = [f for f in os.listdir(cmd_dir) if f.endswith(".json")]
+    assert len(files) == 1
+    with open(os.path.join(cmd_dir, files[0]), 'r', encoding='utf-8') as f:
+        cmd = json.load(f)
+    assert cmd["command_type"] == "pause"
+    assert cmd["command_id"] == result["command_id"]
+    # 状态更新为 paused
+    state = WorldSimulationService.get_state("ws_ctl")
+    assert state.status == "paused"
+    assert state.paused is True
+
+
+def test_control_resume_and_stop_write_commands(world_root):
+    _make_state(world_root)
+    WorldSimulationService.control_simulation("p1", "ws_ctl", "pause")
+    WorldSimulationService.control_simulation("p1", "ws_ctl", "resume")
+    state = WorldSimulationService.get_state("ws_ctl")
+    assert state.status == "running"
+    assert state.paused is False
+
+    WorldSimulationService.control_simulation("p1", "ws_ctl", "stop")
+    state = WorldSimulationService.get_state("ws_ctl")
+    assert state.status == "stopped"
+    assert state.paused is False
+
+
+def test_control_interview_requires_prompt_and_character(world_root):
+    _make_state(world_root)
+    with pytest.raises(ValueError, match="必须提供 prompt"):
+        WorldSimulationService.control_simulation(
+            "p1", "ws_ctl", "interview", character_name="卡拉"
+        )
+    with pytest.raises(ValueError, match="必须提供 character_name"):
+        WorldSimulationService.control_simulation(
+            "p1", "ws_ctl", "interview", prompt="你在哪？"
+        )
+
+
+def test_control_interview_reads_response(world_root):
+    """interview：模拟端在后台写入响应后，control 应读到并返回结果"""
+    import threading
+    import time as _t
+    _make_state(world_root)
+    sim_dir = WorldSimulationService._sim_dir("p1", "ws_ctl")
+    os.makedirs(os.path.join(sim_dir, "ipc_responses"), exist_ok=True)
+
+    # 后台线程：检测到命令文件后写入对应响应（模拟子进程行为）
+    def simulate_subprocess():
+        cmd_dir = os.path.join(sim_dir, "ipc_commands")
+        for _ in range(200):
+            files = [f for f in os.listdir(cmd_dir) if f.endswith(".json")] if os.path.isdir(cmd_dir) else []
+            if not files:
+                _t.sleep(0.02)
+                continue
+            cid = files[0].replace(".json", "")
+            resp = {
+                "command_id": cid,
+                "status": "completed",
+                "result": {"character_name": "卡拉", "answer": "我在集市。", "prompt": "你在哪？"},
+                "error": None,
+                "timestamp": "",
+            }
+            with open(os.path.join(sim_dir, "ipc_responses", f"{cid}.json"), 'w', encoding='utf-8') as f:
+                json.dump(resp, f, ensure_ascii=False, indent=2)
+            return  # 只处理一条命令
+
+    thread = threading.Thread(target=simulate_subprocess, daemon=True)
+    thread.start()
+    out = WorldSimulationService.control_simulation(
+        "p1", "ws_ctl", "interview", character_name="卡拉", prompt="你在哪？",
+        timeout=5.0, poll_interval=0.05,
+    )
+    thread.join(timeout=6)
+    assert out["status"] == "completed"
+    assert out["result"]["answer"] == "我在集市。"
+
+
+def test_control_interview_timeout(world_root):
+    """interview：无响应时应抛超时"""
+    _make_state(world_root)
+    with pytest.raises(TimeoutError):
+        WorldSimulationService.control_simulation(
+            "p1", "ws_ctl", "interview",
+            character_name="卡拉", prompt="你在哪？",
+            timeout=0.2, poll_interval=0.05,
+        )

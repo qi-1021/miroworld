@@ -3,6 +3,8 @@
 import json
 import os
 import sys
+import asyncio
+import uuid
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -10,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from scripts.run_world_simulation import (
     WorldEnv,
     WorldEvent,
+    WorldIPCHandler,
     parse_action,
 )
 
@@ -220,3 +223,169 @@ def test_event_to_text_format():
     text = e.to_text()
     assert "卡拉" in text
     assert "城门" in text
+
+
+# ---------------------------------------------------------------- IPC 控制
+
+def _write_cmd(tmp_path, command_type, **args):
+    """写入一条命令文件并返回 command_id / 完整命令"""
+    env = make_env()
+    sim = str(tmp_path)
+    handler = WorldIPCHandler(sim)
+    command_id = str(uuid.uuid4())
+    cmd = {
+        "command_id": command_id,
+        "command_type": command_type,
+        "args": args,
+        "timestamp": "",
+    }
+    with open(os.path.join(handler.commands_dir, f"{command_id}.json"), 'w', encoding='utf-8') as f:
+        json.dump(cmd, f, ensure_ascii=False, indent=2)
+    return env, handler, command_id
+
+
+async def _fake_llm(text):
+    return "前往城门"
+
+
+def test_ipc_handler_poll_and_respond(tmp_path):
+    """轮询到命令后 send_response 会写入响应并删除命令文件"""
+    _, handler, command_id = _write_cmd(str(tmp_path), "stop")
+    cmd = handler.poll_command()
+    assert cmd is not None
+    assert cmd["command_type"] == "stop"
+    handler.send_response(command_id, "completed", result={"stopped": True})
+    resp_file = os.path.join(handler.responses_dir, f"{command_id}.json")
+    assert os.path.exists(resp_file)
+    with open(resp_file, 'r', encoding='utf-8') as f:
+        resp = json.load(f)
+    assert resp["status"] == "completed"
+    assert resp["result"]["stopped"] is True
+    # 命令文件已被删除，再次轮询无命令
+    assert not os.path.exists(os.path.join(handler.commands_dir, f"{command_id}.json"))
+    assert handler.poll_command() is None
+
+
+def test_ipc_handler_update_status(tmp_path):
+    """update_status 写入 env_status.json 且带 paused 标记"""
+    handler = WorldIPCHandler(str(tmp_path))
+    handler.paused = True
+    handler.update_status("paused")
+    with open(os.path.join(str(tmp_path), "env_status.json"), 'r', encoding='utf-8') as f:
+        status = json.load(f)
+    assert status["status"] == "paused"
+    assert status["paused"] is True
+
+
+def test_process_ipc_pause_and_resume(tmp_path):
+    """pause 命令设为暂停；resume 恢复"""
+    env = make_env()
+    env.attach_ipc(str(tmp_path))
+    _ = _write_cmd(str(tmp_path), "pause")
+    stop = asyncio.run(env._process_ipc(_fake_llm))
+    assert stop is False
+    assert env.ipc.paused is True
+    # resume
+    _ = _write_cmd(str(tmp_path), "resume")
+    stop = asyncio.run(env._process_ipc(_fake_llm))
+    assert stop is False
+    assert env.ipc.paused is False
+
+
+def test_process_ipc_stop(tmp_path):
+    """stop 命令返回终止信号 True"""
+    env, _, _ = _write_cmd(str(tmp_path), "stop")
+    env.attach_ipc(str(tmp_path))
+    stop = asyncio.run(env._process_ipc(_fake_llm))
+    assert stop is True
+    with open(os.path.join(str(tmp_path), "env_status.json"), 'r', encoding='utf-8') as f:
+        status = json.load(f)
+    assert status["status"] == "stopped"
+
+
+def test_process_ipc_interview_by_name(tmp_path):
+    """interview 命令：按角色名匹配，用 LLM 回答并写响应"""
+    env, _, command_id = _write_cmd(
+        str(tmp_path), "interview", character_name="卡拉", prompt="你在哪里？"
+    )
+    env.attach_ipc(str(tmp_path))
+    stop = asyncio.run(env._process_ipc(_fake_llm))
+    assert stop is False
+    resp_file = os.path.join(env.ipc.responses_dir, f"{command_id}.json")
+    assert os.path.exists(resp_file)
+    with open(resp_file, 'r', encoding='utf-8') as f:
+        resp = json.load(f)
+    assert resp["status"] == "completed"
+    assert resp["result"]["character_name"] == "卡拉"
+    assert resp["result"]["character_id"] == "kara"
+    assert "城门" in resp["result"]["answer"]  # 假 LLM 返回"前往城门"
+
+
+def test_process_ipc_interview_by_id_and_missing(tmp_path):
+    """interview：按 id 匹配可行；角色不存在返回 failed"""
+    env, _, command_id = _write_cmd(str(tmp_path), "interview", character_name="kara", prompt="？")
+    env.attach_ipc(str(tmp_path))
+    asyncio.run(env._process_ipc(_fake_llm))
+    with open(os.path.join(env.ipc.responses_dir, f"{command_id}.json"), 'r', encoding='utf-8') as f:
+        resp = json.load(f)
+    assert resp["status"] == "completed"
+    assert resp["result"]["character_id"] == "kara"
+
+    # 不存在的角色
+    env2, _, cid2 = _write_cmd(str(tmp_path), "interview", character_name="不存在者", prompt="？")
+    env2.attach_ipc(str(tmp_path))
+    asyncio.run(env2._process_ipc(_fake_llm))
+    with open(os.path.join(env2.ipc.responses_dir, f"{cid2}.json"), 'r', encoding='utf-8') as f:
+        resp2 = json.load(f)
+    assert resp2["status"] == "failed"
+    assert "未找到角色" in resp2["error"]
+
+
+def test_process_ipc_unknown_command(tmp_path):
+    """未知命令返回 failed 但不终止"""
+    env, _, command_id = _write_cmd(str(tmp_path), "jump")
+    env.attach_ipc(str(tmp_path))
+    stop = asyncio.run(env._process_ipc(_fake_llm))
+    assert stop is False
+    with open(os.path.join(env.ipc.responses_dir, f"{command_id}.json"), 'r', encoding='utf-8') as f:
+        resp = json.load(f)
+    assert resp["status"] == "failed"
+
+
+def test_run_loop_stops_on_stop_command(tmp_path):
+    """运行前写入 stop 命令 → 主循环立即终止，无事件"""
+    env, _, _ = _write_cmd(str(tmp_path), "stop")
+    env.attach_ipc(str(tmp_path))
+    events = asyncio.run(env.run(_fake_llm))
+    assert events == []
+    assert env.current_step == 0
+    with open(os.path.join(str(tmp_path), "env_status.json"), 'r', encoding='utf-8') as f:
+        status = json.load(f)
+    assert status["status"] == "stopped"
+
+
+def test_wait_while_paused_resumes(tmp_path):
+    """暂停状态下写入 resume 命令 → _wait_while_paused 返回 False（不终止）"""
+    env, _, _ = _write_cmd(str(tmp_path), "resume")
+    env.attach_ipc(str(tmp_path))
+    env.ipc.paused = True  # 模拟已处于暂停
+    result = asyncio.run(env._wait_while_paused(_fake_llm))
+    assert result is False
+    assert env.ipc.paused is False
+
+
+def test_wait_while_paused_stops(tmp_path):
+    """暂停状态下写入 stop 命令 → _wait_while_paused 返回 True（终止）"""
+    env, _, _ = _write_cmd(str(tmp_path), "stop")
+    env.attach_ipc(str(tmp_path))
+    env.ipc.paused = True
+    result = asyncio.run(env._wait_while_paused(_fake_llm))
+    assert result is True
+
+
+def test_attach_ipc_creates_directories(tmp_path):
+    """attach_ipc 会创建命令/响应目录"""
+    env = make_env()
+    env.attach_ipc(str(tmp_path))
+    assert os.path.isdir(os.path.join(str(tmp_path), "ipc_commands"))
+    assert os.path.isdir(os.path.join(str(tmp_path), "ipc_responses"))

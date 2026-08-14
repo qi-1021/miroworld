@@ -52,6 +52,19 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 
+# ---------------------------------------------------------------- IPC 常量
+
+# 命令类型（与后端 WorldSimulationService 保持一致）
+CMD_PAUSE = "pause"          # 暂停模拟
+CMD_RESUME = "resume"        # 恢复模拟
+CMD_STOP = "stop"            # 停止模拟
+CMD_INTERVIEW = "interview"  # 采访指定角色
+
+# IPC 目录名（纯文件系统，供 .venv-simulation 无 Flask 环境使用）
+IPC_COMMANDS_DIR = "ipc_commands"
+IPC_RESPONSES_DIR = "ipc_responses"
+ENV_STATUS_FILE = "env_status.json"
+
 # ---------------------------------------------------------------- 数据模型
 
 @dataclass
@@ -201,6 +214,133 @@ class WorldEnv:
         self.events: List[WorldEvent] = []
         self.history: List[str] = []
 
+        # IPC 控制（暂停/停止/采访），无则默认为 None
+        self.ipc: Optional["WorldIPCHandler"] = None
+
+    def attach_ipc(self, simulation_dir: str):
+        """绑定 IPC 处理器（命令目录位于 simulation_dir 下）"""
+        self.ipc = WorldIPCHandler(simulation_dir)
+
+    # ---------- IPC ----------
+
+    async def _process_ipc(self, llm_call) -> Optional[bool]:
+        """
+        处理一条 IPC 命令。返回控制信号：
+            None  -> 无命令，继续执行
+            True  -> 应终止主循环（stop）
+            False -> 不应终止，继续（pause/resume/interview 已处理）
+        若未绑定 IPC，直接返回 None。
+        """
+        if not self.ipc:
+            return None
+        cmd = self.ipc.poll_command()
+        if cmd is None:
+            return None
+
+        command_id = cmd.get("command_id", "")
+        ctype = cmd.get("command_type", "")
+        args = cmd.get("args", {}) or {}
+
+        if ctype == CMD_PAUSE:
+            self.ipc.paused = True
+            self.ipc.update_status("paused")
+            # 返回 False：继续进行暂停循环之外的处理（不终止）
+            self.ipc.send_response(
+                command_id, "completed", result={"paused": True}
+            )
+            print("  ⏸ 收到暂停命令，模拟已暂停")
+            return False
+
+        if ctype == CMD_RESUME:
+            self.ipc.paused = False
+            self.ipc.update_status("running")
+            self.ipc.send_response(
+                command_id, "completed", result={"paused": False}
+            )
+            print("  ▶ 收到恢复命令，模拟继续")
+            return False
+
+        if ctype == CMD_STOP:
+            self.ipc.update_status("stopped")
+            self.ipc.send_response(
+                command_id, "completed", result={"stopped": True}
+            )
+            print("  ⏹ 收到停止命令，模拟即将终止")
+            return True
+
+        if ctype == CMD_INTERVIEW:
+            await self._handle_interview(command_id, args, llm_call)
+            return False
+
+        # 未知命令：响应错误但不中断
+        self.ipc.send_response(command_id, "failed", error=f"未知命令类型: {ctype}")
+        return False
+
+    async def _handle_interview(self, command_id: str, args: Dict[str, Any], llm_call):
+        """采访指定角色：用 LLM 以该角色的身份和当前感知回答采访问题"""
+        character_name = str(args.get("character_name", "")).strip()
+        prompt = str(args.get("prompt", "")).strip()
+        if not prompt:
+            self.ipc.send_response(command_id, "failed", error="采访问题不能为空")
+            return
+
+        # 按 id 或 name 匹配角色
+        char = None
+        if character_name:
+            char = self.characters.get(character_name)
+            if char is None:
+                char = next(
+                    (c for c in self.characters.values() if c.name == character_name),
+                    None,
+                )
+        if char is None:
+            self.ipc.send_response(
+                command_id, "failed", error=f"未找到角色: {character_name or '（未指定）'}"
+            )
+            return
+
+        observation = self.observe(char)
+        interview_prompt = (
+            f"你是{char.name}。{char.persona}\n"
+            f"你的身份知识：{'、'.join(char.knowledge) if char.knowledge else '无'}\n"
+            f"你当前的处境：\n{observation}\n\n采访者问：{prompt}\n"
+            "请以该角色的第一人称身份，用 1-3 句中文自然、真实地回答，不要解释格式。"
+        )
+        try:
+            answer = await llm_call(interview_prompt)
+        except Exception as e:
+            self.ipc.send_response(command_id, "failed", error=f"采访 LLM 调用失败: {e}")
+            print(f"  🎙 角色 {char.name} 采访失败: {e}")
+            return
+
+        self.ipc.send_response(
+            command_id,
+            "completed",
+            result={
+                "character_id": char.id,
+                "character_name": char.name,
+                "prompt": prompt,
+                "answer": answer.strip(),
+            },
+        )
+        print(f"  🎙 角色 {char.name} 接受了采访")
+
+    async def _wait_while_paused(self, llm_call):
+        """
+        若处于暂停状态，阻塞等待恢复/停止；暂停期间仍可响应采访命令。
+        返回 True 表示收到停止命令需终止循环。
+        """
+        while self.ipc and self.ipc.paused:
+            cmd = self.ipc.poll_command()
+            if cmd is None:
+                await asyncio.sleep(0.5)
+                continue
+            # 响应恢复/停止/采访
+            stop = await self._process_ipc(llm_call)
+            if stop:
+                return True
+        return False
+
     # ---------- 时钟 ----------
 
     def advance_clock(self):
@@ -316,7 +456,22 @@ class WorldEnv:
 
     async def run(self, llm_call) -> List[WorldEvent]:
         """运行完整模拟循环。llm_call(text) -> str 是异步 LLM 调用。"""
+        # 若绑定了 IPC，标记为运行状态
+        if self.ipc:
+            self.ipc.update_status("running")
+
+        _stopped = False
         for step in range(1, self.total_steps + 1):
+            # 每步开始前处理 IPC 命令
+            if await self._process_ipc(llm_call):
+                _stopped = True
+                break
+            # 若处于暂停状态，阻塞等待恢复/停止
+            if self.ipc and self.ipc.paused:
+                if await self._wait_while_paused(llm_call):
+                    _stopped = True
+                    break
+
             self.current_step = step
             self.advance_clock()
             print(f"\n{'='*56}\n第 {step} 步 · {self.time_str()}\n{'='*56}")
@@ -324,6 +479,14 @@ class WorldEnv:
             for char in self.characters.values():
                 if not char.active:
                     continue
+                # 每个角色决策前处理 IPC 命令（暂停/停止可即时生效，采访即时响应）
+                if await self._process_ipc(llm_call):
+                    _stopped = True
+                    break
+                if self.ipc and self.ipc.paused:
+                    if await self._wait_while_paused(llm_call):
+                        _stopped = True
+                        break
                 # 1. 感知
                 observation = self.observe(char)
                 # 2. 决策（LLM）
@@ -373,8 +536,93 @@ class WorldEnv:
                 if not approved:
                     print(f"    规则: {reason}")
                 print(f"    结果: {result[:60]}")
+            if _stopped:
+                break
+
+        # 模拟结束时若仍绑定 IPC，更新状态文件
+        if self.ipc:
+            self.ipc.update_status("stopped")
 
         return self.events
+
+
+# ---------------------------------------------------------------- IPC 处理器
+
+class WorldIPCHandler:
+    """
+    世界模拟 IPC 处理器（纯文件系统，供 .venv-simulation 无 Flask 环境使用）
+
+    与后端 WorldSimulationService 通过命令/响应目录交互：
+        - 命令目录：<sim_dir>/ipc_commands/<command_id>.json
+        - 响应目录：<sim_dir>/ipc_responses/<command_id>.json
+        - 环境状态：<sim_dir>/env_status.json
+    支持命令：pause / resume / stop / interview
+    """
+
+    def __init__(self, simulation_dir: str):
+        self.simulation_dir = simulation_dir
+        self.commands_dir = os.path.join(simulation_dir, IPC_COMMANDS_DIR)
+        self.responses_dir = os.path.join(simulation_dir, IPC_RESPONSES_DIR)
+        self.status_file = os.path.join(simulation_dir, ENV_STATUS_FILE)
+
+        # 确保目录存在
+        os.makedirs(self.commands_dir, exist_ok=True)
+        os.makedirs(self.responses_dir, exist_ok=True)
+
+        self.paused = False
+
+    def update_status(self, status: str):
+        """更新环境状态文件"""
+        with open(self.status_file, 'w', encoding='utf-8') as f:
+            json.dump({
+                "status": status,
+                "paused": self.paused,
+                "timestamp": datetime.now().isoformat(),
+            }, f, ensure_ascii=False, indent=2)
+
+    def poll_command(self) -> Optional[Dict[str, Any]]:
+        """轮询获取最早的待处理命令（按修改时间排序）"""
+        if not os.path.isdir(self.commands_dir):
+            return None
+        command_files = []
+        for filename in os.listdir(self.commands_dir):
+            if filename.endswith('.json'):
+                filepath = os.path.join(self.commands_dir, filename)
+                try:
+                    command_files.append((filepath, os.path.getmtime(filepath)))
+                except OSError:
+                    continue
+        command_files.sort(key=lambda x: x[1])
+        for filepath, _ in command_files:
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                continue
+        return None
+
+    def send_response(
+        self,
+        command_id: str,
+        status: str,
+        result: Dict[str, Any] = None,
+        error: str = None,
+    ):
+        """发送响应并删除命令文件"""
+        response = {
+            "command_id": command_id,
+            "status": status,
+            "result": result,
+            "error": error,
+            "timestamp": datetime.now().isoformat(),
+        }
+        response_file = os.path.join(self.responses_dir, f"{command_id}.json")
+        with open(response_file, 'w', encoding='utf-8') as f:
+            json.dump(response, f, ensure_ascii=False, indent=2)
+        try:
+            os.remove(os.path.join(self.commands_dir, f"{command_id}.json"))
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------- LLM 调用
@@ -425,6 +673,10 @@ def main():
     parser = argparse.ArgumentParser(description="世界模拟运行器")
     parser.add_argument("--config", required=True, help="世界配置文件路径")
     parser.add_argument("--out", default="", help="事件输出 JSON 路径（默认打印）")
+    parser.add_argument(
+        "--ipc-dir", default="",
+        help="IPC 目录（后端创建的模拟目录，用于 pause/resume/stop/interview；缺省时若配置所在目录已含 ipc_commands 则自动启用）",
+    )
     args = parser.parse_args()
 
     with open(args.config, "r", encoding="utf-8") as f:
@@ -433,11 +685,19 @@ def main():
     env = WorldEnv(config)
     llm_call = create_llm_caller(config)
 
+    # 启用 IPC 控制：显式传入 --ipc-dir，或配置所在目录已被后端创建 ipc_commands
+    if args.ipc_dir:
+        env.attach_ipc(args.ipc_dir)
+    elif os.path.isdir(os.path.join(os.path.dirname(os.path.abspath(args.config)), "ipc_commands")):
+        env.attach_ipc(os.path.dirname(os.path.abspath(args.config)))
+
     print(f"🌍 世界：{env.world_name}")
     print(f"   地点：{', '.join(l.name for l in env.locations.values())}")
     print(f"   角色：{', '.join(c.name for c in env.characters.values())}")
     print(f"   规则：{'; '.join(r.description for r in env.rules)}")
     print(f"   时钟：每步 {env.time_step_minutes} 分钟，共 {env.total_steps} 步")
+    if env.ipc:
+        print("   控制：IPC 已启用（pause/resume/stop/interview）")
 
     events = asyncio.run(env.run(llm_call))
 
