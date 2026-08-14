@@ -314,6 +314,65 @@ def update_conflict_status(project_id: str, conflict_id: str):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# ---------------------------------------------------------------- 世界模拟（独立模式）
+
+@world_bp.route('/<project_id>/simulate', methods=['POST'])
+def start_world_simulation(project_id: str):
+    """
+    启动世界模拟（独立模式，与社交模拟无关）
+
+    请求（JSON）：
+        {
+            "total_steps": 6,          // 可选，模拟步数
+            "time_step_minutes": 30    // 可选，每步模拟分钟数
+        }
+    """
+    try:
+        from ..services.world_simulation import WorldSimulationService
+
+        data = request.get_json(silent=True) or {}
+        total_steps = int(data.get('total_steps', 6))
+        time_step_minutes = int(data.get('time_step_minutes', 30))
+
+        state = WorldSimulationService.start_simulation(
+            project_id=project_id,
+            total_steps=total_steps,
+            time_step_minutes=time_step_minutes,
+        )
+        return jsonify({"success": True, "simulation": state.to_dict()})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"启动世界模拟失败: {e}")
+        return jsonify({"success": False, "error": f"启动失败: {e}"}), 500
+
+
+@world_bp.route('/<project_id>/simulations', methods=['GET'])
+def list_world_simulations(project_id: str):
+    """列出项目的世界模拟记录"""
+    try:
+        from ..services.world_simulation import WorldSimulationService
+        sims = WorldSimulationService.list_simulations(project_id)
+        return jsonify({"success": True, "simulations": sims})
+    except Exception as e:
+        logger.error(f"列出世界模拟失败: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@world_bp.route('/<project_id>/simulation/<simulation_id>', methods=['GET'])
+def get_world_simulation(project_id: str, simulation_id: str):
+    """查询单个世界模拟的状态与结果"""
+    try:
+        from ..services.world_simulation import WorldSimulationService
+        state = WorldSimulationService.get_state(simulation_id)
+        if state is None or state.project_id != project_id:
+            return jsonify({"success": False, "error": "模拟不存在"}), 404
+        return jsonify({"success": True, "simulation": state.to_dict()})
+    except Exception as e:
+        logger.error(f"查询世界模拟失败: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # ---------------------------------------------------------------- 删除
 
 @world_bp.route('/<project_id>', methods=['DELETE'])

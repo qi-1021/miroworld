@@ -105,3 +105,38 @@ export function deleteWorldData(projectId) {
     method: 'delete'
   })
 }
+
+// ==================== 世界模拟（独立模式） ====================
+
+/**
+ * 启动世界模拟
+ * @param {String} projectId
+ * @param {Object} data - { total_steps?, time_step_minutes? }
+ */
+export function startWorldSimulation(projectId, data = {}) {
+  return service({
+    url: `/api/world/${projectId}/simulate`,
+    method: 'post',
+    data
+  })
+}
+
+/**
+ * 列出项目的世界模拟记录
+ */
+export function listWorldSimulations(projectId) {
+  return service({
+    url: `/api/world/${projectId}/simulations`,
+    method: 'get'
+  })
+}
+
+/**
+ * 查询单个世界模拟的状态与结果
+ */
+export function getWorldSimulation(projectId, simulationId) {
+  return service({
+    url: `/api/world/${projectId}/simulation/${simulationId}`,
+    method: 'get'
+  })
+}

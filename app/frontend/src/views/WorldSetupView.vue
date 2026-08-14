@@ -230,11 +230,69 @@
         </div>
       </div>
 
-      <!-- 设定检索 -->
+      <!-- 世界模拟（独立模式） -->
       <div v-if="stats" class="step-card">
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">03</span>
+            <span class="step-title">世界模拟</span>
+          </div>
+          <div class="step-status">
+            <span v-if="simStatus === 'running'" class="badge processing">模拟中</span>
+            <span v-else-if="simStatus === 'completed'" class="badge success">已完成</span>
+            <span v-else-if="simStatus === 'failed'" class="badge processing">失败</span>
+            <span v-else class="badge hint">独立模式 · 非社交平台</span>
+          </div>
+        </div>
+
+        <p class="description">
+          从设定库自动提取角色/地点/规则，在独立世界中按时间步运行。与社交媒体模拟无关。
+        </p>
+
+        <div class="sim-controls">
+          <div class="sim-field">
+            <label class="sim-label">模拟步数</label>
+            <input v-model.number="simSteps" type="number" min="1" max="30" class="sim-input" />
+          </div>
+          <div class="sim-field">
+            <label class="sim-label">每步分钟数</label>
+            <input v-model.number="simStepMin" type="number" min="1" max="1440" class="sim-input" />
+          </div>
+          <button class="action-btn sim-start" :disabled="simStarting || simStatus === 'running'" @click="handleStartSim">
+            <span v-if="simStarting" class="spinner-sm"></span>
+            {{ simStarting ? '启动中...' : simStatus === 'running' ? '模拟运行中...' : '启动世界模拟' }}
+          </button>
+        </div>
+
+        <div v-if="simMsg" class="msg-line" :class="{ error: simMsgError }">{{ simMsg }}</div>
+
+        <!-- 事件流 -->
+        <div v-if="simEvents.length" class="sim-events">
+          <div class="sim-events-title">事件流</div>
+          <div v-for="(e, i) in simEvents" :key="i" class="sim-event">
+            <span class="sim-event-time">{{ e.time }}</span>
+            <span class="sim-event-who">{{ e.character_name }}</span>
+            <span class="sim-event-where">{{ e.location }}</span>
+            <span class="sim-event-what">{{ e.action_desc }}</span>
+            <span class="sim-event-result">{{ e.result }}</span>
+          </div>
+        </div>
+
+        <div v-if="simHistory.length" class="sim-history">
+          <div class="sim-history-title">历史模拟记录</div>
+          <div v-for="(h, i) in simHistory" :key="i" class="sim-history-item">
+            <span class="sim-history-time">{{ formatTime(h.created_at) }}</span>
+            <span class="sim-history-status" :class="h.status">{{ statusLabel(h.status) }}</span>
+            <span class="sim-history-count">{{ (h.result || {}).event_count || 0 }} 事件</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 设定检索 -->
+      <div v-if="stats" class="step-card">
+        <div class="card-header">
+          <div class="step-info">
+            <span class="step-num">04</span>
             <span class="step-title">设定检索</span>
           </div>
           <div class="step-status">
@@ -271,11 +329,15 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   saveWorldInput,
+  saveWorldInputMultipart,
   getWorldSettings,
   detectWorldConflicts,
   getWorldConflicts,
   updateConflictStatus,
-  searchWorld
+  searchWorld,
+  startWorldSimulation,
+  listWorldSimulations,
+  getWorldSimulation
 } from '../api/world'
 import { getTaskStatus } from '../api/graph'
 
@@ -302,6 +364,18 @@ const bgDragging = ref(false)
 const stDragging = ref(false)
 const bgFileInput = ref(null)
 const stFileInput = ref(null)
+
+// 世界模拟状态
+const simSteps = ref(6)
+const simStepMin = ref(30)
+const simStarting = ref(false)
+const simStatus = ref('idle')
+const simMsg = ref('')
+const simMsgError = ref(false)
+const simEvents = ref([])
+const simHistory = ref([])
+let simPollTimer = null
+let simPollingId = ''
 
 const hasAnyInput = computed(() =>
   background.value.trim() || story.value.trim() || bgFiles.value.length || stFiles.value.length
@@ -468,7 +542,80 @@ async function handleSearch() {
   }
 }
 
-onMounted(loadAll)
+// ---------------- 世界模拟 ----------------
+
+async function loadSimHistory() {
+  try {
+    const res = await listWorldSimulations(projectId)
+    simHistory.value = res.simulations || []
+    // 若最新一条正在运行，继续轮询
+    const latest = simHistory.value[0]
+    if (latest && (latest.status === 'preparing' || latest.status === 'running')) {
+      simStatus.value = 'running'
+      simPollingId = latest.simulation_id
+      startSimPolling(latest.simulation_id)
+    }
+  } catch (e) {
+    console.error('加载模拟历史失败', e)
+  }
+}
+
+function startSimPolling(simulationId) {
+  if (simPollTimer) clearInterval(simPollTimer)
+  simPollTimer = setInterval(async () => {
+    try {
+      const res = await getWorldSimulation(projectId, simulationId)
+      const sim = res.simulation
+      simStatus.value = sim.status
+      if (sim.status === 'completed') {
+        clearInterval(simPollTimer)
+        simPollTimer = null
+        simEvents.value = (sim.result || {}).events || []
+        simMsg.value = `模拟完成：${(sim.result || {}).event_count || 0} 个事件`
+        simMsgError.value = false
+        loadSimHistory()
+      } else if (sim.status === 'failed') {
+        clearInterval(simPollTimer)
+        simPollTimer = null
+        simMsg.value = `模拟失败：${sim.error || '未知错误'}`
+        simMsgError.value = true
+        loadSimHistory()
+      }
+    } catch (e) {
+      console.error('轮询模拟状态失败', e)
+    }
+  }, 5000)
+}
+
+async function handleStartSim() {
+  if (simStarting.value || simStatus.value === 'running') return
+  simStarting.value = true
+  simMsg.value = ''
+  simMsgError.value = false
+  try {
+    const res = await startWorldSimulation(projectId, {
+      total_steps: simSteps.value || 6,
+      time_step_minutes: simStepMin.value || 30
+    })
+    const sim = res.simulation
+    simStatus.value = 'running'
+    simMsg.value = `模拟已启动（${sim.simulation_id}），运行中...`
+    simEvents.value = []
+    simPollingId = sim.simulation_id
+    startSimPolling(sim.simulation_id)
+  } catch (e) {
+    simMsg.value = e.message || '启动失败'
+    simMsgError.value = true
+    simStatus.value = 'idle'
+  } finally {
+    simStarting.value = false
+  }
+}
+
+onMounted(() => {
+  loadAll()
+  loadSimHistory()
+})
 </script>
 
 <style scoped>
@@ -723,6 +870,136 @@ onMounted(loadAll)
 }
 .file-remove:hover {
   color: #D32F2F;
+}
+
+/* 世界模拟 */
+.description {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+.sim-controls {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.sim-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sim-label {
+  font-size: 10.5px;
+  color: #999;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.sim-input {
+  width: 90px;
+  border: 1px solid #E0E0E0;
+  border-radius: 4px;
+  background: #FAFAFA;
+  color: #000;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  padding: 8px 10px;
+}
+.sim-input:focus {
+  outline: none;
+  border-color: #FF5722;
+  background: #FFF;
+}
+.sim-start {
+  flex: 1;
+  min-width: 160px;
+}
+.sim-events {
+  margin-top: 14px;
+  border: 1px solid #EAEAEA;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.sim-events-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 12px;
+  background: #F5F5F5;
+  border-bottom: 1px solid #EAEAEA;
+}
+.sim-event {
+  display: grid;
+  grid-template-columns: 74px 72px 90px 1fr;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #F0F0F0;
+  font-size: 12px;
+  align-items: start;
+}
+.sim-event:last-child {
+  border-bottom: none;
+}
+.sim-event-time {
+  color: #999;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+.sim-event-who {
+  font-weight: 600;
+  color: #000;
+}
+.sim-event-where {
+  color: #666;
+  font-size: 11px;
+}
+.sim-event-what {
+  color: #333;
+  line-height: 1.5;
+}
+.sim-history {
+  margin-top: 14px;
+}
+.sim-history-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+.sim-history-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid #F5F5F5;
+  font-size: 11.5px;
+}
+.sim-history-time {
+  color: #999;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+.sim-history-status {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.sim-history-status.completed { background: #E8F5E9; color: #2E7D32; }
+.sim-history-status.failed { background: #FFEBEE; color: #C62828; }
+.sim-history-status.running { background: #FFF3E0; color: #E65100; }
+.sim-history-status.preparing { background: #FFF3E0; color: #E65100; }
+.sim-history-status.created { background: #F5F5F5; color: #666; }
+.sim-history-count {
+  color: #666;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
 }
 
 /* 按钮行 */
