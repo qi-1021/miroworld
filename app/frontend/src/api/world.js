@@ -51,6 +51,8 @@ export function getWorldChunks(projectId, params = {}) {
 
 /**
  * 按需检索设定块
+ * @param {String} projectId
+ * @param {Object} data - { query, source?, limit?, semantic? }，semantic 为 true 时启用 bge-m3 语义向量检索
  */
 export function searchWorld(projectId, data) {
   return service({
@@ -137,6 +139,60 @@ export function listWorldSimulations(projectId) {
 export function getWorldSimulation(projectId, simulationId) {
   return service({
     url: `/api/world/${projectId}/simulation/${simulationId}`,
+    method: 'get'
+  })
+}
+
+/**
+ * 控制世界模拟（暂停/恢复/停止/采访）
+ * @param {String} projectId
+ * @param {String} simulationId
+ * @param {Object} data - { action: 'pause'|'resume'|'stop'|'interview', character_name?, prompt? }
+ */
+export function controlWorldSimulation(projectId, simulationId, data) {
+  return service({
+    url: `/api/world/${projectId}/simulation/${simulationId}/control`,
+    method: 'post',
+    data,
+    timeout: 90000 // 采访需等待子进程响应
+  })
+}
+
+/**
+ * 基于已有模拟做 what-if 分支推演
+ * @param {String} projectId
+ * @param {Object} data - { base_simulation_id, question, steps? }
+ */
+export function simulateWorldWhatIf(projectId, data) {
+  return service({
+    url: `/api/world/${projectId}/simulate/whatif`,
+    method: 'post',
+    data
+  })
+}
+
+/**
+ * 生成世界模拟报告（编年史/推演报告）
+ * @param {String} projectId
+ * @param {String} simulationId
+ */
+export function generateWorldReport(projectId, simulationId) {
+  return service({
+    url: `/api/world/${projectId}/report`,
+    method: 'post',
+    data: { simulation_id: simulationId },
+    timeout: 300000 // 报告生成可能较慢
+  })
+}
+
+/**
+ * 读取已生成的世界报告
+ * @param {String} projectId
+ * @param {String} simulationId
+ */
+export function getWorldReport(projectId, simulationId) {
+  return service({
+    url: `/api/world/${projectId}/report/${simulationId}`,
     method: 'get'
   })
 }

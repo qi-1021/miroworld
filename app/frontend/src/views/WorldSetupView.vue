@@ -278,12 +278,136 @@
           </div>
         </div>
 
+        <!-- 运行中控制（IPC） -->
+        <div v-if="simStatus === 'running' || simStatus === 'paused'" class="sim-ctl">
+          <div class="sim-ctl-title">运行控制</div>
+          <div class="sim-ctl-btns">
+            <button
+              class="mini-btn"
+              :disabled="simStatus === 'paused'"
+              @click="handleControl('pause')"
+            >暂停</button>
+            <button
+              class="mini-btn"
+              :disabled="simStatus !== 'paused'"
+              @click="handleControl('resume')"
+            >继续</button>
+            <button class="mini-btn danger" @click="handleControl('stop')">停止</button>
+          </div>
+          <div v-if="simCtlMsg" class="msg-line" :class="{ error: simCtlMsgError }">{{ simCtlMsg }}</div>
+        </div>
+
+        <!-- 角色采访 -->
+        <div v-if="characters.length" class="sim-interview">
+          <div class="sim-interview-title">角色采访</div>
+          <p class="sim-interview-hint">选择角色后输入采访问题，让世界中的角色直接回答。</p>
+          <div class="sim-char-list">
+            <button
+              v-for="c in characters"
+              :key="c"
+              class="mini-btn"
+              :class="{ active: interviewCharacter === c }"
+              @click="selectCharacter(c)"
+            >{{ c }}</button>
+          </div>
+          <div v-if="interviewCharacter" class="interview-box">
+            <div class="interview-char">采访对象：{{ interviewCharacter }}</div>
+            <textarea
+              v-model="interviewPrompt"
+              class="interview-input"
+              rows="2"
+              placeholder="输入你的采访问题，如：你对即将到来的战争怎么看？"
+            ></textarea>
+            <button
+              class="mini-btn active"
+              :disabled="interviewing || !interviewPrompt.trim()"
+              @click="handleInterview"
+            >
+              <span v-if="interviewing" class="spinner-xs"></span>
+              {{ interviewing ? '采访中...' : '发送采访' }}
+            </button>
+            <div v-if="interviewAnswer" class="interview-answer">
+              <div class="interview-answer-label">角色回答</div>
+              <div class="interview-answer-text">{{ interviewAnswer }}</div>
+            </div>
+            <div v-if="interviewMsgError" class="msg-line error">{{ interviewMsg }}</div>
+          </div>
+        </div>
+
+        <!-- 世界报告 -->
+        <div v-if="reportSimulationId" class="sim-report">
+          <div class="sim-report-head">
+            <div class="sim-report-title">
+              <span>世界编年史报告</span>
+              <span v-if="reportSimulationLabel" class="sim-report-sub">{{ reportSimulationLabel }}</span>
+            </div>
+            <button
+              class="mini-btn"
+              :disabled="reportGenerating"
+              @click="handleGenerateReport"
+            >
+              <span v-if="reportGenerating" class="spinner-xs"></span>
+              {{ reportGenerating ? '生成中...' : reportText ? '重新生成报告' : '生成世界报告' }}
+            </button>
+          </div>
+          <div v-if="reportText" class="report-body">
+            <div v-for="(block, bi) in reportBlocks" :key="bi" class="report-block">
+              <div v-if="block.type === 'h2'" class="report-h2">{{ block.text }}</div>
+              <div v-else-if="block.type === 'li'" class="report-li">· {{ block.text }}</div>
+              <div v-else class="report-p">{{ block.text }}</div>
+            </div>
+          </div>
+          <div v-else-if="reportEmptyNote" class="empty-note">{{ reportEmptyNote }}</div>
+        </div>
+
         <div v-if="simHistory.length" class="sim-history">
           <div class="sim-history-title">历史模拟记录</div>
           <div v-for="(h, i) in simHistory" :key="i" class="sim-history-item">
             <span class="sim-history-time">{{ formatTime(h.created_at) }}</span>
             <span class="sim-history-status" :class="h.status">{{ statusLabel(h.status) }}</span>
             <span class="sim-history-count">{{ (h.result || {}).event_count || 0 }} 事件</span>
+            <span v-if="(h.result || {}).meta && (h.result || {}).meta.whatif_question" class="sim-history-flag">推演</span>
+            <template v-if="h.status === 'completed' && !((h.result || {}).meta || {}).whatif_question">
+              <button class="mini-btn" :disabled="whatIfing === h.simulation_id" @click="startWhatIf(h)">
+                <span v-if="whatIfing === h.simulation_id" class="spinner-xs"></span>
+                推演
+              </button>
+              <button class="mini-btn ghost" @click="openChartRecord(h)">编年史</button>
+            </template>
+          </div>
+          <!-- 当前模拟的 what-if 推演对话框 -->
+          <div v-if="whatIfBaseId" class="whatif-box">
+            <div class="whatif-title">
+              基于「{{ whatIfBaseLabel }}」的假设推演
+            </div>
+            <input
+              v-model="whatIfQuestion"
+              class="whatif-input"
+              placeholder="输入假设前提，如：若魔法需要付出生命代价？"
+              @keyup.enter="confirmWhatIf"
+            />
+            <div class="whatif-btns">
+              <button class="mini-btn active" :disabled="whatIfStarting || !whatIfQuestion.trim()" @click="confirmWhatIf">
+                <span v-if="whatIfStarting" class="spinner-xs"></span>
+                {{ whatIfStarting ? '推演中...' : '开始推演' }}
+              </button>
+              <button class="mini-btn" @click="cancelWhatIf">取消</button>
+            </div>
+            <div v-if="whatIfMsgError" class="msg-line error">{{ whatIfMsg }}</div>
+          </div>
+          <!-- what-if 推演结果 -->
+          <div v-if="whatIfActive" class="whatif-result">
+            <div class="whatif-result-title">推演结果（{{ whatIfQuestionAsked }}）</div>
+            <div v-if="whatIfEvents.length" class="sim-events">
+              <div class="sim-events-title">推演事件流</div>
+              <div v-for="(e, i) in whatIfEvents" :key="i" class="sim-event">
+                <span class="sim-event-time">{{ e.time }}</span>
+                <span class="sim-event-who">{{ e.character_name }}</span>
+                <span class="sim-event-where">{{ e.location }}</span>
+                <span class="sim-event-what">{{ e.action_desc }}</span>
+                <span class="sim-event-result">{{ e.result }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -312,6 +436,12 @@
           </button>
         </div>
 
+        <label class="semantic-toggle">
+          <input v-model="searchSemantic" type="checkbox" class="semantic-check" />
+          <span class="semantic-mark"></span>
+          <span class="semantic-label">语义检索（bge-m3，按语义相关度召回）</span>
+        </label>
+
         <div v-if="searchResults.length" class="search-results">
           <div v-for="r in searchResults" :key="r.chunk_id" class="search-item">
             <span class="search-src" :class="r.source">{{ r.source === 'background' ? '背景' : '正文' }}</span>
@@ -337,7 +467,11 @@ import {
   searchWorld,
   startWorldSimulation,
   listWorldSimulations,
-  getWorldSimulation
+  getWorldSimulation,
+  controlWorldSimulation,
+  simulateWorldWhatIf,
+  generateWorldReport,
+  getWorldReport
 } from '../api/world'
 import { getTaskStatus } from '../api/graph'
 
@@ -377,10 +511,64 @@ const simHistory = ref([])
 let simPollTimer = null
 let simPollingId = ''
 
+// IPC 控制
+const simCtlMsg = ref('')
+const simCtlMsgError = ref(false)
+const characters = ref([])
+const interviewCharacter = ref('')
+const interviewPrompt = ref('')
+const interviewing = ref(false)
+const interviewAnswer = ref('')
+const interviewMsg = ref('')
+const interviewMsgError = ref(false)
+
+// 世界报告
+const reportSimulationId = ref('')
+const reportSimulationLabel = ref('')
+const reportText = ref('')
+const reportGenerating = ref(false)
+const reportEmptyNote = ref('')
+
+// what-if 推演
+const whatIfBaseId = ref('')
+const whatIfBaseLabel = ref('')
+const whatIfQuestion = ref('')
+const whatIfStarting = ref(false)
+const whatIfActive = ref(false)
+const whatIfQuestionAsked = ref('')
+const whatIfEvents = ref([])
+const whatIfMsg = ref('')
+const whatIfMsgError = ref(false)
+const whatIfing = ref('')
+
+// 语义检索
+const searchSemantic = ref(true)
+
 const hasAnyInput = computed(() =>
   background.value.trim() || story.value.trim() || bgFiles.value.length || stFiles.value.length
 )
 const canDetect = computed(() => stats.value?.has_background && stats.value?.has_story)
+
+// 简单 Markdown 渲染：## 标题、- 列表项、普通段落
+const reportBlocks = computed(() => {
+  const text = reportText.value || ''
+  if (!text.trim()) return []
+  const blocks = []
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trimEnd()
+    if (!line.trim()) continue
+    if (/^##\s+/.test(line)) {
+      blocks.push({ type: 'h2', text: line.replace(/^##\s+/, '') })
+    } else if (/^[-*]\s+/.test(line)) {
+      blocks.push({ type: 'li', text: line.replace(/^[-*]\s+/, '') })
+    } else if (/^#\s+/.test(line)) {
+      blocks.push({ type: 'h2', text: line.replace(/^#\s+/, '') })
+    } else {
+      blocks.push({ type: 'p', text: line })
+    }
+  }
+  return blocks
+})
 
 const TYPE_LABELS = {
   fact_contradiction: '事实矛盾',
@@ -533,7 +721,7 @@ async function handleSearch() {
   if (!q) return
   searching.value = true
   try {
-    const res = await searchWorld(projectId, { query: q, limit: 6 })
+    const res = await searchWorld(projectId, { query: q, limit: 6, semantic: searchSemantic.value })
     searchResults.value = res.results || []
   } catch (e) {
     console.error('检索失败', e)
@@ -550,13 +738,36 @@ async function loadSimHistory() {
     simHistory.value = res.simulations || []
     // 若最新一条正在运行，继续轮询
     const latest = simHistory.value[0]
-    if (latest && (latest.status === 'preparing' || latest.status === 'running')) {
-      simStatus.value = 'running'
+    if (latest && (latest.status === 'preparing' || latest.status === 'running' || latest.status === 'paused')) {
+      simStatus.value = latest.status
       simPollingId = latest.simulation_id
+      loadCharacters(latest.simulation_id)
       startSimPolling(latest.simulation_id)
+    } else if (latest && latest.status === 'completed') {
+      simStatus.value = 'completed'
+      simEvents.value = (latest.result || {}).events || []
+      loadCharacters(latest.simulation_id)
     }
   } catch (e) {
     console.error('加载模拟历史失败', e)
+  }
+}
+
+function extractCharacters(events) {
+  const set = new Set()
+  for (const e of events || []) {
+    if (e.character_name) set.add(e.character_name)
+  }
+  return Array.from(set)
+}
+
+async function loadCharacters(simulationId) {
+  try {
+    const res = await getWorldSimulation(projectId, simulationId)
+    const events = (res.simulation.result || {}).events || []
+    characters.value = extractCharacters(events)
+  } catch (e) {
+    console.error('加载角色列表失败', e)
   }
 }
 
@@ -571,14 +782,17 @@ function startSimPolling(simulationId) {
         clearInterval(simPollTimer)
         simPollTimer = null
         simEvents.value = (sim.result || {}).events || []
+        characters.value = extractCharacters(simEvents.value)
         simMsg.value = `模拟完成：${(sim.result || {}).event_count || 0} 个事件`
         simMsgError.value = false
+        // 完成后打开该模拟的报告（若有则直接显示）
+        openChartRecord(sim)
         loadSimHistory()
-      } else if (sim.status === 'failed') {
+      } else if (sim.status === 'failed' || sim.status === 'stopped') {
         clearInterval(simPollTimer)
         simPollTimer = null
-        simMsg.value = `模拟失败：${sim.error || '未知错误'}`
-        simMsgError.value = true
+        simMsg.value = sim.status === 'failed' ? `模拟失败：${sim.error || '未知错误'}` : '模拟已停止'
+        simMsgError.value = sim.status === 'failed'
         loadSimHistory()
       }
     } catch (e) {
@@ -592,6 +806,8 @@ async function handleStartSim() {
   simStarting.value = true
   simMsg.value = ''
   simMsgError.value = false
+  simCtlMsg.value = ''
+  simCtlMsgError.value = false
   try {
     const res = await startWorldSimulation(projectId, {
       total_steps: simSteps.value || 6,
@@ -601,6 +817,10 @@ async function handleStartSim() {
     simStatus.value = 'running'
     simMsg.value = `模拟已启动（${sim.simulation_id}），运行中...`
     simEvents.value = []
+    characters.value = []
+    reportSimulationId.value = ''
+    reportText.value = ''
+    reportEmptyNote.value = ''
     simPollingId = sim.simulation_id
     startSimPolling(sim.simulation_id)
   } catch (e) {
@@ -610,6 +830,181 @@ async function handleStartSim() {
   } finally {
     simStarting.value = false
   }
+}
+
+// ---------------- IPC 控制 ----------------
+
+async function handleControl(action) {
+  if (!simPollingId) return
+  simCtlMsg.value = ''
+  simCtlMsgError.value = false
+  try {
+    const res = await controlWorldSimulation(projectId, simPollingId, { action })
+    if (action === 'pause') {
+      simStatus.value = 'paused'
+      simCtlMsg.value = '已暂停模拟'
+    } else if (action === 'resume') {
+      simStatus.value = 'running'
+      simCtlMsg.value = '已恢复模拟'
+    } else if (action === 'stop') {
+      clearInterval(simPollTimer)
+      simPollTimer = null
+      simStatus.value = 'stopped'
+      simCtlMsg.value = `已发出停止指令（命令 ${res.command_id}）`
+      // 刷新历史
+      setTimeout(() => loadSimHistory(), 1500)
+    }
+  } catch (e) {
+    simCtlMsg.value = e.message || '控制失败'
+    simCtlMsgError.value = true
+  }
+}
+
+function selectCharacter(name) {
+  interviewCharacter.value = name
+  interviewAnswer.value = ''
+  interviewMsg.value = ''
+  interviewMsgError.value = false
+}
+
+async function handleInterview() {
+  if (!interviewCharacter.value || !interviewPrompt.value.trim()) return
+  if (!simPollingId) return
+  interviewing.value = true
+  interviewAnswer.value = ''
+  interviewMsg.value = ''
+  interviewMsgError.value = false
+  try {
+    const res = await controlWorldSimulation(projectId, simPollingId, {
+      action: 'interview',
+      character_name: interviewCharacter.value,
+      prompt: interviewPrompt.value.trim()
+    })
+    const result = res.result || {}
+    // 采访响应可能是字符串或结构化对象
+    interviewAnswer.value = typeof result === 'string'
+      ? result
+      : (result.answer || result.text || result.response || result.content || JSON.stringify(result, null, 2))
+  } catch (e) {
+    interviewMsg.value = e.message || '采访失败'
+    interviewMsgError.value = true
+  } finally {
+    interviewing.value = false
+  }
+}
+
+// ---------------- 世界报告 ----------------
+
+async function openChartRecord(sim) {
+  // sim 可能是 dict 或 {simulation_id, created_at}
+  const simId = typeof sim === 'object' ? (sim.simulation_id || sim['simulation_id']) : sim
+  if (!simId) return
+  reportSimulationId.value = simId
+  reportText.value = ''
+  reportEmptyNote.value = ''
+  const time = (sim.created_at || '').replace('T', ' ').slice(0, 16)
+  reportSimulationLabel.value = time ? `（${time}）` : ''
+  // 先尝试读取已生成报告
+  try {
+    const res = await getWorldReport(projectId, simId)
+    if (res.report && res.report.text) {
+      reportText.value = res.report.text
+      return
+    }
+  } catch (e) {
+    // 报告不存在，保持生成按钮
+  }
+}
+
+async function handleGenerateReport() {
+  if (!reportSimulationId.value) return
+  reportGenerating.value = true
+  reportText.value = ''
+  reportEmptyNote.value = ''
+  try {
+    const res = await generateWorldReport(projectId, reportSimulationId.value)
+    if (res.report && res.report.text) {
+      reportText.value = res.report.text
+    } else {
+      reportEmptyNote.value = '报告生成完成，暂无文本内容'
+    }
+  } catch (e) {
+    reportEmptyNote.value = e.message || '报告生成失败'
+  } finally {
+    reportGenerating.value = false
+  }
+}
+
+// ---------------- what-if 推演 ----------------
+
+function startWhatIf(h) {
+  if (h.status !== 'completed') return
+  whatIfBaseId.value = h.simulation_id
+  whatIfBaseLabel.value = formatTime(h.created_at)
+  whatIfQuestion.value = ''
+  whatIfMsg.value = ''
+  whatIfMsgError.value = false
+  whatIfActive.value = false
+  whatIfEvents.value = []
+  whatIfQuestionAsked.value = ''
+}
+
+function cancelWhatIf() {
+  whatIfBaseId.value = ''
+  whatIfQuestion.value = ''
+}
+
+async function confirmWhatIf() {
+  const q = whatIfQuestion.value.trim()
+  if (!whatIfBaseId.value || !q) return
+  whatIfStarting.value = true
+  whatIfMsg.value = ''
+  whatIfMsgError.value = false
+  try {
+    const res = await simulateWorldWhatIf(projectId, {
+      base_simulation_id: whatIfBaseId.value,
+      question: q,
+      steps: 3
+    })
+    const sim = res.simulation
+    whatIfActive.value = true
+    whatIfQuestionAsked.value = q
+    whatIfEvents.value = (sim.result || {}).events || []
+    whatIfBaseId.value = ''
+    whatIfQuestion.value = ''
+    // 轮询该推演分支完成
+    pollWhatIf(sim.simulation_id, q)
+    // 刷新历史，把新推演记录加入
+    loadSimHistory()
+  } catch (e) {
+    whatIfMsg.value = e.message || '推演启动失败'
+    whatIfMsgError.value = true
+  } finally {
+    whatIfStarting.value = false
+  }
+}
+
+function pollWhatIf(simulationId, question) {
+  let tries = 0
+  const timer = setInterval(async () => {
+    tries++
+    try {
+      const r = await getWorldSimulation(projectId, simulationId)
+      const sim = r.simulation
+      if (sim.status === 'completed') {
+        clearInterval(timer)
+        whatIfEvents.value = (sim.result || {}).events || []
+        whatIfMsg.value = `推演完成：${(sim.result || {}).event_count || 0} 个事件`
+        whatIfMsgError.value = false
+      } else if (sim.status === 'failed' || tries > 120) {
+        clearInterval(timer)
+        whatIfMsg.value = sim.status === 'failed' ? `推演失败：${sim.error || '未知错误'}` : '推演超时'
+        whatIfMsgError.value = true
+      }
+    } catch (e) {
+      console.error('轮询推演状态失败', e)
+    }
+  }, 5000)
 }
 
 onMounted(() => {
@@ -1344,5 +1739,303 @@ onMounted(() => {
   color: #999;
   flex-shrink: 0;
   font-family: 'JetBrains Mono', monospace;
+}
+
+/* 语义检索开关 */
+.semantic-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.semantic-check {
+  display: none;
+}
+.semantic-mark {
+  width: 18px;
+  height: 18px;
+  border: 1px solid #CCC;
+  border-radius: 4px;
+  background: #FAFAFA;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #FFF;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.semantic-check:checked + .semantic-mark {
+  background: #000;
+  border-color: #000;
+}
+.semantic-check:checked + .semantic-mark::after {
+  content: "✓";
+}
+.semantic-label {
+  font-size: 12px;
+  color: #333;
+}
+
+/* 运行控制（IPC） */
+.sim-ctl {
+  margin-top: 14px;
+  border: 1px solid #EAEAEA;
+  border-radius: 4px;
+  padding: 10px 12px;
+  background: #FAFAFA;
+}
+.sim-ctl-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.sim-ctl-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 角色采访 */
+.sim-interview {
+  margin-top: 14px;
+  border: 1px solid #EAEAEA;
+  border-radius: 4px;
+  padding: 10px 12px;
+  background: #FAFAFA;
+}
+.sim-interview-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.sim-interview-hint {
+  font-size: 11px;
+  color: #666;
+  margin: 4px 0 10px;
+  line-height: 1.5;
+}
+.sim-char-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.interview-box {
+  border-top: 1px solid #EAEAEA;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.interview-char {
+  font-size: 12px;
+  font-weight: 600;
+  color: #000;
+}
+.interview-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #E0E0E0;
+  border-radius: 4px;
+  background: #FFF;
+  color: #000;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  resize: vertical;
+}
+.interview-input:focus {
+  outline: none;
+  border-color: #FF5722;
+}
+.interview-answer {
+  border-left: 3px solid #000;
+  background: #FFF;
+  border-radius: 0 4px 4px 0;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.interview-answer-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+.interview-answer-text {
+  color: #333;
+  white-space: pre-wrap;
+}
+
+/* 世界报告 */
+.sim-report {
+  margin-top: 14px;
+  border: 1px solid #EAEAEA;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.sim-report-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #F5F5F5;
+  border-bottom: 1px solid #EAEAEA;
+}
+.sim-report-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #333;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.sim-report-sub {
+  font-size: 10px;
+  color: #999;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.report-body {
+  padding: 12px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+.report-block {
+  margin-bottom: 8px;
+}
+.report-h2 {
+  font-size: 14px;
+  font-weight: 700;
+  color: #000;
+  margin: 14px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #F0F0F0;
+}
+.report-h2:first-child {
+  margin-top: 0;
+}
+.report-li {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #333;
+  padding-left: 4px;
+}
+.report-p {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #333;
+}
+
+/* 历史记录增强 */
+.sim-history-flag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #E8EAF6;
+  color: #3F51B5;
+}
+.sim-history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 按钮变体 */
+.mini-btn.danger {
+  background: #FFEBEE;
+  color: #C62828;
+  border-color: #FFCDD2;
+}
+.mini-btn.danger:hover:not(:disabled) {
+  border-color: #C62828;
+  background: #FFF;
+}
+.mini-btn.ghost {
+  background: #E8F5E9;
+  color: #2E7D32;
+  border-color: #C8E6C9;
+}
+.mini-btn.ghost:hover:not(:disabled) {
+  border-color: #2E7D32;
+  background: #FFF;
+}
+.spinner-xs {
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(0,0,0,0.2);
+  border-top-color: #FFF;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* what-if 推演 */
+.whatif-box {
+  margin-top: 10px;
+  border: 1px solid #E8EAF6;
+  border-radius: 4px;
+  padding: 12px;
+  background: #F5F7FF;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.whatif-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3F51B5;
+}
+.whatif-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #D0D7F4;
+  border-radius: 4px;
+  background: #FFF;
+  color: #000;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.6;
+  padding: 8px 10px;
+}
+.whatif-input:focus {
+  outline: none;
+  border-color: #3F51B5;
+}
+.whatif-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.whatif-result {
+  margin-top: 10px;
+  border: 1px solid #E8EAF6;
+  border-radius: 4px;
+  padding: 12px;
+  background: #F5F7FF;
+}
+.whatif-result-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3F51B5;
+  margin-bottom: 8px;
 }
 </style>
