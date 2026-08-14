@@ -65,14 +65,25 @@ check_dependencies() {
 start_neo4j() {
     log_info "启动 Neo4j..."
     
-    # Neo4j（JVM）无法在含中文等非 ASCII 字符的路径下运行
+    # Neo4j 的配置解析无法正确处理含中文等非 ASCII 字符的路径。
+    # 解决方案：创建 ASCII 软链别名（~/mirofish-portable -> 项目目录），
+    # 让 Neo4j 通过别名路径访问，数据物理位置仍在项目文件夹内。
+    NEO4J_ROOT="$PROJECT_ROOT"
     if printf '%s' "$PROJECT_ROOT" | LC_ALL=C grep -q '[^ -~]'; then
-        log_error "项目路径包含非 ASCII 字符：$PROJECT_ROOT"
-        log_error "Neo4j 无法在中文等非英文路径下运行（JVM 限制），请选择："
-        log_error "  1) 将整个项目移动到纯英文路径（推荐，如 /Volumes/Data/mirofish-portable）"
-        log_error "  2) 改用系统安装的 Neo4j：brew install neo4j 并启动后，再运行本脚本"
-        exit 1
+        if printf '%s' "$HOME" | LC_ALL=C grep -q '[^ -~]'; then
+            log_error "项目路径和用户主目录都包含非 ASCII 字符，无法创建 ASCII 别名"
+            log_error "请将项目移动到纯英文路径（如 /Volumes/Data/mirofish-portable）"
+            exit 1
+        fi
+        ln -sfn "$PROJECT_ROOT" "$HOME/mirofish-portable"
+        if [ ! -e "$HOME/mirofish-portable/scripts/start.sh" ]; then
+            log_error "创建 ASCII 别名失败，请将项目移动到纯英文路径"
+            exit 1
+        fi
+        NEO4J_ROOT="$HOME/mirofish-portable"
+        log_warn "项目路径包含非 ASCII 字符，已通过 ~/mirofish-portable 别名启动 Neo4j"
     fi
+    NEO4J_DIR="$NEO4J_ROOT/neo4j"
     
     # 检查 Neo4j 是否已经运行
     if lsof -Pi :7687 -sTCP:LISTEN -t >/dev/null 2>&1; then

@@ -27,10 +27,23 @@ scripts\start.bat         # Windows
 2. 根据模板生成运行时配置（数据/日志目录指向项目内的 `neo4j-data/`）
 3. 用 `NEO4J_CONF` 指向生成的配置并启动 Neo4j
 
+## ⚠️ 中文路径自动适配
+
+**Neo4j 的配置解析无法正确处理含中文等非 ASCII 字符的路径**（读取配置后中文会变成乱码，导致启动失败）。
+
+启动脚本已内置自动适配：当检测到项目路径含中文时，会自动创建 ASCII 软链别名
+`~/mirofish-portable -> 项目目录`，并让 Neo4j 通过别名路径运行。
+
+- **数据物理位置不变**：仍在项目文件夹内的 `neo4j/neo4j-data/`（通过别名访问）
+- **无需手动操作**：脚本自动创建、自动使用
+- **彻底解决**：`/Volumes/mac第三磁盘/...` 这类中文路径不再影响 Neo4j
+
 手动启动（调试用）：
 
 ```bash
-# 先生成配置
+# 先生成配置（中文路径时先创建别名）
+ln -sfn "$(pwd)" ~/mirofish-portable
+cd ~/mirofish-portable   # 通过别名进入
 mkdir -p neo4j/run neo4j/neo4j-data/data neo4j/neo4j-data/logs
 sed -e "s|__NEO4J_DATA_DIR__|$PWD/neo4j/neo4j-data/data|g" \
     -e "s|__NEO4J_LOG_DIR__|$PWD/neo4j/neo4j-data/logs|g" \
@@ -39,18 +52,6 @@ sed -e "s|__NEO4J_DATA_DIR__|$PWD/neo4j/neo4j-data/data|g" \
 # 再启动
 NEO4J_CONF="$PWD/neo4j/run" ./neo4j/neo4j-program/libexec/bin/neo4j console
 ```
-
-## ⚠️ 重要限制：路径不能含中文
-
-**Neo4j（JVM）无法在含中文等非 ASCII 字符的路径下运行**（访问 plugins/conf/logs 目录会报错）。因此：
-
-- 项目必须放在**纯英文路径**下，例如 `/Volumes/Data/mirofish-portable`
-- 当前位于 `/Volumes/mac第三磁盘/...`（含中文）时，启动脚本会给出明确提示并中止 Neo4j 启动
-
-两个解决方案：
-
-1. **将项目移动到纯英文路径**（推荐）——整个文件夹可整体移动，数据全部跟随。
-2. **改用系统安装的 Neo4j**：`brew install neo4j` 后启动（原 Homebrew 数据仍在 `/opt/homebrew/var/neo4j/data`，可继续使用），再运行启动脚本（脚本检测到 7687 端口已监听会跳过内置 Neo4j）。
 
 ## 🔧 配置说明
 
