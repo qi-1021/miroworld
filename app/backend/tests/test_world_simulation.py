@@ -389,3 +389,93 @@ def test_attach_ipc_creates_directories(tmp_path):
     env.attach_ipc(str(tmp_path))
     assert os.path.isdir(os.path.join(str(tmp_path), "ipc_commands"))
     assert os.path.isdir(os.path.join(str(tmp_path), "ipc_responses"))
+
+
+# ---------------------------------------------------------------- 角色视角过滤与知识边界
+
+def test_observe_hides_unknown_place_description():
+    """知识边界：不在 knowledge 中的地点只显示名称，不显示描述"""
+    env = make_env()
+    # 埃尔德里在 tavern（老橡木酒馆），knowledge=["东境"]，不认识酒馆
+    obs = env.observe(env.characters["eldrin"])
+    assert "老橡木酒馆" in obs          # 名称可见
+    assert "旅人歇脚的地方" not in obs  # 描述被隐藏
+    # 过滤记录里包含 location_detail
+    kinds = {f["kind"] for f in env._last_filtered}
+    assert "location_detail" in kinds
+
+
+def test_observe_shows_known_place_description():
+    """知识边界：knowledge 中的地点显示描述"""
+    env = make_env()
+    # 卡拉在 market（龙脊城集市），knowledge=["龙脊城"，"铁匠"]，认识集市
+    obs = env.observe(env.characters["kara"])
+    assert "龙脊城集市" in obs
+    assert "热闹的广场" in obs  # 描述可见
+    kinds = {f["kind"] for f in env._last_filtered}
+    assert "location_detail" not in kinds
+
+
+def test_observe_hides_present_character_goal():
+    """在场角色只显示名字与 persona 第一句，绝不泄露其 goal"""
+    env = make_env()
+    # 把埃尔德里移到集市，让卡拉能看到他
+    env.characters["eldrin"].location = "market"
+    obs = env.observe(env.characters["kara"])
+    assert "埃尔德里" in obs
+    assert "东境游吟诗人" in obs          # persona 第一句可见
+    assert "寻找听众" not in obs          # 埃尔德里的 goal 被隐藏
+    # 过滤记录里包含 character_goal
+    goal_filtered = [f for f in env._last_filtered if f["kind"] == "character_goal"]
+    assert any(f["name"] == "埃尔德里" for f in goal_filtered)
+
+
+def test_observe_known_rules_filters():
+    """known_rules 非空时，observe 只展示其中的规则，其余规则隐藏"""
+    env = make_env()
+    # DEMO_CONFIG 只有一条规则 no_fire
+    kara = env.characters["kara"]
+    kara.known_rules = []  # 默认空 = 知道全部
+    obs = env.observe(kara)
+    assert "城镇内禁止" in obs
+
+    # 设置为知道空/无关规则 id -> 看不到该规则
+    kara.known_rules = ["nonexistent_rule"]
+    obs2 = env.observe(kara)
+    assert "城镇内禁止" not in obs2
+    kinds = {f["kind"] for f in env._last_filtered}
+    assert "rule" in kinds
+    assert any(f["rule_id"] == "no_fire" for f in env._last_filtered)
+
+
+def test_known_rules_multi_rule():
+    """多规则下 known_rules 只暴露白名单规则"""
+    env = make_env(**{
+        "rules": [
+            {"id": "no_fire", "description": "城镇内禁止施放火焰类魔法"},
+            {"id": "magic_cost", "description": "高阶魔法消耗施法者寿命"},
+        ]
+    })
+    kara = env.characters["kara"]
+    kara.known_rules = ["no_fire"]
+    obs = env.observe(kara)
+    assert "城镇内禁止施放火焰类魔法" in obs
+    assert "高阶魔法消耗施法者寿命" not in obs
+    ids = {f["rule_id"] for f in env._last_filtered if f["kind"] == "rule"}
+    assert "magic_cost" in ids
+
+
+def test_run_event_detail_contains_filtered():
+    """主循环事件 detail.filtered 记录被隐藏的信息"""
+    env = make_env()
+    async def fake_llm(text):
+        return "原地等待"
+    import asyncio as _a
+    events = _a.run(env.run(fake_llm))
+    # 至少有一个事件
+    any_filtered = any(e.detail.get("filtered") is not None for e in events)
+    assert any_filtered
+    # 过滤列表本身是 list，且每个事件都带 filtered 键
+    for e in events:
+        assert "filtered" in e.detail
+        assert isinstance(e.detail["filtered"], list)

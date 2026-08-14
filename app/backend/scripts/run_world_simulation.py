@@ -88,6 +88,8 @@ class WorldCharacter:
     location: str = ""
     goal: str = ""
     knowledge: List[str] = field(default_factory=list)
+    # 角色已知的世界规则 id；默认空列表 = 知道全部规则；若非空则 observe 只展示其中的规则
+    known_rules: List[str] = field(default_factory=list)
     state: Dict[str, Any] = field(default_factory=dict)  # 动态状态（体力、心情等）
     active: bool = True
 
@@ -100,6 +102,7 @@ class WorldCharacter:
             location=d.get("location", ""),
             goal=d.get("goal", ""),
             knowledge=d.get("knowledge", []),
+            known_rules=d.get("known_rules", []),
             state=d.get("state", {}),
         )
 
@@ -216,6 +219,9 @@ class WorldEnv:
 
         # IPC 控制（暂停/停止/采访），无则默认为 None
         self.ipc: Optional["WorldIPCHandler"] = None
+
+        # 最近一次感知中被过滤（隐藏）的信息列表，供 run 循环写入事件 detail.filtered
+        self._last_filtered: List[Dict[str, Any]] = []
 
     def attach_ipc(self, simulation_dir: str):
         """绑定 IPC 处理器（命令目录位于 simulation_dir 下）"""
@@ -353,28 +359,59 @@ class WorldEnv:
     # ---------- 感知 ----------
 
     def observe(self, character: WorldCharacter) -> str:
-        """角色感知：位置 + 在场角色 + 环境 + 规则 + 时间"""
+        """角色感知：位置 + 在场角色 + 环境 + 规则 + 时间（含视角过滤与知识边界）
+
+        视角过滤规则：
+        - 地点：不在角色 knowledge 中的地点只显示名称，不显示描述
+        - 其他角色：只显示名字与 persona 第一句，绝不泄露其 goal
+        - 规则：若角色的 known_rules 非空，只展示 known_rules 中的规则
+
+        被隐藏的信息记录到 self._last_filtered，供主循环写入事件 detail.filtered。
+        """
         lines = [f"现在是{self.time_str()}，第{self.current_step}步。"]
+        filtered: List[Dict[str, Any]] = []
+
+        # ---- 地点视角 ----
         loc = self.locations.get(character.location)
         if loc:
-            lines.append(f"你位于【{loc.name}】：{loc.description}")
+            if self._knows_place(character, loc):
+                lines.append(f"你位于【{loc.name}】：{loc.description}")
+            else:
+                # 不在 knowledge 中：只显示名称，隐藏描述
+                lines.append(f"你位于【{loc.name}】")
+                filtered.append({"kind": "location_detail", "target": loc.id, "name": loc.name})
         else:
             lines.append("你位于一片未知之地。")
 
+        # ---- 在场角色（只显示名字与 persona 第一句，隐藏其 goal）----
         present = [
             c for c in self.characters.values()
             if c.id != character.id and c.location == character.location
         ]
         if present:
-            names = "、".join(c.name for c in present)
-            lines.append(f"此刻在场的还有：{names}")
+            parts = []
+            for c in present:
+                peep = self._persona_first_sentence(c)
+                filtered.append({"kind": "character_goal", "target": c.id, "name": c.name})
+                parts.append(f"{c.name}（{peep}）" if peep else c.name)
+            lines.append(f"此刻在场的还有：{'、'.join(parts)}")
         else:
             lines.append("此刻这里没有其他人。")
 
-        if self.rules:
-            rules = "；".join(r.description for r in self.rules)
+        # ---- 规则（known_rules 知识边界）----
+        # 默认空列表 = 知道全部规则；非空则只展示 known_rules 中的规则
+        if character.known_rules:
+            shown = [r for r in self.rules if r.id in character.known_rules]
+            for r in self.rules:
+                if r.id not in character.known_rules:
+                    filtered.append({"kind": "rule", "rule_id": r.id})
+        else:
+            shown = self.rules
+        if shown:
+            rules = "；".join(r.description for r in shown)
             lines.append(f"世界规则：{rules}")
 
+        # ---- 自身目标（角色自己的目标可见）----
         if character.goal:
             lines.append(f"你的目标：{character.goal}")
 
@@ -387,7 +424,30 @@ class WorldEnv:
             lines.append(f"你可以前往的地点：{'、'.join(reachable)}")
 
         lines.append("请用一句话描述你接下来要做的动作（例如：前往老橡木酒馆、向卡拉打听城门的事）。")
+
+        # 记录本次感知中被过滤的信息（供事件 detail.filtered 审查）
+        self._last_filtered = filtered
         return "\n".join(lines)
+
+    def _knows_place(self, character: WorldCharacter, loc: WorldLocation) -> bool:
+        """角色是否"知道"某地点（knowledge 与地点名/id 匹配）"""
+        if not character.knowledge:
+            return True  # 无 knowledge 视为都认识，保持旧行为
+        for k in character.knowledge:
+            if k and (k in loc.name or loc.name in k or k == loc.id):
+                return True
+        return False
+
+    @staticmethod
+    def _persona_first_sentence(character: WorldCharacter) -> str:
+        """取 persona 的第一句（按中文/英文句号切分）"""
+        text = (character.persona or "").strip()
+        if not text:
+            return ""
+        # 按 。！？!? . 切出第一句
+        import re as _re
+        m = _re.split(r'[。！？!?]', text)
+        return m[0].strip() if m else text
 
     # ---------- 规则校验 ----------
 
@@ -525,7 +585,10 @@ class WorldEnv:
                     result=result,
                     location=self.locations.get(char.location, WorldLocation("?", "?")).name,
                     approved=approved,
-                    detail={"rule_check": reason},
+                    detail={
+                        "rule_check": reason,
+                        "filtered": list(self._last_filtered),
+                    },
                 )
                 self.events.append(event)
                 self.history.append(event.to_text())
