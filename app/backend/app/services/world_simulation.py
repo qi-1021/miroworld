@@ -314,6 +314,19 @@ class WorldSimulationService:
                         "log_tail": output[-2000:],
                     }
                     state.status = "completed"
+
+                    # 3. 事件回写图谱（若项目已有知识图谱）
+                    graph_write = cls._write_events_to_graph(project_id, events)
+                    state.result["graph_write"] = graph_write
+                    if graph_write.get("status") == "ok":
+                        logger.info(
+                            f"世界事件已回写图谱: {graph_write.get('graph_id')}, "
+                            f"episode={graph_write.get('episode_uuid')}"
+                        )
+                    elif graph_write.get("status") == "skipped":
+                        logger.info("跳过图谱回写（项目尚未构建图谱）")
+                    else:
+                        logger.warning(f"图谱回写失败: {graph_write.get('error')}")
                 else:
                     state.status = "failed"
                     state.error = f"模拟未产出事件文件。输出:\n{output[-2000:]}"
@@ -330,6 +343,74 @@ class WorldSimulationService:
 
         threading.Thread(target=run, daemon=True).start()
         return state
+
+    # ---------------- 事件回写图谱 ----------------
+
+    @classmethod
+    def _write_events_to_graph(
+        cls,
+        project_id: str,
+        events: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """
+        把世界模拟事件流回写到项目的知识图谱（Graphiti + Neo4j）。
+
+        事件流格式化为时序文本，作为一条 episode 追加到图谱：
+        [时间] 角色 在 地点：动作 → 结果
+
+        返回：
+            {"status": "ok", "graph_id": ..., "episode_uuid": ...}
+            {"status": "skipped", "reason": ...}  项目无图谱
+            {"status": "error", "error": ...}
+        """
+        if not events:
+            return {"status": "skipped", "reason": "无事件可回写"}
+
+        # 获取项目的 graph_id
+        try:
+            from ..models.project import ProjectManager
+            project = ProjectManager.get_project(project_id)
+            graph_id = project.graph_id if project else None
+        except Exception as e:
+            return {"status": "error", "error": f"读取项目失败: {e}"}
+
+        if not graph_id:
+            return {"status": "skipped", "reason": "项目尚未构建图谱"}
+
+        # 格式化为时序文本
+        lines = []
+        for e in events:
+            time_str = e.get("time", "")
+            who = e.get("character_name", "")
+            where = e.get("location", "")
+            action = e.get("action_desc", "")
+            result = e.get("result", "")
+            approved = e.get("approved", True)
+            mark = "" if approved else "（被规则阻止）"
+            lines.append(f"[{time_str}] {who} 在 {where}：{action} → {result}{mark}")
+        episode_text = "\n".join(lines)
+
+        try:
+            from ..services.zep_factory import get_zep_client
+
+            client = get_zep_client()
+            # 只在 Graphiti 后端回写（Zep Cloud 也可用 add_episode）
+            episode_uuid = client.add_episode(
+                graph_id=graph_id,
+                data=episode_text,
+                episode_type="text",
+            )
+            if not episode_uuid:
+                return {"status": "error", "error": "add_episode 返回空 uuid"}
+            return {
+                "status": "ok",
+                "graph_id": graph_id,
+                "episode_uuid": episode_uuid,
+                "event_count": len(events),
+            }
+        except Exception as e:
+            logger.error(f"世界事件回写图谱失败: {e}")
+            return {"status": "error", "error": str(e)}
 
     @staticmethod
     def _get_simulation_python() -> str:

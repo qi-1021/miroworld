@@ -121,4 +121,176 @@ def test_build_llm_client_falls_back_to_registry(world_root):
     """项目无绑定时应回退到注册表第一个已验证模型（或默认配置）"""
     client = WorldSimulationService._build_llm_client("p1")
     assert client is not None
-    assert client.model
+
+
+# ---------------- 事件回写图谱 ----------------
+
+def _fake_project(graph_id):
+    """构造带指定 graph_id 的 Project 对象（绕过文件 IO）"""
+    from app.models.project import Project, ProjectStatus
+    return Project(
+        project_id="p1",
+        name="测试",
+        status=ProjectStatus.GRAPH_COMPLETED,
+        created_at="2026-01-01T00:00:00",
+        updated_at="2026-01-01T00:00:00",
+        graph_id=graph_id,
+    )
+
+
+def test_write_events_to_graph_ok(world_root, monkeypatch):
+    """有一条目：有图谱 + 有事件 → 正常回写，返回 ok 与 episode_uuid"""
+    from app.models.project import ProjectManager
+    from app.services import zep_factory
+
+    monkeypatch.setattr(
+        ProjectManager, "get_project",
+        classmethod(lambda cls, pid: _fake_project("graph-1")),
+    )
+    captured = {}
+
+    class FakeClient:
+        def add_episode(self, graph_id, data, episode_type="text"):
+            captured["graph_id"] = graph_id
+            captured["data"] = data
+            captured["episode_type"] = episode_type
+            return "episode-cf45"
+
+    monkeypatch.setattr(zep_factory, "get_zep_client", lambda: FakeClient())
+
+    events = [
+        {
+            "time": "2026-01-01 08:00",
+            "character_name": "卡拉",
+            "location": "集市",
+            "action_desc": "打铁",
+            "result": "打造出利剑",
+            "approved": True,
+        },
+        {
+            "time": "2026-01-01 08:30",
+            "character_name": "艾拉",
+            "location": "城门",
+            "action_desc": "放火",
+            "result": "被规则阻止",
+            "approved": False,
+        },
+    ]
+    result = WorldSimulationService._write_events_to_graph("p1", events)
+    assert result["status"] == "ok"
+    assert result["graph_id"] == "graph-1"
+    assert result["episode_uuid"] == "episode-cf45"
+    assert result["event_count"] == 2
+    # 校验客户端收到的参数
+    assert captured["graph_id"] == "graph-1"
+    assert captured["episode_type"] == "text"
+    assert "卡拉" in captured["data"]
+    assert "（被规则阻止）" in captured["data"]  # 未通过的事件带标记
+
+
+def test_write_events_to_graph_no_graph(world_root, monkeypatch):
+    """无图谱：项目存在但 graph_id 为空 → 跳过回写"""
+    from app.models.project import ProjectManager
+    from app.services import zep_factory
+
+    monkeypatch.setattr(
+        ProjectManager, "get_project",
+        classmethod(lambda cls, pid: _fake_project(None)),
+    )
+    called = {"flag": False}
+
+    def fake_client():
+        called["flag"] = True
+        raise AssertionError("不应在有图的情况下不调用 add_episode")
+
+    monkeypatch.setattr(zep_factory, "get_zep_client", fake_client)
+    result = WorldSimulationService._write_events_to_graph(
+        "p1", [{"time": "t", "character_name": "卡拉", "action_desc": "打铁"}]
+    )
+    assert result["status"] == "skipped"
+    assert "尚未构建图谱" in result["reason"]
+    assert not called["flag"]  # 未构造客户端
+
+
+def test_write_events_to_graph_no_project(world_root, monkeypatch):
+    """项目不存在（get_project 返回 None）→ 视为无图谱跳过"""
+    from app.models.project import ProjectManager
+    from app.services import zep_factory
+
+    monkeypatch.setattr(
+        ProjectManager, "get_project",
+        classmethod(lambda cls, pid: None),
+    )
+    monkeypatch.setattr(
+        zep_factory, "get_zep_client",
+        lambda: (_ for _ in ()).throw(AssertionError("不应构造客户端")),
+    )
+    result = WorldSimulationService._write_events_to_graph(
+        "p1", [{"character_name": "卡拉"}]
+    )
+    assert result["status"] == "skipped"
+
+
+def test_write_events_to_graph_no_events(world_root, monkeypatch):
+    """无事件：事件列表为空 → 直接跳过，不触碰项目/客户端"""
+    from app.models.project import ProjectManager
+    from app.services import zep_factory
+
+    called = {"get_project": False, "client": False}
+
+    def fake_get_project(pid):
+        called["get_project"] = True
+        return _fake_project("graph-1")
+
+    monkeypatch.setattr(ProjectManager, "get_project", classmethod(fake_get_project))
+    monkeypatch.setattr(
+        zep_factory, "get_zep_client",
+        lambda: (called.__setitem__("client", True) or None),
+    )
+    result = WorldSimulationService._write_events_to_graph("p1", [])
+    assert result["status"] == "skipped"
+    assert "无事件" in result["reason"]
+    assert not called["get_project"]
+    assert not called["client"]
+
+
+def test_write_events_to_graph_error(world_root, monkeypatch):
+    """异常：add_episode 抛异常 → 返回 error 而不是抛出"""
+    from app.models.project import ProjectManager
+    from app.services import zep_factory
+
+    monkeypatch.setattr(
+        ProjectManager, "get_project",
+        classmethod(lambda cls, pid: _fake_project("graph-1")),
+    )
+
+    class BoomClient:
+        def add_episode(self, *args, **kwargs):
+            raise RuntimeError("Neo4j 连接断开")
+
+    monkeypatch.setattr(zep_factory, "get_zep_client", lambda: BoomClient())
+    result = WorldSimulationService._write_events_to_graph(
+        "p1", [{"character_name": "卡拉"}]
+    )
+    assert result["status"] == "error"
+    assert "Neo4j 连接断开" in result["error"]
+
+
+def test_write_events_to_graph_get_project_raises(world_root, monkeypatch):
+    """读取项目异常 → 返回 error"""
+    from app.models.project import ProjectManager
+    from app.services import zep_factory
+
+    def boom(cls, pid):
+        raise FileNotFoundError("meta 丢失")
+
+    monkeypatch.setattr(ProjectManager, "get_project", classmethod(boom))
+    monkeypatch.setattr(
+        zep_factory, "get_zep_client",
+        lambda: (_ for _ in ()).throw(AssertionError("不应构造客户端")),
+    )
+    result = WorldSimulationService._write_events_to_graph(
+        "p1", [{"character_name": "卡拉"}]
+    )
+    assert result["status"] == "error"
+    assert "meta 丢失" in result["error"]
