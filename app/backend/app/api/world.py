@@ -9,6 +9,8 @@
 - POST   /api/world/<project_id>/conflicts/detect   运行冲突检测（异步任务）
 - GET    /api/world/<project_id>/conflicts  获取最近一次冲突检测报告
 - PATCH  /api/world/<project_id>/conflicts/<conflict_id>  更新冲突状态（open/accepted/dismissed）
+- POST   /api/world/<project_id>/report      生成世界报告（body: simulation_id）
+- GET    /api/world/<project_id>/report/<simulation_id>  读取已生成的世界报告
 - DELETE /api/world/<project_id>            删除项目的世界设定库
 """
 
@@ -417,6 +419,56 @@ def control_world_simulation(project_id: str, simulation_id: str):
     except Exception as e:
         logger.error(f"世界模拟控制失败: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------- 世界报告
+
+@world_bp.route('/<project_id>/report', methods=['POST'])
+def generate_world_report(project_id: str):
+    """
+    生成世界模拟报告（编年史/推演报告）
+
+    请求（JSON）：
+        {
+            "simulation_id": "xxx"   // 必填，目标世界模拟
+        }
+
+    返回：
+        {
+            "success": true,
+            "report": {"text": "<Markdown>", "sections": [{"title","content"}]}
+        }
+    """
+    try:
+        from ..services.world_report import WorldReportService
+
+        data = request.get_json(silent=True) or {}
+        simulation_id = str(data.get('simulation_id', '')).strip()
+        if not simulation_id:
+            return jsonify({"success": False, "error": "simulation_id 不能为空"}), 400
+
+        report = WorldReportService.generate_report(project_id, simulation_id)
+        return jsonify({"success": True, "report": report})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 404
+    except Exception as e:
+        logger.error(f"生成世界报告失败: {e}")
+        return jsonify({"success": False, "error": f"生成报告失败: {e}"}), 500
+
+
+@world_bp.route('/<project_id>/report/<simulation_id>', methods=['GET'])
+def get_world_report(project_id: str, simulation_id: str):
+    """读取已生成的世界报告"""
+    try:
+        from ..services.world_report import WorldReportService
+
+        report = WorldReportService.load_report(project_id, simulation_id)
+        if report is None:
+            return jsonify({"success": False, "error": "报告尚未生成"}), 404
+        return jsonify({"success": True, "report": report})
+    except Exception as e:
+        logger.error(f"读取世界报告失败: {e}")
+        return jsonify({"success": False, "error": f"读取报告失败: {e}"}), 500
 
 
 # ---------------------------------------------------------------- 删除

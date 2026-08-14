@@ -364,3 +364,76 @@ def test_control_resume_not_writing_extra(world_sim_client):
     )
     assert rv.status_code == 200
     assert rv.get_json()["success"] is True
+
+
+# ---------------------------------------------------------------- 世界报告 API
+
+def test_generate_report_endpoint(client, monkeypatch):
+    """POST /api/world/<pid>/report → 调用服务并返回报告。"""
+    from app.services.world_report import WorldReportService
+
+    canned = {
+        "text": "## 世界编年史\n\n内容",
+        "sections": [{"title": "世界编年史", "content": "内容"}],
+    }
+    called = {}
+    monkeypatch.setattr(
+        WorldReportService, "generate_report",
+        classmethod(lambda cls, pid, sid: (called.update(pid=pid, sid=sid), canned)[1]),
+    )
+    rv = client.post("/api/world/p1/report", json={"simulation_id": "ws1"})
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body["success"] is True
+    assert body["report"]["text"] == canned["text"]
+    assert called == {"pid": "p1", "sid": "ws1"}
+
+
+def test_generate_report_endpoint_missing_sim_id(client):
+    """simulation_id 为空 → 400。"""
+    rv = client.post("/api/world/p1/report", json={})
+    assert rv.status_code == 400
+    assert "simulation_id" in rv.get_json()["error"]
+
+
+def test_generate_report_endpoint_not_found(client, monkeypatch):
+    """模拟不存在 → 404。"""
+    from app.services.world_report import WorldReportService
+
+    monkeypatch.setattr(
+        WorldReportService, "generate_report",
+        classmethod(lambda cls, pid, sid: (_ for _ in ()).throw(ValueError("模拟不存在"))),
+    )
+    rv = client.post("/api/world/p1/report", json={"simulation_id": "ws_x"})
+    assert rv.status_code == 404
+    assert "模拟不存在" in rv.get_json()["error"]
+
+
+def test_get_report_endpoint(client, monkeypatch):
+    """GET /api/world/<pid>/report/<sid> → 返回已生成报告。"""
+    from app.services.world_report import WorldReportService
+
+    canned = {
+        "text": "## 世界编年史\n\n内容",
+        "sections": [{"title": "世界编年史", "content": "内容"}],
+    }
+    monkeypatch.setattr(
+        WorldReportService, "load_report",
+        classmethod(lambda cls, pid, sid: canned),
+    )
+    rv = client.get("/api/world/p1/report/ws1")
+    assert rv.status_code == 200
+    assert rv.get_json()["report"]["text"] == canned["text"]
+
+
+def test_get_report_endpoint_not_generated(client, monkeypatch):
+    """报告未生成 → 404。"""
+    from app.services.world_report import WorldReportService
+
+    monkeypatch.setattr(
+        WorldReportService, "load_report",
+        classmethod(lambda cls, pid, sid: None),
+    )
+    rv = client.get("/api/world/p1/report/ws1")
+    assert rv.status_code == 404
+    assert "尚未生成" in rv.get_json()["error"]
