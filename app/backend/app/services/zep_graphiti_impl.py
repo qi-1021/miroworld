@@ -320,6 +320,32 @@ class GraphitiClient(ZepClientAdapter):
         return base_embedder
 
     @staticmethod
+    def _wrap_as_embedder_client(embedder: Any, dimension: Optional[int]) -> Any:
+        """把本地向量模型包装为 graphiti-core 的 EmbedderClient 子类。
+
+        Graphiti 的 GraphitiClients 用 Pydantic 做 is_instance_of(EmbedderClient)
+        校验，普通对象无法通过；这里动态生成子类（与 DashScope 包装器同模式）。
+        """
+        try:
+            from graphiti_core.embedder.client import EmbedderClient, EmbedderConfig
+        except ImportError:
+            # graphiti 未安装时原样返回
+            return embedder
+
+        class _LocalEmbedderClient(EmbedderClient):
+            def __init__(self, inner: Any, embedding_dim: Optional[int]):
+                self._inner = inner
+                self.config = EmbedderConfig(embedding_dim=embedding_dim or 1024)
+
+            async def create(self, input_data) -> list[float]:
+                return await self._inner.create(input_data)
+
+            async def create_batch(self, input_data_list: list[str]) -> list[list[float]]:
+                return await self._inner.create_batch(input_data_list)
+
+        return _LocalEmbedderClient(embedder, dimension)
+
+    @staticmethod
     def _try_build_local_embedder() -> Any:
         """从模型注册表查找已验证的本地向量模型并构建 Embedder。"""
         try:
@@ -341,9 +367,10 @@ class GraphitiClient(ZepClientAdapter):
                     continue
                 dimension = entry.get("metadata", {}).get("dimension")
                 logger.info("使用本地向量模型: %s (dim=%s)", local_path, dimension)
-                return LocalSentenceTransformerEmbedder(
+                embedder = LocalSentenceTransformerEmbedder(
                     str(model_dir), dimension=dimension
                 )
+                return GraphitiClient._wrap_as_embedder_client(embedder, dimension)
         except Exception as exc:
             logger.warning("本地向量模型不可用，回退到云端 Embedding: %s", exc)
         return None

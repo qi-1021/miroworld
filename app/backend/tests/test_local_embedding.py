@@ -233,8 +233,9 @@ def test_graphiti_prefers_registered_local_embedder(fake_models_root, monkeypatc
 
     embedder = zep_graphiti_impl.GraphitiClient._try_build_local_embedder()
     assert embedder is not None
-    assert embedder.dimension == 512
-    assert str(embedder.model_dir).endswith("bge-small-zh")
+    # 包装为 EmbedderClient 后，通过 _inner 访问原始模型属性
+    assert embedder._inner.dimension == 512
+    assert str(embedder._inner.model_dir).endswith("bge-small-zh")
 
 
 def test_graphiti_falls_back_when_no_local_embedding(fake_models_root, monkeypatch):
@@ -324,3 +325,28 @@ def test_register_local_model_updates_existing_entry(api_client, monkeypatch):
     state = registry.get_redacted_registry()
     local_entries = [m for m in state["models"] if m.get("local_path") == "bge-small-zh"]
     assert len(local_entries) == 1
+
+
+def test_local_embedder_wrapped_as_embedder_client():
+    """包装后的本地向量模型必须通过 graphiti 的 EmbedderClient 校验。"""
+    from graphiti_core.embedder.client import EmbedderClient
+
+    from app.services.zep_graphiti_impl import GraphitiClient
+
+    inner = local_embedding.LocalSentenceTransformerEmbedder("/tmp/fake-dir", dimension=1024)
+    wrapped = GraphitiClient._wrap_as_embedder_client(inner, 1024)
+
+    assert isinstance(wrapped, EmbedderClient)
+    assert wrapped.config.embedding_dim == 1024
+
+
+def test_try_build_local_embedder_returns_embedder_client():
+    """真实注册表 + 模型目录下，_try_build_local_embedder 应返回 EmbedderClient 实例。"""
+    from graphiti_core.embedder.client import EmbedderClient
+
+    from app.services.zep_graphiti_impl import GraphitiClient
+
+    embedder = GraphitiClient._try_build_local_embedder()
+    if embedder is None:
+        pytest.skip("当前环境没有已注册的本地向量模型")
+    assert isinstance(embedder, EmbedderClient)
