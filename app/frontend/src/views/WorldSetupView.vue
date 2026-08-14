@@ -35,10 +35,39 @@
               背景设定文档
               <span class="char-count">{{ background.length }} 字</span>
             </div>
+            <div
+              class="drop-zone"
+              :class="{ 'drag-over': bgDragging }"
+              @click="bgFileInput.click()"
+              @dragover.prevent="bgDragging = true"
+              @dragleave="bgDragging = false"
+              @drop.prevent="onBgDrop"
+            >
+              <span class="drop-icon">📄</span>
+              <span class="drop-text">
+                {{ bgFiles.length ? `已选 ${bgFiles.length} 个文件` : '点击或拖拽上传背景文件' }}
+              </span>
+              <span class="drop-hint">支持 txt / md / pdf，可多选</span>
+              <input
+                ref="bgFileInput"
+                type="file"
+                multiple
+                accept=".txt,.md,.markdown,.pdf"
+                style="display: none"
+                @change="onBgFilesChange"
+              />
+            </div>
+            <div v-if="bgFiles.length" class="file-list">
+              <div v-for="(f, i) in bgFiles" :key="i" class="file-item">
+                <span class="file-name" :title="f.name">{{ f.name }}</span>
+                <span class="file-size">{{ formatSize(f.size) }}</span>
+                <button class="file-remove" @click.stop="bgFiles.splice(i, 1)">×</button>
+              </div>
+            </div>
             <textarea
               v-model="background"
               class="world-textarea"
-              placeholder="世界观、地理、历史、力量体系、规则、政治格局……"
+              placeholder="或直接粘贴背景设定文本：世界观、地理、历史、力量体系、规则、政治格局……"
               rows="10"
             ></textarea>
           </div>
@@ -47,10 +76,39 @@
               小说正文段落
               <span class="char-count">{{ story.length }} 字</span>
             </div>
+            <div
+              class="drop-zone"
+              :class="{ 'drag-over': stDragging }"
+              @click="stFileInput.click()"
+              @dragover.prevent="stDragging = true"
+              @dragleave="stDragging = false"
+              @drop.prevent="onStDrop"
+            >
+              <span class="drop-icon">📖</span>
+              <span class="drop-text">
+                {{ stFiles.length ? `已选 ${stFiles.length} 个文件` : '点击或拖拽上传章节文件' }}
+              </span>
+              <span class="drop-hint">支持 txt / md / pdf，可多选</span>
+              <input
+                ref="stFileInput"
+                type="file"
+                multiple
+                accept=".txt,.md,.markdown,.pdf"
+                style="display: none"
+                @change="onStFilesChange"
+              />
+            </div>
+            <div v-if="stFiles.length" class="file-list">
+              <div v-for="(f, i) in stFiles" :key="i" class="file-item">
+                <span class="file-name" :title="f.name">{{ f.name }}</span>
+                <span class="file-size">{{ formatSize(f.size) }}</span>
+                <button class="file-remove" @click.stop="stFiles.splice(i, 1)">×</button>
+              </div>
+            </div>
             <textarea
               v-model="story"
               class="world-textarea"
-              placeholder="故事当前进展、人物现状、正在发生的事件……"
+              placeholder="或直接粘贴小说正文：故事当前进展、人物现状、正在发生的事件……"
               rows="10"
             ></textarea>
           </div>
@@ -237,7 +295,17 @@ const searchQuery = ref('')
 const searching = ref(false)
 const searchResults = ref([])
 
-const hasAnyInput = computed(() => background.value.trim() || story.value.trim())
+// 多文件上传状态
+const bgFiles = ref([])
+const stFiles = ref([])
+const bgDragging = ref(false)
+const stDragging = ref(false)
+const bgFileInput = ref(null)
+const stFileInput = ref(null)
+
+const hasAnyInput = computed(() =>
+  background.value.trim() || story.value.trim() || bgFiles.value.length || stFiles.value.length
+)
 const canDetect = computed(() => stats.value?.has_background && stats.value?.has_story)
 
 const TYPE_LABELS = {
@@ -255,6 +323,13 @@ const typeLabel = t => TYPE_LABELS[t] || t
 const sevLabel = s => SEV_LABELS[s] || s
 const statusLabel = s => STATUS_LABELS[s] || s
 
+function formatSize(bytes) {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB'
+}
+
 function formatTime(iso) {
   if (!iso) return ''
   return iso.replace('T', ' ').slice(0, 19)
@@ -262,6 +337,36 @@ function formatTime(iso) {
 
 function goBack() {
   router.push(`/process/${projectId}`)
+}
+
+// ---------------- 文件选择与拖拽 ----------------
+
+function pushFiles(target, fileList) {
+  for (const f of fileList) {
+    if (!target.value.some(x => x.name === f.name && x.size === f.size)) {
+      target.value.push(f)
+    }
+  }
+}
+
+function onBgFilesChange(e) {
+  pushFiles(bgFiles, e.target.files)
+  e.target.value = ''
+}
+
+function onStFilesChange(e) {
+  pushFiles(stFiles, e.target.files)
+  e.target.value = ''
+}
+
+function onBgDrop(e) {
+  bgDragging.value = false
+  pushFiles(bgFiles, e.dataTransfer.files)
+}
+
+function onStDrop(e) {
+  stDragging.value = false
+  pushFiles(stFiles, e.dataTransfer.files)
 }
 
 async function loadAll() {
@@ -283,12 +388,25 @@ async function handleSave() {
   saveMsg.value = ''
   saveMsgError.value = false
   try {
-    const res = await saveWorldInput(projectId, {
-      background: background.value,
-      story: story.value
-    })
-    stats.value = res.stats
-    saveMsg.value = `已保存：共 ${res.stats.total_chunks} 个分块（背景 ${res.stats.background_chunks} / 正文 ${res.stats.story_chunks}）`
+    // 有文件 → multipart 多文件上传；只有文本 → JSON
+    if (bgFiles.value.length || stFiles.value.length) {
+      const formData = new FormData()
+      for (const f of bgFiles.value) formData.append('background_files', f)
+      for (const f of stFiles.value) formData.append('story_files', f)
+      if (background.value.trim()) formData.append('background_text', background.value)
+      if (story.value.trim()) formData.append('story_text', story.value)
+      const res = await saveWorldInputMultipart(projectId, formData)
+      stats.value = res.stats
+      const files = res.stats.files || []
+      saveMsg.value = `已保存：${files.length} 个文件 + 文本，共 ${res.stats.total_chunks} 个分块`
+    } else {
+      const res = await saveWorldInput(projectId, {
+        background: background.value,
+        story: story.value
+      })
+      stats.value = res.stats
+      saveMsg.value = `已保存：共 ${res.stats.total_chunks} 个分块（背景 ${res.stats.background_chunks} / 正文 ${res.stats.story_chunks}）`
+    }
   } catch (e) {
     saveMsg.value = e.message || '保存失败'
     saveMsgError.value = true
@@ -527,6 +645,84 @@ onMounted(loadAll)
 }
 .world-textarea::placeholder {
   color: #BBB;
+}
+
+/* 文件上传区 */
+.drop-zone {
+  border: 1.5px dashed #CCC;
+  border-radius: 4px;
+  padding: 14px 12px;
+  margin-bottom: 8px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  background: #FAFAFA;
+}
+.drop-zone:hover {
+  border-color: #FF5722;
+}
+.drop-zone.drag-over {
+  border-color: #FF5722;
+  background: #FFF3EE;
+}
+.drop-icon {
+  display: block;
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+.drop-text {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #000;
+}
+.drop-hint {
+  display: block;
+  font-size: 10.5px;
+  color: #999;
+  margin-top: 3px;
+}
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #EAEAEA;
+  border-radius: 4px;
+  padding: 5px 10px;
+  background: #FAFAFA;
+  font-size: 11.5px;
+}
+.file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #000;
+}
+.file-size {
+  color: #999;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  flex-shrink: 0;
+}
+.file-remove {
+  border: none;
+  background: none;
+  color: #999;
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.file-remove:hover {
+  color: #D32F2F;
 }
 
 /* 按钮行 */

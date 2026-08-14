@@ -14,6 +14,21 @@ export function saveWorldInput(projectId, data) {
 }
 
 /**
+ * 提交世界输入（multipart 多文件上传）
+ * @param {String} projectId
+ * @param {FormData} formData - background_files[] / story_files[] / background_text / story_text
+ */
+export function saveWorldInputMultipart(projectId, formData) {
+  return service({
+    url: `/api/world/${projectId}/input`,
+    method: 'post',
+    data: formData,
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 600000 // 大文件解析可能较慢
+  })
+}
+
+/**
  * 查询设定库统计
  */
 export function getWorldSettings(projectId) {

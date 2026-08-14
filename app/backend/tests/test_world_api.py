@@ -5,6 +5,7 @@ import json
 import pytest
 
 from app import create_app
+from app.services.world_bible import WorldBibleService
 
 
 @pytest.fixture()
@@ -164,3 +165,93 @@ def test_delete_world_data(client):
     assert rv.status_code == 200
     rv = client.get("/api/world/p1/settings")
     assert rv.get_json()["stats"] is None
+
+
+# ---------------- 多文件上传 ----------------
+
+def _make_file(name, content, filename=None):
+    import io
+    return (io.BytesIO(content.encode('utf-8')), filename or name)
+
+
+def test_multipart_multi_file_upload(client):
+    """背景 + 章节各传多个文件"""
+    rv = client.post(
+        "/api/world/p1/input",
+        data={
+            "background_files": [
+                _make_file("bg1.txt", "龙裔王国建于三百年前，首都是龙脊城。", "bg1.txt"),
+                _make_file("bg2.md", "# 规则\n魔法需要付出代价。", "bg2.md"),
+            ],
+            "story_files": [
+                _make_file("ch1.txt", "第一章：清晨的龙脊城街道。", "ch1.txt"),
+                _make_file("ch2.txt", "第二章：铁匠卡拉支起摊位。", "ch2.txt"),
+            ],
+        },
+        content_type="multipart/form-data",
+    )
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body["success"] is True
+    stats = body["stats"]
+    assert stats["has_background"] is True
+    assert stats["has_story"] is True
+    assert stats["background_chunks"] >= 1
+    assert stats["story_chunks"] >= 1
+    # 文件清单
+    files = stats["files"]
+    assert len(files) == 4
+    bg_files = [f for f in files if f["source"] == "background"]
+    st_files = [f for f in files if f["source"] == "story"]
+    assert len(bg_files) == 2
+    assert len(st_files) == 2
+    assert {f["filename"] for f in bg_files} == {"bg1.txt", "bg2.md"}
+    # 文本已合并入库
+    bible = WorldBibleService.get_bible("p1")
+    assert "龙裔王国" in bible.background_text
+    assert "魔法需要付出代价" in bible.background_text
+    assert "第一章" in bible.story_text
+    assert "第二章" in bible.story_text
+
+
+def test_multipart_background_only(client):
+    rv = client.post(
+        "/api/world/p1/input",
+        data={"background_files": [_make_file("bg.txt", "东境由龙裔王国统治。", "bg.txt")]},
+        content_type="multipart/form-data",
+    )
+    assert rv.status_code == 200
+    stats = rv.get_json()["stats"]
+    assert stats["has_background"] is True
+    assert stats["has_story"] is False
+
+
+def test_multipart_unsupported_extension_skipped(client):
+    """不支持的文件类型应被跳过；全被跳过时报错"""
+    rv = client.post(
+        "/api/world/p1/input",
+        data={"background_files": [_make_file("bg.exe", "nope", "bg.exe")]},
+        content_type="multipart/form-data",
+    )
+    assert rv.status_code == 400
+    assert "不能同时为空" in rv.get_json()["error"]
+
+
+def test_multipart_with_text_fields(client):
+    """文件 + 直接文本混合"""
+    rv = client.post(
+        "/api/world/p1/input",
+        data={
+            "background_files": [_make_file("bg.txt", "龙裔王国建于三百年前。", "bg.txt")],
+            "background_text": "王国信奉烈焰女神。",
+            "story_text": "清晨的龙脊城。",
+        },
+        content_type="multipart/form-data",
+    )
+    assert rv.status_code == 200
+    stats = rv.get_json()["stats"]
+    assert stats["has_background"] is True
+    assert stats["has_story"] is True
+    bible = WorldBibleService.get_bible("p1")
+    assert "烈焰女神" in bible.background_text
+    assert "清晨的龙脊城" in bible.story_text

@@ -12,6 +12,7 @@
 - DELETE /api/world/<project_id>            删除项目的世界设定库
 """
 
+import os
 import threading
 from flask import request, jsonify
 
@@ -75,14 +76,93 @@ def _build_llm_client_for_project(project_id: str) -> LLMClient:
 
 @world_bp.route('/<project_id>/input', methods=['POST'])
 def save_world_input(project_id: str):
-    """提交背景/正文（JSON），重建设定库索引。至少一个非空。"""
+    """
+    提交背景/正文，重建设定库索引。至少一个非空。
+
+    两种请求方式：
+    1. multipart/form-data（推荐，支持多文件）：
+       - background_files: 背景设定文档，可多个（pdf/md/txt）
+       - story_files: 小说正文文件，可多个（pdf/md/txt）
+       - background_text / story_text: 可选，额外的直接文本
+       - chunk_size / chunk_overlap: 可选
+    2. application/json（兼容旧版）：
+       - background / story: 直接文本
+    """
     try:
-        data = request.get_json(silent=True) or {}
-        background = data.get('background', '')
-        story = data.get('story', '')
-        chunk_size = int(data.get('chunk_size', Config.DEFAULT_CHUNK_SIZE))
-        overlap = int(data.get('chunk_overlap', Config.DEFAULT_CHUNK_OVERLAP))
-        metadata = data.get('metadata') or {}
+        from ..utils.file_parser import FileParser
+        from ..utils.logger import get_logger as _get_logger
+        _logger = _get_logger('mirofish.api.world')
+
+        chunk_size = Config.DEFAULT_CHUNK_SIZE
+        overlap = Config.DEFAULT_CHUNK_OVERLAP
+        metadata = {}
+        background_parts = []
+        story_parts = []
+        file_manifest = []
+
+        # ---------------- multipart 多文件上传 ----------------
+        if request.files:
+            bg_files = request.files.getlist('background_files')
+            st_files = request.files.getlist('story_files')
+            all_files = bg_files + st_files
+
+            for f in all_files:
+                if not f or not f.filename:
+                    continue
+                # 校验扩展名（ALLOWED_EXTENSIONS 是不带点的集合）
+                ext = os.path.splitext(f.filename)[1].lower().lstrip('.')
+                if ext not in Config.ALLOWED_EXTENSIONS:
+                    _logger.warning(f"跳过不支持的文件类型: {f.filename} ({ext})")
+                    continue
+                # 保存临时文件并提取文本
+                import tempfile
+                suffix = '.' + ext if ext else '.txt'
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                    tmp.write(f.read())
+                    tmp_path = tmp.name
+                try:
+                    text = FileParser.extract_text(tmp_path)
+                    if f in bg_files:
+                        background_parts.append(text)
+                    else:
+                        story_parts.append(text)
+                    file_manifest.append({
+                        "filename": f.filename,
+                        "size": len(text),
+                        "source": "background" if f in bg_files else "story",
+                    })
+                except Exception as e:
+                    _logger.warning(f"解析文件失败 {f.filename}: {e}")
+                finally:
+                    os.unlink(tmp_path)
+
+            # 可选的直接文本
+            background_parts.append(request.form.get('background_text', ''))
+            story_parts.append(request.form.get('story_text', ''))
+            try:
+                chunk_size = int(request.form.get('chunk_size', Config.DEFAULT_CHUNK_SIZE))
+                overlap = int(request.form.get('chunk_overlap', Config.DEFAULT_CHUNK_OVERLAP))
+            except (TypeError, ValueError):
+                pass
+            metadata = {"files": file_manifest}
+
+        # ---------------- JSON 文本输入（兼容） ----------------
+        else:
+            data = request.get_json(silent=True) or {}
+            background_parts.append(data.get('background', ''))
+            story_parts.append(data.get('story', ''))
+            chunk_size = int(data.get('chunk_size', Config.DEFAULT_CHUNK_SIZE))
+            overlap = int(data.get('chunk_overlap', Config.DEFAULT_CHUNK_OVERLAP))
+            metadata = data.get('metadata') or {}
+
+        background = "\n\n".join(p for p in background_parts if p and p.strip())
+        story = "\n\n".join(p for p in story_parts if p and p.strip())
+
+        if not background.strip() and not story.strip():
+            return jsonify({
+                "success": False,
+                "error": "背景文档和小说正文不能同时为空，请至少上传一个文件或输入一段文本"
+            }), 400
 
         bible = WorldBibleService.save_input(
             project_id=project_id,
@@ -92,7 +172,9 @@ def save_world_input(project_id: str):
             overlap=overlap,
             metadata=metadata,
         )
-        return jsonify({"success": True, "stats": bible.stats()})
+        result = bible.stats()
+        result["files"] = file_manifest
+        return jsonify({"success": True, "stats": result})
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
