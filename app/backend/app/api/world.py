@@ -11,6 +11,7 @@
 - PATCH  /api/world/<project_id>/conflicts/<conflict_id>  更新冲突状态（open/accepted/dismissed）
 - POST   /api/world/<project_id>/report      生成世界报告（body: simulation_id）
 - GET    /api/world/<project_id>/report/<simulation_id>  读取已生成的世界报告
+- POST   /api/world/<project_id>/simulate/whatif  基于已有模拟做 what-if 分支推演
 - DELETE /api/world/<project_id>            删除项目的世界设定库
 """
 
@@ -213,17 +214,22 @@ def list_world_chunks(project_id: str):
 
 @world_bp.route('/<project_id>/search', methods=['POST'])
 def search_world(project_id: str):
-    """按需检索设定块（有限筛选）"""
+    """按需检索设定块（关键词 + 可选语义向量融合）"""
     try:
         data = request.get_json(silent=True) or {}
         query = str(data.get('query', '')).strip()
         if not query:
             return jsonify({"success": False, "error": "查询内容不能为空"}), 400
+        # semantic：true/缺省时启用语义+关键词融合；false 时仅关键词检索
+        semantic = data.get('semantic', True)
+        if isinstance(semantic, str):
+            semantic = semantic.lower() in ('1', 'true', 'yes', 'on')
         results = WorldBibleService.search(
             project_id=project_id,
             query=query,
             source=data.get('source'),
             limit=int(data.get('limit', 8)),
+            semantic=bool(semantic),
         )
         return jsonify({"success": True, "results": results})
     except Exception as e:
@@ -419,6 +425,43 @@ def control_world_simulation(project_id: str, simulation_id: str):
     except Exception as e:
         logger.error(f"世界模拟控制失败: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------- what-if 推演
+
+@world_bp.route('/<project_id>/simulate/whatif', methods=['POST'])
+def simulate_whatif(project_id: str):
+    """
+    基于一条已有模拟做 what-if 分支推演
+
+    请求（JSON）：
+        {
+            "base_simulation_id": "xxx",    // 必填，基础模拟
+            "question": "若魔法不需要代价？", // 必填，假设前提
+            "steps": 3                       // 可选，推演步数
+        }
+
+    返回：新分支模拟的状态（含 result.meta.whatif_base / whatif_question）
+    """
+    try:
+        from ..services.world_simulation import WorldSimulationService
+
+        data = request.get_json(silent=True) or {}
+        base_simulation_id = str(data.get('base_simulation_id', '')).strip()
+        question = str(data.get('question', '')).strip()
+        steps = int(data.get('steps', 3))
+
+        state = WorldSimulationService.simulate_whatif(
+            base_simulation_id=base_simulation_id,
+            question=question,
+            steps=steps,
+        )
+        return jsonify({"success": True, "simulation": state.to_dict()})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"what-if 推演失败: {e}")
+        return jsonify({"success": False, "error": f"推演失败: {e}"}), 500
 
 
 # ---------------------------------------------------------------- 世界报告

@@ -437,3 +437,46 @@ def test_get_report_endpoint_not_generated(client, monkeypatch):
     rv = client.get("/api/world/p1/report/ws1")
     assert rv.status_code == 404
     assert "尚未生成" in rv.get_json()["error"]
+
+
+def test_simulate_whatif_endpoint(world_sim_client, monkeypatch):
+    """POST /api/world/<pid>/simulate/whatif → 调用服务并返回新模拟状态。"""
+    from app.services.world_simulation import WorldSimulationService, WorldSimulationState
+
+    called = {}
+
+    def fake_simulate(cls, base_simulation_id, question, steps):
+        called.update(base=base_simulation_id, question=question, steps=steps)
+        return WorldSimulationState(
+            simulation_id="ws_base_whatif", project_id="p1", status="running",
+            result={"meta": {"whatif_base": base_simulation_id,
+                             "whatif_question": question}},
+        )
+
+    monkeypatch.setattr(WorldSimulationService, "simulate_whatif", classmethod(fake_simulate))
+    rv = world_sim_client.post(
+        "/api/world/p1/simulate/whatif",
+        json={"base_simulation_id": "ws_base", "question": "若魔法不需要代价？", "steps": 2},
+    )
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body["success"] is True
+    assert body["simulation"]["simulation_id"] == "ws_base_whatif"
+    assert body["simulation"]["result"]["meta"]["whatif_question"] == "若魔法不需要代价？"
+    assert called == {"base": "ws_base", "question": "若魔法不需要代价？", "steps": 2}
+
+
+def test_simulate_whatif_endpoint_missing_fields(world_sim_client, monkeypatch):
+    """缺少 question → 400。"""
+    from app.services.world_simulation import WorldSimulationService
+
+    monkeypatch.setattr(
+        WorldSimulationService, "simulate_whatif",
+        classmethod(lambda cls, *a, **k: (_ for _ in ()).throw(ValueError("假设问题不能为空"))),
+    )
+    rv = world_sim_client.post(
+        "/api/world/p1/simulate/whatif",
+        json={"base_simulation_id": "ws_base", "question": ""},
+    )
+    assert rv.status_code == 400
+    assert "假设问题不能为空" in rv.get_json()["error"]

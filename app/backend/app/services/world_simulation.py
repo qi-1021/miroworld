@@ -438,28 +438,12 @@ class WorldSimulationService:
                 cls._save_state(state)
 
                 # 2. 调用子进程（.venv-simulation）
-                script = os.path.join(
-                    os.path.dirname(__file__), '../../scripts/run_world_simulation.py'
-                )
-                sim_python = cls._get_simulation_python()
-
                 events_path = os.path.join(sim_dir, 'events.json')
-                cmd = [
-                    sim_python, script,
-                    "--config", config_path,
-                    "--out", events_path,
-                    "--ipc-dir", sim_dir,
-                ]
-                logger.info(f"启动世界模拟子进程: {cmd}")
-
-                proc = subprocess.Popen(
-                    cmd,
-                    cwd=os.path.dirname(script),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
+                output = cls._run_simulation_subprocess(
+                    config_path=config_path,
+                    events_path=events_path,
+                    ipc_dir=sim_dir,
                 )
-                output, _ = proc.communicate(timeout=3600)
 
                 state.events_path = events_path
                 if os.path.exists(events_path):
@@ -568,6 +552,165 @@ class WorldSimulationService:
         except Exception as e:
             logger.error(f"世界事件回写图谱失败: {e}")
             return {"status": "error", "error": str(e)}
+
+    # ---------------- what-if 分支推演 ----------------
+
+    @classmethod
+    def simulate_whatif(
+        cls,
+        base_simulation_id: str,
+        question: str,
+        steps: int = 3,
+    ) -> WorldSimulationState:
+        """
+        what-if 分支推演：基于一条已完成/进行中的模拟，构造"假设分支世界配置"，跑新增模拟。
+
+        - 读取基础模拟的状态、世界配置与事件流
+        - 构造分支配置：world.name 追加假设后缀；rules 追加一条假设前提规则；
+          世界名/首角色 goal 注入假设问题；total_steps 设为 steps
+        - 新模拟 simulation_id = 基础 id + "_whatif"（冲突时追加序号），
+          result.meta 记录 whatif_base 与 whatif_question
+        - 通过子进程跑 steps 步（与 start_simulation 同机制，含 --ipc-dir）
+        """
+        question = (question or "").strip()
+        if not question:
+            raise ValueError("what-if 假设问题不能为空")
+        if not (0 < int(steps) <= 60):
+            raise ValueError("steps 需在 1-60 之间")
+
+        base = cls.get_state(base_simulation_id)
+        if base is None:
+            raise ValueError("基础模拟不存在")
+        project_id = base.project_id
+
+        # 读取基础世界配置（config_path 优先，缺失则回退模拟目录内 world_config.json）
+        base_config_path = base.config_path or os.path.join(
+            WORLD_SIM_ROOT, project_id, base.simulation_id, 'world_config.json'
+        )
+        if not os.path.exists(base_config_path):
+            raise ValueError("基础模拟缺少世界配置，无法推演")
+        with open(base_config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+
+        # 构造分支世界配置（深拷贝，避免污染基础配置）
+        branch = json.loads(json.dumps(config))
+        world = branch.setdefault("world", {})
+        world["name"] = f"{world.get('name', '世界')}（推演：{question[:20]}）"
+        world["total_steps"] = int(steps)
+        # 追加假设前提规则
+        rules = branch.setdefault("rules", [])
+        if not isinstance(rules, list):
+            rules = []
+            branch["rules"] = rules
+        rules.append({
+            "id": f"whatif_assumption_{len(rules) + 1}",
+            "description": question,
+        })
+        # 把假设注入第一个角色的 goal，让推演目标围绕假设展开
+        chars = branch.setdefault("characters", [])
+        if isinstance(chars, list) and chars:
+            chars[0]["goal"] = f"{chars[0].get('goal', '')}；假设：{question}".strip("；")
+
+        # 新模拟 ID：基础 id + "_whatif"（冲突时追加序号）
+        sim_id = f"{base.simulation_id}_whatif"
+        counter = 2
+        while cls.get_state(sim_id) is not None:
+            sim_id = f"{base.simulation_id}_whatif_{counter}"
+            counter += 1
+
+        sim_dir = os.path.join(WORLD_SIM_ROOT, project_id, sim_id)
+        os.makedirs(sim_dir, exist_ok=True)
+
+        branch_config_path = os.path.join(sim_dir, 'world_config.json')
+        with open(branch_config_path, 'w', encoding='utf-8') as f:
+            json.dump(branch, f, ensure_ascii=False, indent=2)
+
+        state = WorldSimulationState(
+            simulation_id=sim_id,
+            project_id=project_id,
+            status="preparing",
+            config_path=branch_config_path,
+            created_at=datetime.now().isoformat(timespec='seconds'),
+            updated_at=datetime.now().isoformat(timespec='seconds'),
+        )
+        state.result = {
+            "meta": {
+                "whatif_base": base.simulation_id,
+                "whatif_question": question,
+            }
+        }
+        with cls._lock:
+            cls._states[sim_id] = state
+        cls._save_state(state)
+
+        def run():
+            try:
+                state.status = "running"
+                state.updated_at = datetime.now().isoformat(timespec='seconds')
+                cls._save_state(state)
+
+                events_path = os.path.join(sim_dir, 'events.json')
+                output = cls._run_simulation_subprocess(
+                    config_path=branch_config_path,
+                    events_path=events_path,
+                    ipc_dir=sim_dir,
+                )
+                state.events_path = events_path
+                meta = state.result.get("meta", {})
+                if os.path.exists(events_path):
+                    with open(events_path, 'r', encoding='utf-8') as f:
+                        events = json.load(f)
+                    state.result = {
+                        "meta": meta,
+                        "event_count": len(events),
+                        "events": events,
+                        "log_tail": output[-2000:],
+                    }
+                    state.status = "completed"
+                else:
+                    state.status = "failed"
+                    state.error = f"推演未产出事件文件。输出:\n{output[-2000:]}"
+            except subprocess.TimeoutExpired:
+                state.status = "failed"
+                state.error = "what-if 推演超时（1 小时）"
+            except Exception as e:
+                logger.error(f"what-if 推演失败: {e}")
+                state.status = "failed"
+                state.error = str(e)
+            finally:
+                state.updated_at = datetime.now().isoformat(timespec='seconds')
+                cls._save_state(state)
+
+        threading.Thread(target=run, daemon=True).start()
+        return state
+
+    @staticmethod
+    def _run_simulation_subprocess(
+        config_path: str,
+        events_path: str,
+        ipc_dir: Optional[str] = None,
+    ) -> str:
+        """调用 .venv-simulation 子进程跑世界模拟，返回进程日志输出。
+
+        便于测试 mock：覆盖此方法即可模拟子进程执行。
+        """
+        script = os.path.join(
+            os.path.dirname(__file__), '../../scripts/run_world_simulation.py'
+        )
+        sim_python = WorldSimulationService._get_simulation_python()
+        cmd = [sim_python, script, "--config", config_path, "--out", events_path]
+        if ipc_dir:
+            cmd += ["--ipc-dir", ipc_dir]
+        logger.info(f"启动世界模拟子进程: {cmd}")
+        proc = subprocess.Popen(
+            cmd,
+            cwd=os.path.dirname(script),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        output, _ = proc.communicate(timeout=3600)
+        return output
 
     @staticmethod
     def _get_simulation_python() -> str:

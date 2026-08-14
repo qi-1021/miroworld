@@ -415,3 +415,131 @@ def test_control_interview_timeout(world_root):
             character_name="卡拉", prompt="你在哪？",
             timeout=0.2, poll_interval=0.05,
         )
+
+
+# ---------------- what-if 分支推演 ----------------
+
+def _make_base_sim(world_root, sim_id="ws_base"):
+    """构造一条含 world_config.json 的完成模拟，并保存状态。"""
+    import app.services.world_simulation as ws
+    sim_dir = os.path.join(ws.WORLD_SIM_ROOT, "p1", sim_id)
+    os.makedirs(sim_dir, exist_ok=True)
+    config = {
+        "world": {"name": "测试世界", "time_step_minutes": 30, "total_steps": 3,
+                  "initial_time": "2026-01-01 08:00"},
+        "locations": [{"id": "l1", "name": "集市", "description": "热闹"}],
+        "characters": [{"id": "c1", "name": "卡拉", "persona": "铁匠",
+                        "location": "l1", "goal": "卖剑", "knowledge": []}],
+        "rules": [{"id": "r1", "description": "城镇内禁止火焰魔法"}],
+    }
+    config_path = os.path.join(sim_dir, "world_config.json")
+    with open(config_path, 'w', encoding='utf-8') as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
+    with open(os.path.join(sim_dir, "events.json"), 'w', encoding='utf-8') as f:
+        json.dump([{"step": 1, "time": "01-01 08:30", "character_name": "卡拉",
+                    "location": "集市", "action_desc": "打铁", "result": "剑胚",
+                    "approved": True}], f, ensure_ascii=False, indent=2)
+    state = WorldSimulationState(
+        simulation_id=sim_id, project_id="p1", status="completed",
+        config_path=config_path,
+        events_path=os.path.join(sim_dir, "events.json"),
+    )
+    WorldSimulationService._save_state(state)
+    return state
+
+
+def _mock_subprocess(monkeypatch, events_out=None, log_tail="ok"):
+    """mock 子进程调用：写 events.json 到目标路径并返回日志。"""
+    called = {}
+
+    def fake_run(config_path, events_path, ipc_dir=None):
+        called["config_path"] = config_path
+        called["events_path"] = events_path
+        called["ipc_dir"] = ipc_dir
+        import os
+        if events_out is not None:
+            with open(events_path, 'w', encoding='utf-8') as f:
+                json.dump(events_out, f, ensure_ascii=False, indent=2)
+        return log_tail
+
+    monkeypatch.setattr(
+        WorldSimulationService, "_run_simulation_subprocess",
+        staticmethod(fake_run),
+    )
+    return called
+
+
+def _wait_completed(world_root, sim_id, timeout=5.0):
+    """等待后台线程把状态置为 completed/failed。"""
+    import time as _t
+    deadline = _t.time() + timeout
+    while _t.time() < deadline:
+        state = WorldSimulationService.get_state(sim_id)
+        if state and state.status in ("completed", "failed", "stopped"):
+            return state
+        _t.sleep(0.02)
+    return WorldSimulationService.get_state(sim_id)
+
+
+def test_simulate_whatif_branch_config_and_meta(world_root, monkeypatch):
+    """分支配置追加假设规则、改 world.name，meta 记录 whatif_base/question。"""
+    _make_base_sim(world_root, "ws_base")
+    events = [{"step": 1, "time": "01-01 09:00", "character_name": "卡拉",
+               "location": "集市", "action_desc": "展示剑", "result": "卖出",
+               "approved": True}]
+    called = _mock_subprocess(monkeypatch, events_out=events)
+
+    state = WorldSimulationService.simulate_whatif(
+        "ws_base", "若魔法不需要代价？", steps=2
+    )
+    new_id = state.simulation_id
+    assert new_id == "ws_base_whatif"
+
+    # 分支配置已落盘
+    import app.services.world_simulation as ws
+    branch_config_path = os.path.join(ws.WORLD_SIM_ROOT, "p1", new_id, "world_config.json")
+    with open(branch_config_path, 'r', encoding='utf-8') as f:
+        branch = json.load(f)
+    assert "推演" in branch["world"]["name"]
+    assert branch["world"]["total_steps"] == 2
+    assert any(r.get("id", "").startswith("whatif_assumption") for r in branch["rules"])
+    assert branch["characters"][0]["goal"]  # 注入假设到 goal
+
+    # 等待后台完成
+    final = _wait_completed(world_root, new_id)
+    assert final.status == "completed"
+    meta = final.result["meta"]
+    assert meta["whatif_base"] == "ws_base"
+    assert meta["whatif_question"] == "若魔法不需要代价？"
+    # 子进程收到的参数：ipc_dir 为模拟目录
+    assert called["ipc_dir"] == os.path.join(ws.WORLD_SIM_ROOT, "p1", new_id)
+    assert called["events_path"] == os.path.join(ws.WORLD_SIM_ROOT, "p1", new_id, "events.json")
+
+
+def test_simulate_whatif_unique_sim_id(world_root, monkeypatch):
+    """重复 what-if（相同 base）应生成不冲突的新 id（_whatif_2）。"""
+    _make_base_sim(world_root, "ws_base")
+    _mock_subprocess(monkeypatch, events_out=[])
+    WorldSimulationService.simulate_whatif("ws_base", "问1", steps=1)
+    _wait_completed(world_root, "ws_base_whatif")
+    state2 = WorldSimulationService.simulate_whatif("ws_base", "问2", steps=1)
+    # 第一条 id 是 ws_base_whatif，第二条应避开
+    assert state2.simulation_id != "ws_base_whatif"
+    assert state2.simulation_id.startswith("ws_base_whatif")
+
+
+def test_simulate_whatif_requires_question(world_root):
+    _make_base_sim(world_root, "ws_base")
+    with pytest.raises(ValueError, match="假设问题不能为空"):
+        WorldSimulationService.simulate_whatif("ws_base", "", steps=2)
+
+
+def test_simulate_whatif_missing_base(world_root):
+    with pytest.raises(ValueError, match="基础模拟不存在"):
+        WorldSimulationService.simulate_whatif("missing", "问", steps=2)
+
+
+def test_simulate_whatif_invalid_steps(world_root):
+    _make_base_sim(world_root, "ws_base")
+    with pytest.raises(ValueError, match="steps"):
+        WorldSimulationService.simulate_whatif("ws_base", "问", steps=0)
