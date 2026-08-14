@@ -485,6 +485,7 @@ class WorldBibleService:
         source: Optional[str] = None,
         limit: int = 8,
         exclude_chunk_ids: Optional[List[str]] = None,
+        semantic: bool = True,
     ) -> List[Dict[str, Any]]:
         """
         检索设定块：语义 + 关键词加权融合（语义 0.6 / 关键词 0.4）。
@@ -493,6 +494,7 @@ class WorldBibleService:
         - 关键词分：整句/令牌/关键词命中，按命中集内最大值归一化到 [0,1]
         - 融合：(0.6 * 语义) + (0.4 * 关键词)
         - 本地向量模型不可用时自动降级为纯关键词检索（语义项为 0）
+        - semantic=False 时跳过语义向量化，仅关键词检索
         - 保留 source 过滤、exclude_chunk_ids 过滤与固定返回结构
         返回: [{chunk_id, source, text, section, char_start, char_end, score}]
         """
@@ -532,21 +534,22 @@ class WorldBibleService:
                 score += min(len(chunk.text) / 1000.0, 2.0) * 0.5
                 keyword_scored.append((score, chunk))
 
-        # 语义向量化（懒加载 embedder + 查询向量）
-        embedder = cls._get_embedder()
+        # 语义向量化（懒加载 embedder + 查询向量）；semantic=False 时跳过
         emb_map = None
         query_vec = None
-        if embedder is not None:
-            try:
-                emb_map = cls.load_embeddings(project_id)
-            except Exception:
-                emb_map = None
-            if emb_map is not None:
+        if semantic:
+            embedder = cls._get_embedder()
+            if embedder is not None:
                 try:
-                    query_vec = cls._embed_one(embedder, query)
-                except Exception as exc:
-                    logger.warning(f"查询向量化失败，仅用关键词: {exc}")
-                    query_vec = None
+                    emb_map = cls.load_embeddings(project_id)
+                except Exception:
+                    emb_map = None
+                if emb_map is not None:
+                    try:
+                        query_vec = cls._embed_one(embedder, query)
+                    except Exception as exc:
+                        logger.warning(f"查询向量化失败，仅用关键词: {exc}")
+                        query_vec = None
         semantic_ok = emb_map is not None and query_vec is not None
 
         # 归一化的关键词分：命中集内除以最大值，使最好块为 1.0

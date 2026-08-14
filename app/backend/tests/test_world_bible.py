@@ -258,6 +258,20 @@ def test_search_semantic_only_via_concept(semantic_embedder, world_root):
     assert results[0]["score"] > 0
 
 
+def test_search_semantic_false_skips_vector(semantic_embedder, world_root):
+    """semantic=False 时跳过语义向量化，仅关键词检索。"""
+    WorldBibleService.save_input(
+        "p1",
+        background="我们信奉掌控烈火的诸神，神殿遍布王城各地",
+    )
+    # semantic=False：查询"神明"字面不在文本 → 无语义召回 → 结果为空
+    off = WorldBibleService.search("p1", "神明", semantic=False)
+    assert off == []
+    # 语义开关默认(True)：概念相近 → 被召回
+    on = WorldBibleService.search("p1", "神明", semantic=True)
+    assert len(on) >= 1
+
+
 def test_search_degradation_no_embedder(world_root):
     """本地向量模型不可用时降级为纯关键词，仍返回关键词结果。"""
     # world_root 已把 _get_embedder 置为 None；不落盘向量
