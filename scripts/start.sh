@@ -126,25 +126,46 @@ start_neo4j() {
         "$NEO4J_DIR/conf-template/neo4j.conf" > "$NEO4J_DIR/run/neo4j.conf"
     export NEO4J_CONF="$NEO4J_DIR/run"
     
-    # 启动 Neo4j
-    cd "$NEO4J_HOME/bin"
-    
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS
-        ./neo4j console &
-    else
-        # Linux
-        ./neo4j console &
+    # 处理 pid 文件残留：Neo4j 以 pid 文件判断"是否已运行"，
+    # 可能进程存在但端口未监听（或 pid 文件失效），导致启动被拒。
+    NEO4J_PID_FILE=""
+    for candidate in "$NEO4J_HOME/run/neo4j.pid" "$NEO4J_HOME/libexec/run/neo4j.pid"; do
+        if [ -f "$candidate" ]; then
+            NEO4J_PID_FILE="$candidate"
+            break
+        fi
+    done
+    if [ -n "$NEO4J_PID_FILE" ]; then
+        OLD_PID=$(head -1 "$NEO4J_PID_FILE" 2>/dev/null | tr -dc '0-9')
+        if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+            log_warn "检测到 Neo4j 进程 (pid $OLD_PID) 但 7687 未监听，等待其退出..."
+            sleep 8
+            if kill -0 "$OLD_PID" 2>/dev/null; then
+                log_error "Neo4j 进程 (pid $OLD_PID) 仍在运行但未监听 7687"
+                log_error "请先停止该进程：kill $OLD_PID，然后重新运行本脚本"
+                exit 1
+            fi
+            log_warn "旧 Neo4j 进程已退出，继续启动"
+        fi
+        rm -f "$NEO4J_PID_FILE"
+        log_warn "已清理失效的 Neo4j pid 文件"
     fi
     
-    log_info "Neo4j 启动中... (请稍候 10 秒初始化)"
-    sleep 10
+    # 启动 Neo4j（输出记录到日志，便于失败诊断）
+    NEO4J_CONSOLE_LOG="$NEO4J_DIR/neo4j-data/logs/neo4j-console.log"
+    cd "$NEO4J_HOME/bin"
+    ./neo4j console >> "$NEO4J_CONSOLE_LOG" 2>&1 &
+    
+    log_info "Neo4j 启动中... (请稍候 15 秒初始化)"
+    sleep 15
     
     # 验证连接
     if lsof -Pi :7687 -sTCP:LISTEN -t >/dev/null 2>&1; then
         log_info "✓ Neo4j 已就绪 (neo4j/password)"
     else
-        log_error "Neo4j 启动失败"
+        log_error "Neo4j 启动失败，最近日志："
+        tail -15 "$NEO4J_CONSOLE_LOG" 2>/dev/null | sed 's/^/  /'
+        log_error "完整日志: $NEO4J_CONSOLE_LOG"
         exit 1
     fi
 }
