@@ -159,7 +159,9 @@ if exist "%SCRIPT_DIR%init-models.bat" (
 )
 
 echo [INFO] 启动后端 (Flask) → 日志 %BACKEND_LOG%
-start "MiroFish-Backend" /min cmd /c "cd /d "%APP_DIR%\backend" && uv run python run.py > "%BACKEND_LOG%" 2>&1"
+REM 启动后端 (Flask)：直接使用 .venv 解释器，避免 uv run 触发 graphiti/oasis
+REM 冲突导致的 "No solution found" 解析失败。
+start "MiroFish-Backend" /min cmd /c "cd /d "%APP_DIR%\backend" && .venv\Scripts\python run.py > "%BACKEND_LOG%" 2>&1"
 
 REM 等待后端端口 5001（最多 20 秒）
 set READY=0

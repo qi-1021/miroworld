@@ -68,7 +68,7 @@ stop_port() {
     for pid in $pids; do
         cmd=$(ps -p "$pid" -o command= 2>/dev/null | head -1)
         if is_project_pid "$pid"; then
-            echo "  停止 pid=$pid（端口 $port）"
+            echo "  停止 pid=${pid}（端口 ${port}）"
             kill_one "$pid"
         else
             echo "  ⚠️ 端口 $port 由无关进程占用（${cmd:0:60}），跳过"
@@ -80,7 +80,7 @@ stop_port() {
         for pid in $pids; do
             if kill -0 "$pid" 2>/dev/null && is_project_pid "$pid"; then
                 cmd=$(ps -p "$pid" -o command= 2>/dev/null | head -1)
-                echo "  ⚠️ pid=$pid（端口 $port）未退出，强制结束"
+                echo "  ⚠️ pid=${pid}（端口 ${port}）未退出，强制结束"
                 kill -9 "$pid" 2>/dev/null || true
             fi
         done
@@ -105,10 +105,10 @@ kill_project_residual() {
             case "$cwd" in
                 "$PROJECT_ROOT"*)
                     if [ "$force" = "1" ]; then
-                        echo "  强制结束残留 pid=$pid（$(ps -p $pid -o command= | tail -1 | cut -c1-60)）"
+                        echo "  强制结束残留 pid=${pid}（$(ps -p $pid -o command= | tail -1 | cut -c1-60)）"
                         kill -9 "$pid" 2>/dev/null || true
                     else
-                        echo "  停止残留 pid=$pid（$(ps -p $pid -o command= | tail -1 | cut -c1-60)）"
+                        echo "  停止残留 pid=${pid}（$(ps -p $pid -o command= | tail -1 | cut -c1-60)）"
                         kill "$pid" 2>/dev/null || true
                     fi
                     ;;

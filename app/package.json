@@ -7,10 +7,10 @@
     "setup:backend": "cd backend && uv sync",
     "setup:all": "npm run setup && npm run setup:backend",
     "dev": "concurrently --kill-others -n \"backend,frontend\" -c \"green,cyan\" \"npm run backend\" \"npm run frontend\"",
-    "backend": "cd backend && uv run python run.py",
+    "backend": "cd backend && .venv/bin/python run.py",
     "frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build",
-    "models": "cd backend && uv run python scripts/mirofish_models.py"
+    "models": "cd backend && .venv/bin/python scripts/mirofish_models.py"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

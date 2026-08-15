@@ -281,25 +281,36 @@ def cmd_health(args) -> dict:
 # 参数解析
 # ---------------------------------------------------------------------------
 
+def _add_json(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """给 parser 加上 --json 选项。
+
+    主要供各子命令的 --help 展示使用；实际生效逻辑见 main() 里的 argv 预处理，
+    它保证 --json 在顶层或任意子命令后都能用。
+    """
+    parser.add_argument("--json", action="store_true", dest="as_json",
+                        help="以 JSON 输出")
+    return parser
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mirofish", description="MiroFish CLI")
-    parser.add_argument("--json", action="store_true", dest="as_json", help="以 JSON 输出")
+    _add_json(parser)
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("project")
     pa = p.add_subparsers(dest="action", required=True)
-    pa.add_parser("list").add_argument("--limit", type=int, default=50)
-    pa.add_parser("create").add_argument("--name", default="CLI 项目")
-    pa.add_parser("delete").add_argument("--project-id", required=True)
-    pe = pa.add_parser("export")
+    _add_json(pa.add_parser("list")).add_argument("--limit", type=int, default=50)
+    _add_json(pa.add_parser("create")).add_argument("--name", default="CLI 项目")
+    _add_json(pa.add_parser("delete")).add_argument("--project-id", required=True)
+    pe = _add_json(pa.add_parser("export"))
     pe.add_argument("--project-id", required=True)
     pe.add_argument("--output")
-    pi = pa.add_parser("import")
+    pi = _add_json(pa.add_parser("import"))
     pi.add_argument("--file", required=True)
 
     w = sub.add_parser("world")
     wa = w.add_subparsers(dest="action", required=True)
-    ws = wa.add_parser("save")
+    ws = _add_json(wa.add_parser("save"))
     ws.add_argument("--project-id", required=True)
     ws.add_argument("--background", default="")
     ws.add_argument("--story", default="")
@@ -307,29 +318,29 @@ def _parser() -> argparse.ArgumentParser:
     ws.add_argument("--story-file")
     ws.add_argument("--chunk-size", type=int, default=1500)
     ws.add_argument("--chunk-overlap", type=int, default=150)
-    wa.add_parser("get").add_argument("--project-id", required=True)
+    _add_json(wa.add_parser("get")).add_argument("--project-id", required=True)
 
     t = sub.add_parser("timeline")
     ta = t.add_subparsers(dest="action", required=True)
-    te = ta.add_parser("extract")
+    te = _add_json(ta.add_parser("extract"))
     te.add_argument("--project-id", required=True)
     te.add_argument("--source", choices=["story", "bg"], default="story")
     te.add_argument("--wait", action="store_true")
     te.add_argument("--timeout", type=float, default=600.0)
-    ta.add_parser("get").add_argument("--project-id", required=True)
-    ta.add_parser("threads").add_argument("--project-id", required=True)
-    ta.add_parser("characters").add_argument("--project-id", required=True)
-    tstruct = ta.add_parser("structure")
+    _add_json(ta.add_parser("get")).add_argument("--project-id", required=True)
+    _add_json(ta.add_parser("threads")).add_argument("--project-id", required=True)
+    _add_json(ta.add_parser("characters")).add_argument("--project-id", required=True)
+    tstruct = _add_json(ta.add_parser("structure"))
     tstruct.add_argument("--project-id", required=True)
     tstruct.add_argument("--source", choices=["story", "bg"], default="story")
     tstruct.add_argument("--force", action="store_true",
                          help="忽略已保存结果，强制用 LLM 重新判断")
-    tstruct_text = ta.add_parser("structure-text")
+    tstruct_text = _add_json(ta.add_parser("structure-text"))
     tstruct_text.add_argument("--text", required=True,
                               help="要判断结构的文本片段（可剪贴部分正文）")
     tstruct_text.add_argument("--project-id", default=None,
                               help="可选：用指定项目的模型凭据")
-    textract = ta.add_parser("extract-text")
+    textract = _add_json(ta.add_parser("extract-text"))
     textract.add_argument("--text", required=True,
                           help="要抽取的一段文本（可部分正文），模拟整流程抽查")
     textract.add_argument("--source", choices=["story", "bg"], default="story")
@@ -338,11 +349,11 @@ def _parser() -> argparse.ArgumentParser:
 
     c = sub.add_parser("conflict")
     ca = c.add_subparsers(dest="action", required=True)
-    ca.add_parser("detect").add_argument("--project-id", required=True)
+    _add_json(ca.add_parser("detect")).add_argument("--project-id", required=True)
 
     g = sub.add_parser("graph")
     ga = g.add_subparsers(dest="action", required=True)
-    gb = ga.add_parser("build")
+    gb = _add_json(ga.add_parser("build"))
     gb.add_argument("--project-id", required=True)
     gb.add_argument("--graph-name")
     gb.add_argument("--chunk-size", type=int, default=1500)
@@ -352,7 +363,7 @@ def _parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("sim")
     sa = s.add_subparsers(dest="action", required=True)
-    ss = sa.add_parser("start")
+    ss = _add_json(sa.add_parser("start"))
     ss.add_argument("--project-id", required=True)
     ss.add_argument("--steps", type=int, default=6)
     ss.add_argument("--time-step-minutes", type=int, default=30)
@@ -364,15 +375,23 @@ def _parser() -> argparse.ArgumentParser:
 
     a = sub.add_parser("assistant")
     aa = a.add_subparsers(dest="action", required=True)
-    ask = aa.add_parser("ask")
+    ask = _add_json(aa.add_parser("ask"))
     ask.add_argument("--project-id", required=True)
     ask.add_argument("--question", required=True)
 
-    sub.add_parser("health")
+    _add_json(sub.add_parser("health"))
     return parser
 
 
 def main(argv=None) -> int:
+    # 让 --json 在"顶层"和"任意子命令后"都能用：
+    # 在 argparse 之前把它从 argv 中剥离并记录，否则子命令后的 --json 会被
+    # 判为 unrecognized arguments 而报错；同时也规避了顶层/子命令同名 dest
+    # 默认值互相覆盖的问题。
+    argv = list(sys.argv[1:] if argv is None else argv)
+    as_json = "--json" in argv
+    argv = [a for a in argv if a != "--json"]
+
     args = _parser().parse_args(argv)
     try:
         if args.command == "project":
@@ -393,7 +412,7 @@ def main(argv=None) -> int:
             result = cmd_health(args)
         else:
             raise ValueError(f"未知命令: {args.command}")
-        _out(result, args.as_json)
+        _out(result, as_json)
         return 0
     except Exception as e:
         _out({"success": False, "error": str(e)}, True)

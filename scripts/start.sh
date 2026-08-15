@@ -59,14 +59,14 @@ wait_for_port() {
     local port="$1" name="$2" logfile="$3" i
     for i in $(seq 1 12); do
         if port_listening "$port"; then
-            log_info "✓ $name 已就绪（http://localhost:$port）"
+            log_info "✓ $name 已就绪（http://localhost:${port}）"
             return 0
         fi
         sleep 1
     done
     log_error "$name 启动失败（端口 $port 未监听）"
     echo ""
-    echo "  最近日志（tail -n 40 $logfile）："
+    echo "  最近日志（tail -n 40 ${logfile}）："
     echo ""
     tail -n 40 "$logfile" 2>/dev/null | sed 's/^/    /'
     echo ""
@@ -194,7 +194,7 @@ start_neo4j() {
             sleep 8
             if kill -0 "$OLD_PID" 2>/dev/null; then
                 log_error "Neo4j 进程 (pid $OLD_PID) 仍在运行但未监听 7687"
-                log_error "请先停止该进程：kill $OLD_PID，然后重新运行本脚本"
+                log_error "请先停止该进程：kill ${OLD_PID}，然后重新运行本脚本"
                 exit 1
             fi
             log_warn "旧 Neo4j 进程已退出，继续启动"
@@ -268,9 +268,17 @@ start_app() {
     fi
 
     # 启动后端（独立后台 + 独立日志）
+    # 注意：不要用 `uv run python run.py` —— 它会触发 uv 重新解析依赖，
+    # 而 pyproject 中 graphiti/oasis 两个 extra 声明了互相冲突的 neo4j 版本，
+    # 导致 "No solution found" 解析失败。这里直接使用已同步好的 .venv 解释器，
+    # 与 setup-env.sh / init-models.sh 保持一致，绕过 uv 解析。
     log_info "启动后端 (Flask) → 日志 $BACKEND_LOG"
     cd "$APP_DIR/backend"
-    nohup uv run python run.py > "$BACKEND_LOG" 2>&1 &
+    if [ ! -x ".venv/bin/python" ]; then
+        log_error "未找到 backend/.venv/bin/python。请先运行 bash scripts/setup-env.sh 搭建环境"
+        exit 1
+    fi
+    nohup .venv/bin/python run.py > "$BACKEND_LOG" 2>&1 &
     BACKEND_PID=$!
     wait_for_port 5001 "后端" "$BACKEND_LOG"
 
@@ -331,7 +339,7 @@ cleanup_previous() {
             cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | grep '^n' | head -1 | cut -c2-)
             case "$cwd" in
                 "$PROJECT_ROOT"*)
-                    log_warn "停止遗留模拟子进程 pid=$pid（$(ps -p $pid -o command= | tail -1 | cut -c1-60)）"
+                    log_warn "停止遗留模拟子进程 pid=${pid}（$(ps -p $pid -o command= | tail -1 | cut -c1-60)）"
                     kill "$pid" 2>/dev/null || true
                     ;;
             esac

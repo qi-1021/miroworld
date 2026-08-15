@@ -110,6 +110,11 @@ def create_app(config_class=Config):
     def health():
         return {'status': 'ok', 'service': 'MiroFish Backend'}
 
+    @app.route('/api/health')
+    def api_health():
+        """兼容 /api/health 别名，方便 CLI/Agent 统一使用。"""
+        return {'status': 'ok', 'service': 'MiroFish Backend'}
+
     @app.route('/api/health/detailed')
     def detailed_health():
         """详细健康检查：Neo4j 端口、模型注册表、数据目录可写性。

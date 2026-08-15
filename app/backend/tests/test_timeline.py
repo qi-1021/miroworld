@@ -452,3 +452,18 @@ def test_dedupe_threads_removes_junk_and_dupes():
     # 保留更完整 description
     usas = next(t for t in out if t["name"] == "乌萨斯线")
     assert usas["description"] == "A"
+
+
+def test_endpoint_get_structure(tl_client):
+    """GET /api/timeline/<pid>/structure 返回已保存的结构类型（或 null）。"""
+    svc.save_structure("proj_0123456789ab", {"type": "network", "confidence": 0.7,
+                                             "reason": "交织", "strategy": "按线"})
+    r = tl_client.get("/api/timeline/proj_0123456789ab/structure")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["success"] is True
+    assert body["data"]["structure"]["type"] == "network"
+    # 未保存的项目返回 structure=None
+    r2 = tl_client.get("/api/timeline/proj_000000000001/structure")
+    assert r2.status_code == 200
+    assert r2.get_json()["data"]["structure"] is None
