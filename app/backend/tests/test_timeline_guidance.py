@@ -20,6 +20,7 @@ from app.services import timeline_service as svc
 @pytest.fixture()
 def tl_service(tmp_path, monkeypatch):
     monkeypatch.setattr(svc, "TIMELINE_ROOT", str(tmp_path / "world-timeline"))
+    monkeypatch.setattr(svc, "_TASKS_DIR", str(tmp_path / "world-timeline" / "tasks"))
     with svc._task_lock:
         svc._tasks.clear()
         svc._tasks_loaded = False
@@ -79,7 +80,7 @@ def test_fork_two_batch_with_guidance(tl_service, monkeypatch):
     arr1 = '[{"summary":"分支甲","time_text":"一年后","ev_type":"task","confidence":0.8}]'
     arr2 = '[{"summary":"分支乙","time_text":"三年后","ev_type":"milestone","confidence":0.7}]'
     llm = _QueueLLM([arr1, arr2])
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: llm)
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: llm)
     events = _seed(tl_service)
     task_id = svc.start_fork("proj_0123456789ab", events[0]["id"], "目标", 5, guidance=["补充：北方路线"])
     status = _wait(tl_service, task_id)
@@ -102,7 +103,7 @@ def test_fork_two_batch_with_guidance(tl_service, monkeypatch):
 def test_fork_batch2_fails_keeps_batch1(tl_service, monkeypatch):
     arr1 = '[{"summary":"前半段事件","time_text":"一年后","ev_type":"task","confidence":0.8}]'
     llm = _QueueLLM([arr1, "RAISE"])
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: llm)
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: llm)
     events = _seed(tl_service)
     task_id = svc.start_fork("proj_0123456789ab", events[0]["id"], "目标", 5)
     status = _wait(tl_service, task_id)
@@ -124,7 +125,7 @@ def test_inject_guidance_while_running(tl_service, monkeypatch, tmp_path):
         def chat(self, **kw):
             gate.wait(timeout=10)  # 阻塞批1，让主线程有时间注入
             return '[{"summary":"分支甲","time_text":"一年后","ev_type":"task","confidence":0.8}]'
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _Gated())
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _Gated())
     events = _seed(tl_service)
     task_id = svc.start_fork("proj_0123456789ab", events[0]["id"], "目标", 5)
     # 确保任务在 running（批1 被 gate 阻塞）
@@ -148,7 +149,7 @@ def test_inject_guidance_while_running(tl_service, monkeypatch, tmp_path):
 
 
 def test_inject_guidance_non_running_raises(tl_service, monkeypatch):
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _QueueLLM(['[{"summary":"x","ev_type":"task"}]']))
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _QueueLLM(['[{"summary":"x","ev_type":"task"}]']))
     events = _seed(tl_service)
     task_id = svc.start_fork("proj_0123456789ab", events[0]["id"], "目标", 5)
     _wait(tl_service, task_id)  # 等完成
@@ -169,7 +170,7 @@ def test_branch_continue_sort_continues(tl_service, monkeypatch):
     arr2 = '[{"summary":"分支乙","time_text":"三年后","ev_type":"milestone","confidence":0.7}]'
     arrc = '[{"summary":"续推丙","time_text":"五年后","ev_type":"milestone","confidence":0.7}]'
     llm = _QueueLLM([arr1, arr2, arrc])
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: llm)
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: llm)
     events = _seed(tl_service)
     t1 = svc.start_fork("proj_0123456789ab", events[0]["id"], "目标", 5)
     _wait(tl_service, t1)
@@ -188,7 +189,7 @@ def test_branch_continue_sort_continues(tl_service, monkeypatch):
 
 
 def test_branch_continue_missing_branch_400(tl_service, monkeypatch):
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _QueueLLM(['[{"summary":"x","ev_type":"task"}]']))
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _QueueLLM(['[{"summary":"x","ev_type":"task"}]']))
     _seed(tl_service)
     task_id = svc.start_branch_continue("proj_0123456789ab", "no_such_branch", "x", 3)
     status = _wait(tl_service, task_id)
@@ -255,7 +256,7 @@ def test_characters_prompt_injection_and_length(tl_service, monkeypatch):
     arr1 = '[{"summary":"分支甲","time_text":"一年后","ev_type":"task","confidence":0.8}]'
     arr2 = '[{"summary":"分支乙","time_text":"三年后","ev_type":"milestone","confidence":0.7}]'
     llm = _QueueLLM([arr1, arr2])
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: llm)
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: llm)
     task_id = svc.start_fork("proj_0123456789ab", events[0]["id"], "目标", 5)
     status = _wait(tl_service, task_id)
     assert status is not None and status["status"] == "completed"
@@ -287,7 +288,7 @@ def test_guidance_window_inject_immediately_continues(tl_service, monkeypatch):
     arr1 = '[{"summary":"前半段","time_text":"一年后","ev_type":"task","confidence":0.8}]'
     arr2 = '[{"summary":"后半段","time_text":"三年后","ev_type":"milestone","confidence":0.7}]'
     llm = _QueueLLM([arr1, arr2])
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: llm)
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: llm)
     events = _seed(tl_service)
     task_id = svc.start_fork("proj_0123456789ab", events[0]["id"], "目标", 5)
     # 批1 是 mock（立即返回），0.3s 后必然已进入等待窗口
@@ -311,7 +312,7 @@ def test_guidance_window_timeout_continues_without(tl_service, monkeypatch):
     arr1 = '[{"summary":"前半段","time_text":"一年后","ev_type":"task","confidence":0.8}]'
     arr2 = '[{"summary":"后半段","time_text":"三年后","ev_type":"milestone","confidence":0.7}]'
     llm = _QueueLLM([arr1, arr2])
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: llm)
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: llm)
     events = _seed(tl_service)
     task_id = svc.start_fork("proj_0123456789ab", events[0]["id"], "目标", 5)
     status = _wait(tl_service, task_id)

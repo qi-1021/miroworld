@@ -69,7 +69,7 @@ def _wait(service, task_id, deadline=10):
 # extract：stage/progress/steps/elapsed
 # ---------------------------------------------------------------------------
 def test_extract_task_has_progress_fields(tl_service, monkeypatch):
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _OkLLM())
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _OkLLM())
 
     def _fake_bible(pid):
         class B:
@@ -100,7 +100,7 @@ def test_extract_task_has_progress_fields(tl_service, monkeypatch):
 
 def test_extract_task_steps_capture_chunk_and_failures(tl_service, monkeypatch):
     """LLM 失败时 steps 记录重试/降级，最终 failed/partial_failed 含 error/steps。"""
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _DownLLM())
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _DownLLM())
 
     def _fake_bible(pid):
         class B:
@@ -126,7 +126,7 @@ def test_extract_task_steps_capture_chunk_and_failures(tl_service, monkeypatch):
 # future：stage 流转
 # ---------------------------------------------------------------------------
 def test_future_task_stages(tl_service, monkeypatch):
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _OkLLM())
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _OkLLM())
     _seed(tl_service)
     task_id = svc.start_future("proj_0123456789ab", "统一大陆", 5)
     status = _wait(tl_service, task_id)
@@ -140,7 +140,7 @@ def test_future_task_stages(tl_service, monkeypatch):
 
 
 def test_future_failed_contains_error(tl_service, monkeypatch):
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _DownLLM())
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _DownLLM())
     _seed(tl_service)
     task_id = svc.start_future("proj_0123456789ab", "x", 3)
     status = _wait(tl_service, task_id)
@@ -153,7 +153,7 @@ def test_future_failed_contains_error(tl_service, monkeypatch):
 # fork：branch_id / event_count + failed error
 # ---------------------------------------------------------------------------
 def test_fork_completed_has_branch_meta(tl_service, monkeypatch):
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _OkLLM())
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _OkLLM())
     events = _seed(tl_service)
     task_id = svc.start_fork("proj_0123456789ab", events[0]["id"], "假设北上", 5)
     status = _wait(tl_service, task_id)
@@ -164,7 +164,7 @@ def test_fork_completed_has_branch_meta(tl_service, monkeypatch):
 
 
 def test_fork_failed_contains_error(tl_service, monkeypatch):
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _DownLLM())
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _DownLLM())
     events = _seed(tl_service)
     task_id = svc.start_fork("proj_0123456789ab", events[0]["id"], "x", 3)
     status = _wait(tl_service, task_id)
@@ -175,7 +175,7 @@ def test_fork_failed_contains_error(tl_service, monkeypatch):
 
 
 def test_create_app_status_route_transparent(tl_service, monkeypatch):
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _OkLLM())
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _OkLLM())
     _seed(tl_service)
     app = create_app()
     app.config["TESTING"] = True

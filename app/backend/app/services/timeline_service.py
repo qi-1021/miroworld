@@ -239,18 +239,20 @@ def _trunc_summary(text: str, limit: int = 40) -> str:
 # ---------------------------------------------------------------------------
 # LLM 客户端构造（复用现有模型凭据 + iter 候选回退，不改 graphiti_patch）
 # ---------------------------------------------------------------------------
-def _build_llm_client():
+def _build_llm_client(project_id: Optional[str] = None):
     """构造 OpenAI-compatible LLM 客户端，返回 LLMClient。
 
-    优先从模型注册表解析候选（iter_chat_model_candidates）；
-    无候选则回退到默认配置 LLMClient()。仅供测试 mock。
+    1. 指定 project_id 时，优先使用该项目绑定的 primary 角色模型
+       （用户在网页模型设置里为项目切换的模型立即对时间线任务生效）；
+    2. 无项目绑定则走注册表候选（GRAPHITI_LLM → PRIMARY → 第一个已验证 chat）；
+    3. 都没有才回退到默认环境配置 LLMClient()。
     """
     from ..utils.llm_client import LLMClient
     try:
-        from .graphiti_patch import iter_chat_model_candidates
-        cands = iter_chat_model_candidates()
-        if cands:
-            api_key, base_url, model = cands[0]
+        from .model_runtime import resolve_project_chat_config_any
+        config = resolve_project_chat_config_any(project_id)
+        if config:
+            api_key, base_url, model = config
             if api_key and base_url and model:
                 return LLMClient(api_key=api_key, base_url=base_url, model=model)
     except Exception as e:
@@ -680,7 +682,7 @@ def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
 
         llm = None
         try:
-            llm = _build_llm_client()
+            llm = _build_llm_client(project_id)
         except Exception as e:
             logger.warning(f"构造 LLM 客户端失败，全部走启发式: {e}")
             _task_log(task_id, "LLM 客户端不可用，改用启发式抽取")
@@ -812,7 +814,7 @@ def _future_extract_body(project_id: str, task_id: str, goal: str, horizon: Opti
     try:
         _task_log(task_id, "构建未来推演上下文")
         _update_task(task_id, stage="构建推演上下文", progress=20)
-        llm = _build_llm_client()
+        llm = _build_llm_client(project_id)
         context = load_timeline(project_id, None)
         events = context.get("events", [])
         ctx_summary = "\n".join([f"- {_trunc_summary(e.get('summary'))}" for e in events[:40]]) or "（无）"
@@ -982,7 +984,7 @@ def _fork_extract_body(project_id: str, event_id: str, task_id: str,
     try:
         _task_log(task_id, "构建分叉推演上下文")
         _update_task(task_id, stage="构建推演上下文", progress=10)
-        llm = _build_llm_client()
+        llm = _build_llm_client(project_id)
         data = load_timeline(project_id, None)
         events = data.get("events", [])
         branch_point = next((e for e in events if e.get("id") == event_id), None)
@@ -1141,7 +1143,7 @@ def _fork_continue_body(project_id: str, branch_id: str, task_id: str,
     try:
         _task_log(task_id, "构建续推上下文")
         _update_task(task_id, stage="构建续推上下文", progress=20)
-        llm = _build_llm_client()
+        llm = _build_llm_client(project_id)
         data = load_timeline(project_id, None)
         events = data.get("events", [])
         branch_events = [e for e in events if e.get("branch_id") == branch_id]
@@ -1502,7 +1504,7 @@ def _characters_generate_body(project_id: str, task_id: str) -> None:
 
         _task_log(task_id, "调用模型生成人物设定")
         _update_task(task_id, stage="调用模型", progress=50)
-        llm = _build_llm_client()
+        llm = _build_llm_client(project_id)
         arr = _char_gen_call(llm, user)
         _task_log(task_id, "解析生成结果")
         _update_task(task_id, stage="解析结果", progress=80)

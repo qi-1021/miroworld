@@ -18,10 +18,11 @@ from app.services import timeline_service as svc
 @pytest.fixture()
 def tl_service(tmp_path, monkeypatch):
     monkeypatch.setattr(svc, "TIMELINE_ROOT", str(tmp_path / "world-timeline"))
+    monkeypatch.setattr(svc, "_TASKS_DIR", str(tmp_path / "world-timeline" / "tasks"))
     with svc._task_lock:
         svc._tasks.clear()
         svc._tasks_loaded = False
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _OkLLM())
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _OkLLM())
     monkeypatch.setattr(svc, "FORK_GUIDANCE_WINDOW", 0.05)  # 测试加速：跳过批2等待窗口
     yield svc
 
@@ -29,6 +30,7 @@ def tl_service(tmp_path, monkeypatch):
 @pytest.fixture()
 def tl_client(tmp_path, monkeypatch):
     monkeypatch.setattr(svc, "TIMELINE_ROOT", str(tmp_path / "world-timeline"))
+    monkeypatch.setattr(svc, "_TASKS_DIR", str(tmp_path / "world-timeline" / "tasks"))
     with svc._task_lock:
         svc._tasks.clear()
         svc._tasks_loaded = False
@@ -116,7 +118,7 @@ def test_fork_sorts_strictly_after_branch_point(tl_service):
 
 
 def test_fork_missing_branch_point_fails(tl_service, monkeypatch):
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _OkLLM())
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _OkLLM())
     _seed(tl_service)
     task_id = svc.start_fork("proj_0123456789ab", "no_such_evt", "x", 3)
     status = _wait(tl_service, task_id)
@@ -129,7 +131,7 @@ def test_fork_rejects_missing_event_id(tl_service):
 
 
 def test_fork_llm_down_fails_tolerably(tl_service, monkeypatch):
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _DownLLM())
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _DownLLM())
     events = _seed(tl_service)
     task_id = svc.start_fork("proj_0123456789ab", events[0]["id"], "x", 3)
     status = _wait(tl_service, task_id)
@@ -186,7 +188,7 @@ def test_endpoint_fork_not_swallowed(tl_client, monkeypatch):
 
 def test_endpoint_fork_returns_task(tl_client, monkeypatch):
     monkeypatch.setattr(svc, "TIMELINE_ROOT", str(__import__("tempfile").mkdtemp()))
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _OkLLM())
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _OkLLM())
     with svc._task_lock:
         svc._tasks.clear()
         svc._tasks_loaded = False

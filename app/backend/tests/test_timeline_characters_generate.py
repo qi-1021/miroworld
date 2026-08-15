@@ -67,7 +67,7 @@ def test_generate_fills_empty_fields(monkeypatch):
     _seed_characters(["阿米娅", "博士"])
     llm = _GenLLM('[{"name":"阿米娅","traits":"温柔坚韧","description":"罗德岛领袖"},'
                   '{"name":"博士","traits":"冷静指挥","description":"战略家"}]')
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: llm)
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: llm)
     task_id = svc.start_characters_generate("proj_0123456789ab")
     status = _wait(task_id)
     assert status is not None and status["status"] == "completed"
@@ -84,7 +84,7 @@ def test_generate_does_not_overwrite_edited(monkeypatch):
     _seed_characters(["阿米娅", "博士"], fill=True)
     llm = _GenLLM('[{"name":"阿米娅","traits":"LLM新特质","description":"LLM新描述"},'
                   '{"name":"博士","traits":"冷静指挥","description":"战略家"}]')
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: llm)
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: llm)
     task_id = svc.start_characters_generate("proj_0123456789ab")
     status = _wait(task_id)
     assert status is not None and status["status"] == "completed"
@@ -100,7 +100,7 @@ def test_generate_does_not_overwrite_edited(monkeypatch):
 def test_generate_all_filled_skips_llm(monkeypatch):
     _seed_characters(["阿米娅"], fill=True)
     llm = _GenLLM('[{"name":"阿米娅","traits":"x","description":"y"}]')
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: llm)
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: llm)
     task_id = svc.start_characters_generate("proj_0123456789ab")
     status = _wait(task_id)
     assert status is not None and status["status"] == "completed"
@@ -111,7 +111,7 @@ def test_generate_all_filled_skips_llm(monkeypatch):
 def test_generate_failure_sets_error(monkeypatch):
     _seed_characters(["阿米娅"])
     llm = _GenLLM('', fail=True)
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: llm)
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: llm)
     task_id = svc.start_characters_generate("proj_0123456789ab")
     status = _wait(task_id)
     assert status is not None and status["status"] == "failed"
@@ -121,7 +121,7 @@ def test_generate_failure_sets_error(monkeypatch):
 def test_endpoint_generate(monkeypatch):
     _seed_characters(["阿米娅"])
     llm = _GenLLM('[{"name":"阿米娅","traits":"t","description":"d"}]')
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: llm)
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: llm)
     app = create_app(); app.config["TESTING"] = True
     with app.test_client() as c:
         r = c.post("/api/timeline/proj_0123456789ab/characters/generate")

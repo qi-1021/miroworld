@@ -114,6 +114,8 @@ class WorldBible:
             "goal": (self.metadata or {}).get("goal", ""),
             # 用途模式（可选，POST /input 的 mode 参数透传）
             "mode": (self.metadata or {}).get("mode", ""),
+            # 已上传文件的清单（首页上传的文件在设定页展示，解决"下一页看不到文件"）
+            "files": (self.metadata or {}).get("files", []),
         }
 
 
@@ -251,6 +253,30 @@ class WorldBibleService:
     # ---------------- 输入与索引 ----------------
 
     @classmethod
+    def _merge_file_manifests(
+        cls, old_files: Optional[List[Dict[str, Any]]], new_files: Optional[List[Dict[str, Any]]]
+    ) -> List[Dict[str, Any]]:
+        """合并两次上传的文件清单：同 (filename, source) 用新条目替换，其余保留。
+
+        这样用户在首页上传文件后，再到设定页补传文件（或只保存文本）时，
+        旧文件清单不会丢失；同时 stats().files 能完整反映已上传文件。
+        """
+        merged: List[Dict[str, Any]] = []
+        index: Dict[tuple, int] = {}
+        for item in (old_files or []) + (new_files or []):
+            if not isinstance(item, dict):
+                continue
+            key = (str(item.get("filename") or ""), str(item.get("source") or ""))
+            if not key[0]:
+                continue
+            if key in index:
+                merged[index[key]] = item
+            else:
+                index[key] = len(merged)
+                merged.append(item)
+        return merged
+
+    @classmethod
     def save_input(
         cls,
         project_id: str,
@@ -272,12 +298,25 @@ class WorldBibleService:
         if not background.strip() and not story.strip():
             raise ValueError("背景文档和小说正文不能同时为空，至少需要输入一个")
 
+        # 文件清单跨次上传合并：后续补传/纯文本保存不丢旧清单
+        final_metadata = dict(metadata or {})
+        old_files: List[Dict[str, Any]] = []
+        try:
+            old_bible = cls.get_bible(project_id)
+            if old_bible is not None:
+                old_files = list((old_bible.metadata or {}).get("files") or [])
+        except Exception as e:
+            logger.debug(f"读取旧文件清单失败（忽略）: {e}")
+        final_metadata["files"] = cls._merge_file_manifests(
+            old_files, final_metadata.get("files") or []
+        )
+
         bible = WorldBible(
             project_id=project_id,
             background_text=background,
             story_text=story,
             updated_at=datetime.now().isoformat(timespec='seconds'),
-            metadata=dict(metadata or {}),
+            metadata=final_metadata,
         )
 
         chunks: List[WorldChunk] = []

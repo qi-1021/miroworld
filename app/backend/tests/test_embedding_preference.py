@@ -139,3 +139,18 @@ def test_preference_api(tmp_path, monkeypatch):
         assert r2.get_json()["data"]["preference"] == "cloud"
         r3 = c.put("/api/models/embedding-preference", json={"preference": "bad"})
         assert r3.status_code == 400
+
+
+def test_preference_api_resets_embedder_cache(tmp_path, monkeypatch):
+    """切换偏好后，进程内 world_bible 的懒加载 embedder 缓存应立即失效。"""
+    monkeypatch.setattr(embedding_resolver, "_PREF_PATH", tmp_path / "pref.json")
+    monkeypatch.delenv("EMBEDDING_PREFERENCE", raising=False)
+    monkeypatch.setattr(
+        world_bible.WorldBibleService, "_embedder_cache", object(), raising=False
+    )
+    app = create_app()
+    app.config["TESTING"] = True
+    with app.test_client() as c:
+        r = c.put("/api/models/embedding-preference", json={"preference": "local"})
+        assert r.status_code == 200
+    assert world_bible.WorldBibleService._embedder_cache is None

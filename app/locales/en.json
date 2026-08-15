@@ -930,7 +930,8 @@
     "msgRefillEdgesDone": "Edge refill complete",
     "msgRefillEdgesFailed": "Edge refill failed",
     "msgRefillEdgesStartFailed": "Start edge refill failed",
-    "msgRefillEdgesStatusFailed": "Failed to query edge refill status"
+    "msgRefillEdgesStatusFailed": "Failed to query edge refill status",
+    "savedFilesTitle": "{count} saved file(s) from Home"
   },
   "timeline": {
     "tab": "Timeline",

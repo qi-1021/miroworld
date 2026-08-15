@@ -101,6 +101,43 @@ def test_get_stats_missing_project(world_root):
     assert WorldBibleService.get_stats("nope") is None
 
 
+def test_stats_exposes_saved_file_manifest(world_root):
+    manifest = [
+        {"filename": "背景设定.md", "size": 128, "source": "background"},
+        {"filename": "第一章.txt", "size": 256, "source": "story"},
+    ]
+    bible = WorldBibleService.save_input(
+        "p1", background=BG_TEXT, story=STORY_TEXT,
+        metadata={"files": manifest},
+    )
+    stats = bible.stats()
+    assert stats["files"] == manifest
+    # 落盘后再次读取仍可见（前端世界设定页依赖 /settings 展示首页上传的文件）
+    assert WorldBibleService.get_stats("p1")["files"] == manifest
+
+
+def test_save_input_merges_file_manifest_across_uploads(world_root):
+    first = [
+        {"filename": "背景设定.md", "size": 128, "source": "background"},
+        {"filename": "第一章.txt", "size": 256, "source": "story"},
+    ]
+    WorldBibleService.save_input(
+        "p1", background=BG_TEXT, story=STORY_TEXT, metadata={"files": first}
+    )
+    second = [
+        {"filename": "第二章.txt", "size": 300, "source": "story"},
+        {"filename": "背景设定.md", "size": 200, "source": "background"},  # 同名同源 → 替换
+    ]
+    WorldBibleService.save_input("p1", story=STORY_TEXT, metadata={"files": second})
+    files = WorldBibleService.get_stats("p1")["files"]
+    by_key = {(f["filename"], f["source"]): f["size"] for f in files}
+    assert by_key == {
+        ("背景设定.md", "background"): 200,
+        ("第一章.txt", "story"): 256,
+        ("第二章.txt", "story"): 300,
+    }
+
+
 def test_search_finds_relevant_chunks(world_root):
     WorldBibleService.save_input("p1", background=BG_TEXT, story=STORY_TEXT)
 

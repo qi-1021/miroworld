@@ -110,7 +110,7 @@ def test_heuristic_fallback_on_llm_down(tl_service, monkeypatch):
             raise ConnectionError("gateway down")
 
     original = svc._build_llm_client
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _Down())
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _Down())
 
     def _fake_bible(project_id):
         class B:
@@ -151,7 +151,7 @@ def test_future_appends(tl_service, monkeypatch):
                     '"time_kind":"phase","location_text":"罗德岛","ev_type":"milestone",'
                     '"confidence":0.8,"characters":["阿米娅"]}]')
 
-    monkeypatch.setattr(svc, "_build_llm_client", lambda: _Ok())
+    monkeypatch.setattr(svc, "_build_llm_client", lambda *a, **k: _Ok())
     # 先造一条基础事件
     ev_base = svc._normalize_event(
         {"summary": "当前事件", "time_text": "十五岁", "ev_type": "milestone"},
@@ -202,7 +202,7 @@ def test_endpoint_extract_and_get_and_patch(tl_client, monkeypatch):
                     '{"summary":"通过考核","time_text":"十五岁","age":15,"location_text":"罗德岛本舰",'
                     '"ev_type":"education","confidence":0.85,"characters":["阿米娅"]}]')
 
-    _mock_extract_endpoints(tl_client, monkeypatch, lambda: _Ok())
+    _mock_extract_endpoints(tl_client, monkeypatch, lambda *a, **k: _Ok())
 
     r = tl_client.post("/api/timeline/extract", json={"project_id": "proj_0123456789ab", "source": "story"})
     assert r.status_code == 200
@@ -251,7 +251,7 @@ def test_endpoint_future(tl_client, monkeypatch):
             return ('[{"summary":"未来和平","time_text":"五年后","ev_type":"milestone",'
                     '"location_text":"罗德岛","confidence":0.8}]')
 
-    _mock_extract_endpoints(tl_client, monkeypatch, lambda: _Ok())
+    _mock_extract_endpoints(tl_client, monkeypatch, lambda *a, **k: _Ok())
 
     r = tl_client.post("/api/timeline/future", json={"project_id": "proj_0123456789ab", "goal": "统一", "horizon": 5})
     assert r.status_code == 200

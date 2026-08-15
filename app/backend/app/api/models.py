@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
 from typing import Any, Dict
 
@@ -35,6 +36,7 @@ from ..services.model_registry import (
 
 
 registry_service = ModelRegistryService()
+_logger = logging.getLogger('mirofish.api.models')
 
 
 def detect_connection(draft: ConnectionDraft) -> DetectionResult:
@@ -124,12 +126,19 @@ def get_embedding_preference_route():
 
 @models_bp.route("/embedding-preference", methods=["PUT"])
 def put_embedding_preference_route():
-    """写入向量模型偏好（cloud/local/auto）。"""
+    """写入向量模型偏好（cloud/local/auto），并立即使当前进程内缓存失效。"""
     from ..services.embedding_resolver import set_embedding_preference
     data = request.get_json(silent=True) or {}
     try:
         pref = set_embedding_preference(str(data.get("preference") or ""))
-        return _success({"preference": pref})
+        # 切换偏好后清掉 world_bible 的懒加载 embedder 缓存，
+        # 否则要等后端重启才会按新偏好选择云端/本地模型
+        try:
+            from ..services.world_bible import WorldBibleService
+            WorldBibleService._reset_embedder_cache()
+        except Exception as exc:  # 缓存清理失败不应影响偏好已保存的结果
+            _logger.warning(f"清理向量模型缓存失败（忽略）: {exc}")
+        return _success({"preference": pref, "cache_reset": True})
     except ValueError as exc:
         return _error("VALIDATION_ERROR", str(exc), 400)
 

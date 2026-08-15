@@ -345,7 +345,8 @@ class SimulationRunner:
         platform: str = "parallel",  # twitter / reddit / parallel
         max_rounds: int = None,  # 最大模拟轮数（可选，用于截断过长的模拟）
         enable_graph_memory_update: bool = False,  # 是否将活动更新到Zep图谱
-        graph_id: str = None  # Zep图谱ID（启用图谱更新时必需）
+        graph_id: str = None,  # Zep图谱ID（启用图谱更新时必需）
+        project_id: str = None  # 项目ID（用于把项目角色绑定的模型注入子进程）
     ) -> SimulationRunState:
         """
         启动模拟
@@ -356,6 +357,7 @@ class SimulationRunner:
             max_rounds: 最大模拟轮数（可选，用于截断过长的模拟）
             enable_graph_memory_update: 是否将Agent活动动态更新到Zep图谱
             graph_id: Zep图谱ID（启用图谱更新时必需）
+            project_id: 项目ID（可选；绑定过模型时子进程沿用项目绑定）
 
         Returns:
             SimulationRunState
@@ -461,6 +463,23 @@ class SimulationRunner:
             env = os.environ.copy()
             env['PYTHONUTF8'] = '1'  # Python 3.7+ 支持，让所有 open() 默认使用 UTF-8
             env['PYTHONIOENCODING'] = 'utf-8'  # 确保 stdout/stderr 使用 UTF-8
+
+            # 项目角色绑定模型优先：网页模型设置里切换后，模拟子进程立即使用该模型；
+            # 未绑定则沿用后端进程的 .env LLM_* 配置
+            if project_id:
+                try:
+                    from ..services.model_runtime import resolve_project_chat_env
+                    model_env = resolve_project_chat_env(project_id)
+                    if model_env:
+                        env.update(model_env)
+                        logger.info(
+                            "模拟子进程使用项目绑定模型: project=%s model=%s",
+                            project_id, model_env.get("LLM_MODEL_NAME"),
+                        )
+                    else:
+                        logger.info("项目未绑定模型，模拟子进程沿用 .env 配置: %s", project_id)
+                except Exception as exc:
+                    logger.warning(f"解析项目模型环境失败，沿用 .env: {exc}")
 
             # 设置工作目录为模拟目录（数据库等文件会生成在此）
             # 使用 start_new_session=True 创建新的进程组，确保可以通过 os.killpg 终止所有子进程

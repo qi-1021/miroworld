@@ -930,7 +930,8 @@
     "msgRefillEdgesDone": "补边完成",
     "msgRefillEdgesFailed": "补边失败",
     "msgRefillEdgesStartFailed": "启动补边失败",
-    "msgRefillEdgesStatusFailed": "补边状态查询失败"
+    "msgRefillEdgesStatusFailed": "补边状态查询失败",
+    "savedFilesTitle": "已保存 {count} 个文件（来自首页）"
   },
   "timeline": {
     "tab": "时间线",

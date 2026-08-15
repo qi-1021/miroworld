@@ -510,6 +510,20 @@ def prepare_simulation():
                     message="开始准备模拟环境..."
                 )
 
+                # 项目角色绑定模型优先（网页切换后此处立即可见），
+                # 未绑定则回退注册表候选/.env
+                llm_config = None
+                try:
+                    from ..services.model_runtime import resolve_project_chat_config_any
+                    llm_config = resolve_project_chat_config_any(state.project_id)
+                    if llm_config:
+                        logger.info(
+                            "准备模拟使用项目模型: project=%s model=%s",
+                            state.project_id, llm_config[2],
+                        )
+                except Exception as exc:
+                    logger.warning(f"解析项目模型配置失败，沿用 .env: {exc}")
+
                 # 准备模拟（带进度回调）
                 # 存储阶段进度详情
                 stage_details = {}
@@ -582,7 +596,8 @@ def prepare_simulation():
                     defined_entity_types=entity_types_list,
                     use_llm_for_profiles=use_llm_for_profiles,
                     progress_callback=progress_callback,
-                    parallel_profile_count=parallel_profile_count
+                    parallel_profile_count=parallel_profile_count,
+                    llm_config=llm_config
                 )
 
                 # 任务完成
@@ -1341,7 +1356,21 @@ def generate_profiles():
                 "error": "没有找到符合条件的实体"
             }), 400
 
-        generator = OasisProfileGenerator()
+        # 注册表/项目绑定模型优先（未绑定则沿用 .env）
+        llm_kwargs = {}
+        try:
+            from ..services.model_runtime import resolve_project_chat_config_any
+            llm_config = resolve_project_chat_config_any(None)
+            if llm_config:
+                llm_kwargs = {
+                    "api_key": llm_config[0],
+                    "base_url": llm_config[1],
+                    "model_name": llm_config[2],
+                }
+        except Exception as exc:
+            logger.warning(f"解析模型配置失败，沿用 .env: {exc}")
+
+        generator = OasisProfileGenerator(**llm_kwargs)
         profiles = generator.generate_profiles_from_entities(
             entities=filtered.entities,
             use_llm=use_llm
@@ -1533,7 +1562,8 @@ def start_simulation():
             platform=platform,
             max_rounds=max_rounds,
             enable_graph_memory_update=enable_graph_memory_update,
-            graph_id=graph_id
+            graph_id=graph_id,
+            project_id=state.project_id
         )
 
         # 更新模拟状态

@@ -64,6 +64,14 @@
                 <button class="file-remove" @click.stop="bgFiles.splice(i, 1)">×</button>
               </div>
             </div>
+            <div v-if="savedBgFiles.length" class="saved-file-list">
+              <div class="saved-file-title">📁 {{ $t('world.savedFilesTitle', { count: savedBgFiles.length }) }}</div>
+              <div v-for="(f, i) in savedBgFiles" :key="'saved-bg-' + i" class="file-item saved">
+                <span class="file-name" :title="f.filename">{{ f.filename }}</span>
+                <span class="file-size">{{ formatSize(f.size) }}</span>
+                <span class="file-badge">✓</span>
+              </div>
+            </div>
             <textarea
               v-model="background"
               class="world-textarea"
@@ -103,6 +111,14 @@
                 <span class="file-name" :title="f.name">{{ f.name }}</span>
                 <span class="file-size">{{ formatSize(f.size) }}</span>
                 <button class="file-remove" @click.stop="stFiles.splice(i, 1)">×</button>
+              </div>
+            </div>
+            <div v-if="savedStFiles.length" class="saved-file-list">
+              <div class="saved-file-title">📁 {{ $t('world.savedFilesTitle', { count: savedStFiles.length }) }}</div>
+              <div v-for="(f, i) in savedStFiles" :key="'saved-st-' + i" class="file-item saved">
+                <span class="file-name" :title="f.filename">{{ f.filename }}</span>
+                <span class="file-size">{{ formatSize(f.size) }}</span>
+                <span class="file-badge">✓</span>
               </div>
             </div>
             <textarea
@@ -607,6 +623,11 @@ const stDragging = ref(false)
 const bgFileInput = ref(null)
 const stFileInput = ref(null)
 
+// 已保存到设定库的文件清单（首页上传后在此展示，避免"下一页看不到文件"）
+const savedFiles = ref([])
+const savedBgFiles = computed(() => savedFiles.value.filter(f => f.source === 'background'))
+const savedStFiles = computed(() => savedFiles.value.filter(f => f.source === 'story'))
+
 // 世界模拟状态
 const simSteps = ref(6)
 const simStepMin = ref(30)
@@ -983,6 +1004,7 @@ async function loadAll() {
       getWorldConflicts(projectId)
     ])
     stats.value = statsRes.stats || null
+    savedFiles.value = (stats.value && stats.value.files) || []
     report.value = conflictsRes.report || null
     // 预填任务目标（来自首页或上次保存）
     if (stats.value && stats.value.goal) {
@@ -1009,6 +1031,7 @@ async function handleSave() {
       if (story.value.trim()) formData.append('story_text', story.value)
       const res = await saveWorldInputMultipart(projectId, formData)
       stats.value = res.stats
+      savedFiles.value = (res.stats && res.stats.files) || []
       const files = res.stats.files || []
       saveMsg.value = t('world.msgSavedFiles', { files: files.length, chunks: res.stats.total_chunks })
     } else {
@@ -1017,6 +1040,7 @@ async function handleSave() {
         story: story.value
       })
       stats.value = res.stats
+      savedFiles.value = (res.stats && res.stats.files) || []
       saveMsg.value = t('world.msgSavedChunks', {
         chunks: res.stats.total_chunks,
         bg: res.stats.background_chunks,
@@ -1622,6 +1646,28 @@ onMounted(() => {
 }
 .file-remove:hover {
   color: #D32F2F;
+}
+.saved-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.saved-file-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #5f7008;
+}
+.file-item.saved {
+  border-style: dashed;
+  border-color: #d5e0a8;
+  background: #f7f9ef;
+}
+.file-badge {
+  color: #5f7008;
+  font-size: 10px;
+  font-weight: 800;
+  flex-shrink: 0;
 }
 
 /* 世界模拟 */
