@@ -3,12 +3,16 @@
 用于跟踪长时间运行的任务（如图谱构建）
 """
 
+import os
+import json
 import uuid
 import threading
 from datetime import datetime
 from enum import Enum
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
+
+from ..utils.atomic_json import atomic_write_json
 
 
 class TaskStatus(str, Enum):
@@ -50,6 +54,24 @@ class Task:
             "metadata": self.metadata,
         }
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'Task':
+        """从字典恢复任务对象。"""
+        from datetime import datetime
+        return cls(
+            task_id=data["task_id"],
+            task_type=data.get("task_type", ""),
+            status=TaskStatus(data.get("status", TaskStatus.PENDING.value)),
+            created_at=datetime.fromisoformat(data["created_at"]),
+            updated_at=datetime.fromisoformat(data["updated_at"]),
+            progress=data.get("progress", 0),
+            message=data.get("message", ""),
+            result=data.get("result"),
+            error=data.get("error"),
+            metadata=data.get("metadata", {}),
+            progress_detail=data.get("progress_detail", {}),
+        )
+
 
 class TaskManager:
     """
@@ -59,6 +81,8 @@ class TaskManager:
 
     _instance = None
     _lock = threading.Lock()
+    # 生产环境由 create_app 设置为 data/task-manager；测试默认 None 不落盘
+    PERSIST_DIR: Optional[str] = None
 
     def __new__(cls):
         """单例模式"""
@@ -99,6 +123,9 @@ class TaskManager:
         # 创建新任务时顺带清理最旧的已完成/失败任务，避免长期运行内存无限增长
         self._prune_tasks()
 
+        # 生产环境持久化，重启后任务可恢复（避免前端查询 404）
+        self._persist_task(task_id)
+
         return task_id
 
     def _prune_tasks(self, max_keep: int = 200) -> int:
@@ -128,6 +155,58 @@ class TaskManager:
         """获取任务"""
         with self._task_lock:
             return self._tasks.get(task_id)
+
+    def _task_path(self, task_id: str) -> str:
+        return os.path.join(self.PERSIST_DIR, f"{task_id}.json")
+
+    def _persist_task(self, task_id: str) -> None:
+        """将单个任务原子写入 PERSIST_DIR（未配置时 no-op）。"""
+        if not self.PERSIST_DIR:
+            return
+        try:
+            os.makedirs(self.PERSIST_DIR, exist_ok=True)
+            with self._task_lock:
+                task = self._tasks.get(task_id)
+                if task is None:
+                    return
+                data = task.to_dict()
+            atomic_write_json(self._task_path(task_id), data)
+        except Exception as e:
+            logger = __import__('logging').getLogger('mirofish.task')
+            logger.warning(f"持久化任务失败（忽略）: {task_id}, {e}")
+
+    def load_persisted(self) -> int:
+        """从磁盘加载任务状态（生产环境启动时调用）。
+
+        - PENDING/PROCESSING 在重启后已无法继续执行 → 标记 FAILED（error 说明服务重启中断）；
+        - COMPLETED/FAILED 原样保留；
+        - 已存在于内存的任务不覆盖。
+        """
+        if not self.PERSIST_DIR or not os.path.isdir(self.PERSIST_DIR):
+            return 0
+        loaded = 0
+        for fn in os.listdir(self.PERSIST_DIR):
+            if not fn.endswith(".json"):
+                continue
+            path = os.path.join(self.PERSIST_DIR, fn)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if not isinstance(data, dict) or not data.get("task_id"):
+                    continue
+                task = Task.from_dict(data)
+                if task.status in (TaskStatus.PENDING, TaskStatus.PROCESSING):
+                    task.status = TaskStatus.FAILED
+                    task.error = "服务重启，任务中断"
+                    task.message = "任务已中断，请重新发起"
+                with self._task_lock:
+                    if task.task_id not in self._tasks:
+                        self._tasks[task.task_id] = task
+                        loaded += 1
+            except Exception as e:
+                logger = __import__('logging').getLogger('mirofish.task')
+                logger.warning(f"恢复任务状态失败（跳过）: {path}, {e}")
+        return loaded
 
     def update_task(
         self,
@@ -167,6 +246,9 @@ class TaskManager:
                     task.error = error
                 if progress_detail is not None:
                     task.progress_detail = progress_detail
+
+        # 生产环境持久化：每次状态变更都落盘
+        self._persist_task(task_id)
 
     def complete_task(self, task_id: str, result: Dict):
         """标记任务完成"""

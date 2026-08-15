@@ -68,6 +68,19 @@ def create_app(config_class=Config):
         except Exception as e:
             logger.warning(f"启动任务文件清理失败（忽略）: {e}")
 
+        # 通用任务管理器（图谱/报告等）启用磁盘持久化并恢复中断任务
+        try:
+            from .models.task import TaskManager
+            data_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
+            )
+            TaskManager.PERSIST_DIR = os.path.join(data_dir, "task-manager")
+            restored = TaskManager().load_persisted()
+            if restored:
+                logger.info(f"启动恢复：已恢复 {restored} 个通用任务（中断任务标记为 failed）")
+        except Exception as e:
+            logger.warning(f"通用任务持久化初始化失败（忽略）: {e}")
+
     # 请求日志中间件
     @app.before_request
     def log_request():
