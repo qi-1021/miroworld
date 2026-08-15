@@ -793,6 +793,12 @@
   "world": {
     "headerTitle": "World Settings Library",
     "backProject": "Back to Project",
+    "exportSnapshot": "Export Snapshot",
+    "importSnapshot": "Import Snapshot",
+    "snapshotExported": "Project snapshot exported (.mirofish.json)",
+    "snapshotExportFailed": "Failed to export snapshot",
+    "snapshotImportFailed": "Failed to import snapshot",
+    "snapshotImported": "Imported as {id}, redirecting...",
     "inputTitle": "Input World Material",
     "inputRequiredHint": "At least one of background / story",
     "filesSelected": "{count} files selected",
@@ -954,6 +960,16 @@
     "savedFilesTitle": "{count} saved file(s) from Home",
     "loadFailed": "Failed to load world settings",
     "retry": "Retry"
+  },
+  "assistant": {
+    "open": "Assistant",
+    "title": "Built-in Project Assistant",
+    "hint": "I read the current project's timeline, settings, conflicts and graph to help you decide which section to edit and how.",
+    "placeholder": "e.g. The ending of my timeline seems to be in a different world from the earlier parts—how should I handle it?",
+    "ask": "Ask",
+    "asking": "Thinking...",
+    "emptyAnswer": "Assistant returned an empty answer. Please retry.",
+    "failed": "Assistant call failed"
   },
   "timeline": {
     "tab": "Timeline",

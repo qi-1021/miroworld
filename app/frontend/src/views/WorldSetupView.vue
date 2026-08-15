@@ -12,6 +12,10 @@
       </div>
       <div class="header-right">
         <span class="project-id">{{ projectId }}</span>
+        <button class="back-btn" :disabled="snapshotBusy" @click="exportSnapshot">{{ $t('world.exportSnapshot') }}</button>
+        <button class="back-btn" :disabled="snapshotBusy" @click="importFileInput.click()">{{ $t('world.importSnapshot') }}</button>
+        <input ref="importFileInput" type="file" accept=".json,.mirofish.json,application/json" style="display:none" @change="onImportSnapshot" />
+        <button class="back-btn" @click="assistantOpen = true">{{ $t('assistant.open') }}</button>
         <button class="back-btn" @click="goBack">← {{ $t('world.backProject') }}</button>
       </div>
     </header>
@@ -601,6 +605,36 @@
         </div>
         <TimelineView :project-id="projectId" />
       </div>
+
+      <!-- 内置项目助手 -->
+      <div v-if="assistantOpen" class="assistant-modal-mask" @click.self="assistantOpen = false">
+        <div class="assistant-modal">
+          <div class="assistant-head">
+            <span class="assistant-title">{{ $t('assistant.title') }}</span>
+            <button class="assistant-close" @click="assistantOpen = false">×</button>
+          </div>
+          <div class="assistant-body">
+            <p class="assistant-hint">{{ $t('assistant.hint') }}</p>
+            <textarea
+              v-model="assistantQuestion"
+              rows="3"
+              class="assistant-input"
+              :placeholder="$t('assistant.placeholder')"
+            ></textarea>
+            <div class="assistant-actions">
+              <button
+                class="action-btn"
+                :disabled="assistantAsking || !assistantQuestion.trim()"
+                @click="askAssistantNow"
+              >
+                {{ assistantAsking ? $t('assistant.asking') : $t('assistant.ask') }}
+              </button>
+            </div>
+            <div v-if="assistantAnswer" class="assistant-answer">{{ assistantAnswer }}</div>
+            <div v-if="assistantMsg" class="msg-line" :class="{ error: assistantMsgError }">{{ assistantMsg }}</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -628,13 +662,22 @@ import {
   getWorldGraph,
   refillWorldGraphEdges
 } from '../api/world'
-import { getTaskStatus } from '../api/graph'
+import { getTaskStatus, exportProjectSnapshot, importProjectSnapshot } from '../api/graph'
+import { askAssistant } from '../api/assistant'
 import TimelineView from '../components/TimelineView.vue'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const projectId = route.params.projectId
+const snapshotBusy = ref(false)
+const importFileInput = ref(null)
+const assistantOpen = ref(false)
+const assistantQuestion = ref('')
+const assistantAsking = ref(false)
+const assistantAnswer = ref('')
+const assistantMsg = ref('')
+const assistantMsgError = ref(false)
 
 const background = ref('')
 const story = ref('')
@@ -1004,6 +1047,76 @@ function goBack() {
   // 返回首页（历史项目数据库可重新进入世界项目）；
   // 历史：曾跳 /process/<pid>（媒体分析流程页），对世界项目是死胡同
   router.push('/')
+}
+
+// ---------------- 项目快照导出 / 导入 ----------------
+
+async function exportSnapshot() {
+  if (snapshotBusy.value) return
+  snapshotBusy.value = true
+  saveMsg.value = ''; saveMsgError.value = false
+  try {
+    const res = await exportProjectSnapshot(projectId)
+    const snapshot = res.snapshot || (res.data && res.data.snapshot) || null
+    if (!snapshot) throw new Error(t('world.snapshotExportFailed'))
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${projectId}.mirofish.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    saveMsg.value = t('world.snapshotExported')
+  } catch (e) {
+    saveMsg.value = e?.message || t('world.snapshotExportFailed')
+    saveMsgError.value = true
+  } finally {
+    snapshotBusy.value = false
+  }
+}
+
+async function onImportSnapshot(e) {
+  const file = e.target.files && e.target.files[0]
+  e.target.value = ''
+  if (!file) return
+  snapshotBusy.value = true
+  saveMsg.value = ''; saveMsgError.value = false
+  try {
+    const text = await file.text()
+    const snapshot = JSON.parse(text)
+    const res = await importProjectSnapshot(snapshot)
+    const newId = res && res.data && res.data.project_id
+    if (!newId) throw new Error(t('world.snapshotImportFailed'))
+    saveMsg.value = t('world.snapshotImported', { id: newId })
+    // 路由参数变化时组件复用不会刷新 projectId，直接整页跳转
+    setTimeout(() => { window.location.href = '/world/' + newId }, 800)
+  } catch (err) {
+    saveMsg.value = err?.message || t('world.snapshotImportFailed')
+    saveMsgError.value = true
+  } finally {
+    snapshotBusy.value = false
+  }
+}
+
+// ---------------- 内置项目助手 ----------------
+
+async function askAssistantNow() {
+  const q = assistantQuestion.value.trim()
+  if (assistantAsking.value || !q) return
+  assistantAsking.value = true
+  assistantAnswer.value = ''
+  assistantMsg.value = ''; assistantMsgError.value = false
+  try {
+    const res = await askAssistant(projectId, q)
+    const answer = res?.data?.answer || ''
+    if (!answer) throw new Error(t('assistant.emptyAnswer'))
+    assistantAnswer.value = answer
+  } catch (e) {
+    assistantMsg.value = e?.message || t('assistant.failed')
+    assistantMsgError.value = true
+  } finally {
+    assistantAsking.value = false
+  }
 }
 
 // ---------------- 文件选择与拖拽 ----------------
@@ -1555,6 +1668,10 @@ onUnmounted(() => {
 }
 .back-btn:hover {
   opacity: 0.8;
+}
+.back-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Body */
@@ -2698,5 +2815,77 @@ onUnmounted(() => {
 .attr-v {
   color: #333;
   word-break: break-all;
+}
+
+/* 内置项目助手 */
+.assistant-modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9000;
+}
+.assistant-modal {
+  background: #FFF;
+  width: 560px;
+  max-width: 92vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  border-radius: 8px;
+  padding: 16px 18px;
+}
+.assistant-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.assistant-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+.assistant-close {
+  border: none;
+  background: none;
+  font-size: 20px;
+  color: #999;
+  cursor: pointer;
+}
+.assistant-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.assistant-hint {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.6;
+}
+.assistant-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #E0E0E0;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 12px;
+  resize: vertical;
+  font-family: inherit;
+  color: #000;
+}
+.assistant-actions {
+  display: flex;
+  gap: 8px;
+}
+.assistant-answer {
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #111;
+  background: #F9FAFB;
+  border: 1px solid #EAEAEA;
+  border-radius: 4px;
+  padding: 10px 12px;
 }
 </style>

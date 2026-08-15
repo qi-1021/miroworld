@@ -793,6 +793,12 @@
   "world": {
     "headerTitle": "世界设定库",
     "backProject": "返回项目",
+    "exportSnapshot": "导出快照",
+    "importSnapshot": "导入快照",
+    "snapshotExported": "项目快照已导出（.mirofish.json）",
+    "snapshotExportFailed": "导出快照失败",
+    "snapshotImportFailed": "导入快照失败",
+    "snapshotImported": "导入成功，新项目：{id}，正在跳转...",
     "inputTitle": "输入世界资料",
     "inputRequiredHint": "背景 / 正文至少一个",
     "filesSelected": "已选 {count} 个文件",
@@ -954,6 +960,16 @@
     "savedFilesTitle": "已保存 {count} 个文件（来自首页）",
     "loadFailed": "加载世界设定失败",
     "retry": "重试"
+  },
+  "assistant": {
+    "open": "助手",
+    "title": "内置项目助手",
+    "hint": "我会读取当前项目的时间线、设定库、冲突、图谱等状态，帮你判断该去哪个栏目改、怎么改。",
+    "placeholder": "例：我觉得时间线末尾那段和前面不是同一个世界，应该怎么处理？",
+    "ask": "提问",
+    "asking": "思考中...",
+    "emptyAnswer": "助手没有返回内容，请重试",
+    "failed": "助手调用失败"
   },
   "timeline": {
     "tab": "时间线",

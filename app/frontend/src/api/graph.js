@@ -105,3 +105,28 @@ export function resetProject(projectId) {
     method: 'post'
   })
 }
+
+/**
+ * 导出项目完整快照（JSON，可保存为 .mirofish.json）
+ * @param {String} projectId
+ * @returns {Promise} { success, snapshot }
+ */
+export function exportProjectSnapshot(projectId) {
+  return service({
+    url: `/api/graph/project/${projectId}/export`,
+    method: 'get'
+  })
+}
+
+/**
+ * 导入项目快照（创建新项目并恢复已完成步骤）
+ * @param {Object} snapshot - 快照 JSON
+ * @returns {Promise} { success, data: 新项目 }
+ */
+export function importProjectSnapshot(snapshot) {
+  return service({
+    url: '/api/graph/project/import',
+    method: 'post',
+    data: { snapshot }
+  })
+}
