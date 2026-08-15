@@ -660,6 +660,7 @@ def start_world_simulation(project_id: str):
             "time_step_minutes": 30,   // 可选，每步模拟分钟数（time_mode=minutes 时生效）
             "time_mode": "minutes",    // 可选：minutes | narrative
             "time_jumps": ["数日后", "三个月后", "一年后"],  // narrative 模式必填
+            "include_timeline": true,  // 可选：把当前时间线作为推演上下文
             "goal": "任务目标（可选）"  // 推演目标，如"推演三年后谁将统一大陆"
         }
     """
@@ -675,6 +676,7 @@ def start_world_simulation(project_id: str):
         if isinstance(raw_jumps, str):
             raw_jumps = [s.strip() for s in raw_jumps.replace('，', ',').split(',') if s.strip()]
         time_jumps = [str(x).strip() for x in raw_jumps if str(x).strip()]
+        include_timeline = bool(data.get('include_timeline', False))
 
         state = WorldSimulationService.start_simulation(
             project_id=project_id,
@@ -683,6 +685,7 @@ def start_world_simulation(project_id: str):
             goal=goal,
             time_mode=time_mode,
             time_jumps=time_jumps,
+            include_timeline=include_timeline,
         )
         return jsonify({"success": True, "simulation": state.to_dict()})
     except ValueError as e:

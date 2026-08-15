@@ -581,6 +581,9 @@ def _normalize_event(raw: Dict[str, Any], project_id: str, source: str,
         "thread_name": str(raw.get("thread_name") or "").strip()[:80],
         "dimension": str(raw.get("dimension") or "main").strip()[:40] or "main",
         "parallel_group": str(raw.get("parallel_group") or "").strip()[:80],
+        "parent_event_id": str(raw.get("parent_event_id") or "").strip()[:80],
+        "linked_event_ids": _str_list(raw.get("linked_event_ids"))[:_CHAR_ALIASES_MAX],
+        "structure_type": str(raw.get("structure_type") or "linear").strip()[:40] or "linear",
         "confidence": _float_or(raw.get("confidence"), 0.5),
         "raw_source": str(raw.get("raw_source") or "").strip(),
         "extract_seq": seq,
@@ -1623,6 +1626,12 @@ def patch_event(project_id: str, event_id: str, patch: Dict[str, Any]) -> Option
                         target[k] = str(v) if v is not None else ""
                 elif k == "characters":
                     target[k] = _str_list(v)
+                elif k == "linked_event_ids":
+                    target[k] = _str_list(v)[:_CHAR_ALIASES_MAX]
+                elif k == "parent_event_id":
+                    target[k] = str(v)[:80] if v else ""
+                elif k == "structure_type":
+                    target[k] = str(v)[:40] or "linear"
                 elif k == "confidence":
                     target[k] = _float_or(v, 0.5)
         target["updated_at"] = datetime.now().isoformat(timespec="seconds")
@@ -1673,6 +1682,12 @@ def _apply_event_patch(target: Dict[str, Any], patch: Dict[str, Any]) -> None:
                 target[k] = str(v) if v is not None else ""
         elif k == "characters":
             target[k] = _str_list(v)
+        elif k == "linked_event_ids":
+            target[k] = _str_list(v)[:_CHAR_ALIASES_MAX]
+        elif k == "parent_event_id":
+            target[k] = str(v)[:80] if v else ""
+        elif k == "structure_type":
+            target[k] = str(v)[:40] or "linear"
         elif k == "confidence":
             target[k] = _float_or(v, 0.5)
 

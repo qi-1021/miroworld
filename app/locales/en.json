@@ -872,6 +872,7 @@
     "simTimeModeNarrative": "Narrative jumps (world reasoning)",
     "simTimeJumpsLabel": "Time labels per step",
     "simTimeJumpsPlaceholder": "e.g. a few days later, three months later, one year later, ten years later",
+    "simUseTimeline": "Use current timeline as reasoning context",
     "simStartBtn": "Start World Simulation",
     "simStarting": "Starting...",
     "simRunning": "Simulation running...",
@@ -1033,7 +1034,18 @@
     "happened": "Happened",
     "notHappened": "Not happened",
     "taskLost": "Task not found. Please restart.",
-    "retryLaunch": "Restart"
+    "retryLaunch": "Restart",
+    "structureType": "Structure Type",
+    "structure": {
+      "linear": "Linear",
+      "parallel": "Parallel",
+      "tree": "Tree",
+      "network": "Network",
+      "meta": "Meta / Outside world"
+    },
+    "parentEvent": "Parent Event",
+    "noParent": "No parent",
+    "linkedEvents": "Linked Events (multi-select)"
   },
   "fork": {
     "forkBtn": "Fork here",

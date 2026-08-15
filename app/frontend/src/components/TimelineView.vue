@@ -280,6 +280,25 @@
             <span class="f-k">{{ $t('timeline.location') }}</span>
             <input v-model="editDraft.location_name" type="text" class="tl-edit-med" />
           </div>
+          <div class="tl-edit-row">
+            <span class="f-k">{{ $t('timeline.structureType') }}</span>
+            <select v-model="editDraft.structure_type" class="tl-edit-med">
+              <option v-for="st in structureTypes" :key="st" :value="st">{{ $t('timeline.structure.' + st) }}</option>
+            </select>
+          </div>
+          <div class="tl-edit-row">
+            <span class="f-k">{{ $t('timeline.parentEvent') }}</span>
+            <select v-model="editDraft.parent_event_id" class="tl-edit-med">
+              <option value="">{{ $t('timeline.noParent') }}</option>
+              <option v-for="m in editLinkCandidates" :key="m.event_id" :value="m.event_id">{{ mergeOptionLabel(m) }}</option>
+            </select>
+          </div>
+          <div class="tl-edit-row block">
+            <span class="f-k">{{ $t('timeline.linkedEvents') }}</span>
+            <select v-model="editDraft.linked_event_ids" multiple class="tl-edit-med tl-edit-multi">
+              <option v-for="m in editLinkCandidates" :key="m.event_id" :value="m.event_id">{{ mergeOptionLabel(m) }}</option>
+            </select>
+          </div>
           <div class="tl-edit-btns">
             <button class="tl-btn primary" :disabled="savingEdit" @click="saveEdit">{{ $t('timeline.editSave') }}</button>
             <button class="tl-btn ghost" @click="closeDetail">{{ $t('timeline.editCancel') }}</button>
@@ -477,7 +496,8 @@ const activeType = ref('')
 const activeThread = ref('')
 const selectedEvent = ref(null)
 const cardRefs = {}
-const editDraft = ref({ summary: '', age: null, sort_lower: null, location_name: '' })
+const editDraft = ref({ summary: '', age: null, sort_lower: null, location_name: '', structure_type: 'linear', parent_event_id: '', linked_event_ids: [] })
+const structureTypes = ['linear', 'parallel', 'tree', 'network', 'meta']
 const savingEdit = ref(false)
 const editMsg = ref('')
 const editMsgError = ref(false)
@@ -883,7 +903,15 @@ function locateEvent(ev) {
 }
 function selectEvent(ev) {
   selectedEvent.value = ev;
-  editDraft.value = { summary: ev.summary || '', age: ev.age != null ? ev.age : null, sort_lower: ev.sort_lower != null ? ev.sort_lower : null, location_name: ev.location_name || '' };
+  editDraft.value = {
+    summary: ev.summary || '',
+    age: ev.age != null ? ev.age : null,
+    sort_lower: ev.sort_lower != null ? ev.sort_lower : null,
+    location_name: ev.location_name || '',
+    structure_type: ev.structure_type || 'linear',
+    parent_event_id: ev.parent_event_id || '',
+    linked_event_ids: Array.isArray(ev.linked_event_ids) ? ev.linked_event_ids.slice() : []
+  };
   editMsg.value = ''; editMsgError.value = false;
 }
 function closeDetail() { selectedEvent.value = null; }
@@ -1177,7 +1205,13 @@ async function saveEdit() {
   if (!ev || savingEdit.value) return;
   savingEdit.value = true; editMsg.value = ''; editMsgError.value = false;
   try {
-    const patch = { summary: editDraft.value.summary, manual: true };
+    const patch = {
+      summary: editDraft.value.summary,
+      structure_type: editDraft.value.structure_type || 'linear',
+      parent_event_id: editDraft.value.parent_event_id || '',
+      linked_event_ids: editDraft.value.linked_event_ids || [],
+      manual: true
+    };
     if (editDraft.value.age != null) patch.age = editDraft.value.age;
     if (editDraft.value.sort_lower != null) patch.sort_lower = editDraft.value.sort_lower;
     if (editDraft.value.location_name != null) patch.location_name = editDraft.value.location_name;
@@ -1203,6 +1237,7 @@ const mergeCandidates = computed(() => {
     .slice()
     .sort((a, b) => sortNum(a) - sortNum(b));
 });
+const editLinkCandidates = computed(() => mergeCandidates.value);
 function mergeOptionLabel(ev) {
   const text = ev.summary || ev.time_text || '';
   return (ev.time_text || formatSort(ev)) + ' · ' + (text.length > 40 ? text.slice(0, 40) + '…' : text);
@@ -1551,6 +1586,7 @@ onUnmounted(() => {
 .tl-edit-row.block { flex-direction: column; align-items: stretch; gap: 6px; }
 .tl-edit-small { width: 80px; border: 1px solid #E0E0E0; border-radius: 4px; padding: 6px; font-size: 12px; color: #000; }
 .tl-edit-med { flex: 1; min-width: 120px; border: 1px solid #E0E0E0; border-radius: 4px; padding: 6px 8px; font-size: 12px; color: #000; }
+.tl-edit-multi { min-height: 72px; }
 .tl-edit-btns { display: flex; gap: 8px; margin-top: 10px; }
 .fork-desc { font-size: 12px; color: #444; line-height: 1.6; margin-bottom: 10px; padding: 8px 10px; background: #F9FAFB; border-radius: 4px; }
 

@@ -405,11 +405,12 @@ class WorldSimulationService:
         story: str,
         llm: LLMClient,
         goal: Optional[str] = None,
+        timeline_context: str = "",
     ) -> Dict[str, Any]:
-        """LLM 生成世界模拟配置（goal 为可选任务目标）。
+        """LLM 生成世界模拟配置（goal 为可选任务目标，timeline_context 为时间线参考）。
 
-        带磁盘缓存：键 = sha256(背景+正文 + goal + model_id)，避免相同设定
-        重复调用 LLM。缓存读写异常静默降级。
+        带磁盘缓存：键 = sha256(背景+正文 + goal + timeline_context + model_id)，
+        避免相同设定重复调用 LLM。缓存读写异常静默降级。
         """
         # 控制输入规模：背景/正文各截取前 6000 字
         bg = background[:6000] if background else ""
@@ -418,7 +419,7 @@ class WorldSimulationService:
         cache_key = None
         try:
             from .cache_utils import compute_cache_key, read_cache, write_cache
-            cache_key = compute_cache_key([background, story, goal or "", llm.model])
+            cache_key = compute_cache_key([background, story, goal or "", timeline_context, llm.model])
         except Exception:
             cache_key = None
 
@@ -448,6 +449,8 @@ class WorldSimulationService:
             story=st or "（无正文）",
             goal=goal or "（无明确目标，请根据设定自然推演）",
         )
+        if timeline_context:
+            prompt += f"\n\n当前时间线上下文（供推演参考，角色目标与规则应与之衔接）：\n{timeline_context}\n"
         result = llm.chat_json(
             messages=[
                 {"role": "system", "content": "你是小说世界模拟专家，只输出 JSON。"},
@@ -493,6 +496,7 @@ class WorldSimulationService:
         goal: Optional[str] = None,
         time_mode: str = "minutes",
         time_jumps: Optional[List[str]] = None,
+        include_timeline: bool = False,
     ) -> WorldSimulationState:
         """
         启动世界模拟：
@@ -529,8 +533,20 @@ class WorldSimulationService:
             try:
                 # 1. LLM 生成配置
                 llm = cls._build_llm_client(project_id)
+                timeline_context = ""
+                if include_timeline:
+                    try:
+                        from .timeline_service import load_timeline
+                        events = load_timeline(project_id, None).get("events", [])
+                        lines = []
+                        for e in events[:40]:
+                            lines.append(f"- {e.get('time_text') or ''} {e.get('summary') or ''}".strip())
+                        timeline_context = "\n".join(lines) if lines else "（时间线为空）"
+                    except Exception as e:
+                        logger.warning(f"读取时间线上下文失败（忽略）: {e}")
                 config = cls._generate_world_config(
-                    project_id, bible.background_text, bible.story_text, llm, goal=goal
+                    project_id, bible.background_text, bible.story_text, llm,
+                    goal=goal, timeline_context=timeline_context,
                 )
                 config["world"]["total_steps"] = int(total_steps)
                 config["world"]["time_step_minutes"] = int(time_step_minutes)

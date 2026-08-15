@@ -335,6 +335,12 @@
               :placeholder="$t('world.simTimeJumpsPlaceholder')"
             />
           </div>
+          <div class="sim-field sim-field-wide">
+            <label class="sim-label">
+              <input v-model="simUseTimeline" type="checkbox" class="sim-check" />
+              {{ $t('world.simUseTimeline') }}
+            </label>
+          </div>
           <button class="action-btn sim-start" :disabled="simStarting || simStatus === 'running'" @click="handleStartSim">
             <span v-if="simStarting" class="spinner-sm"></span>
             {{ simStarting ? $t('world.simStarting') : simStatus === 'running' ? $t('world.simRunning') : $t('world.simStartBtn') }}
@@ -726,6 +732,7 @@ const simSteps = ref(6)
 const simStepMin = ref(30)
 const simTimeMode = ref('minutes')
 const simTimeJumps = ref('')
+const simUseTimeline = ref(false)
 const simGoal = ref('')  // 任务目标（可选，决定推演走向）
 const simStarting = ref(false)
 const simStatus = ref('idle')
@@ -1401,6 +1408,7 @@ async function handleStartSim() {
       time_step_minutes: simStepMin.value || 30,
       time_mode: simTimeMode.value || 'minutes',
       time_jumps: jumps,
+      include_timeline: simUseTimeline.value,
       goal: simGoal.value.trim() || undefined
     })
     const sim = res.simulation

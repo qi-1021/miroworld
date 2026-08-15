@@ -872,6 +872,7 @@
     "simTimeModeNarrative": "叙事跳跃（适合世界推演）",
     "simTimeJumpsLabel": "每步时间标签",
     "simTimeJumpsPlaceholder": "例：数日后，三个月后，一年后，十年后（逗号/顿号分隔）",
+    "simUseTimeline": "把当前时间线作为推演上下文",
     "simStartBtn": "启动世界模拟",
     "simStarting": "启动中...",
     "simRunning": "模拟运行中...",
@@ -1033,7 +1034,18 @@
     "happened": "已发生",
     "notHappened": "未发生",
     "taskLost": "任务不存在，请重新发起",
-    "retryLaunch": "重新发起"
+    "retryLaunch": "重新发起",
+    "structureType": "结构类型",
+    "structure": {
+      "linear": "线性",
+      "parallel": "并行",
+      "tree": "树状",
+      "network": "网状",
+      "meta": "世界外/元叙事"
+    },
+    "parentEvent": "父事件",
+    "noParent": "无父事件",
+    "linkedEvents": "关联事件（可多选）"
   },
   "fork": {
     "forkBtn": "在此分叉推演",

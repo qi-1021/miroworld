@@ -106,19 +106,42 @@ def test_normalize_event_keeps_thread_and_dimension():
     ev = svc._normalize_event(
         {"summary": "乌萨斯帝国东扩", "time_text": "1090 年", "ev_type": "conflict",
          "thread_id": "乌萨斯", "thread_name": "乌萨斯线", "dimension": "main",
-         "parallel_group": "大陆诸国", "characters": []},
+         "parallel_group": "大陆诸国", "parent_event_id": "parent_1",
+         "linked_event_ids": ["evt_a", "evt_b"], "structure_type": "network",
+         "characters": []},
         "proj_0123456789ab", "bg", 0, "llm", 1,
     )
     assert ev["thread_id"] == "乌萨斯"
     assert ev["thread_name"] == "乌萨斯线"
     assert ev["dimension"] == "main"
     assert ev["parallel_group"] == "大陆诸国"
+    assert ev["parent_event_id"] == "parent_1"
+    assert ev["linked_event_ids"] == ["evt_a", "evt_b"]
+    assert ev["structure_type"] == "network"
     # 未提供 dimension 时默认 main
     ev2 = svc._normalize_event(
         {"summary": "寓言结尾", "time_text": "", "ev_type": "other"},
         "proj_0123456789ab", "story", 0, "llm", 2,
     )
     assert ev2["dimension"] == "main"
+    assert ev2["structure_type"] == "linear"
+    assert ev2["linked_event_ids"] == []
+
+
+def test_patch_event_updates_structure_fields():
+    ev = svc._normalize_event(
+        {"summary": "事件A", "time_text": "", "ev_type": "milestone"},
+        "proj_0123456789ab", "story", 0, "llm", 1,
+    )
+    svc._save_timeline("proj_0123456789ab", [ev])
+    updated = svc.patch_event("proj_0123456789ab", ev["id"], {
+        "parent_event_id": "evt_parent",
+        "linked_event_ids": ["evt_x", "evt_y"],
+        "structure_type": "tree",
+    })
+    assert updated["parent_event_id"] == "evt_parent"
+    assert updated["linked_event_ids"] == ["evt_x", "evt_y"]
+    assert updated["structure_type"] == "tree"
 
 
 def test_identify_threads_and_hint():
