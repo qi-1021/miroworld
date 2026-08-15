@@ -287,7 +287,7 @@ main() {
     echo ""
     
     log_info "所有服务已启动！"
-    log_info "按 CTRL+C 停止服务"
+    log_info "停止服务: 按 CTRL+C，或另开终端执行 bash scripts/stop.sh（可加 --neo4j）"
     
     # 保持运行
     wait
