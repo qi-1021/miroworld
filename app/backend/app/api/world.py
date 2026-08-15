@@ -75,6 +75,27 @@ def _build_llm_client_for_project(project_id: str) -> LLMClient:
     return LLMClient()
 
 
+# ---------------------------------------------------------------- 用途模式
+
+@world_bp.route('/modes', methods=['GET'])
+def list_modes():
+    """
+    列出可用的用途模式（novel-world / character-card / timeline 等）。
+
+    供前端在选择"世界/MiroFish 用途"时展示。模式经 POST /api/world/<id>/input
+    的可选 mode 参数透传进 metadata['mode']。
+
+    返回：
+        { "success": true, "modes": [ {key,label,inputs,pipeline,artifacts}, ... ] }
+    """
+    try:
+        from ..services.mode_registry import get_modes
+        return jsonify({"success": True, "modes": get_modes()})
+    except Exception as e:
+        logger.error(f"读取用途模式失败: {e}")
+        return jsonify({"success": False, "error": f"读取模式失败: {e}"}), 500
+
+
 # ---------------------------------------------------------------- 输入与设定库
 
 @world_bp.route('/<project_id>/input', methods=['POST'])
@@ -154,6 +175,10 @@ def save_world_input(project_id: str):
             goal = (request.form.get('goal') or '').strip()
             if goal:
                 metadata["goal"] = goal
+            # 用途模式（可选）：透传进 metadata，不改变现有处理逻辑
+            mode = (request.form.get('mode') or '').strip()
+            if mode:
+                metadata["mode"] = mode
 
         # ---------------- JSON 文本输入（兼容） ----------------
         else:
@@ -166,6 +191,9 @@ def save_world_input(project_id: str):
             goal = str(data.get('goal') or '').strip()
             if goal:
                 metadata["goal"] = goal
+            mode = str(data.get('mode') or '').strip()
+            if mode:
+                metadata["mode"] = mode
 
         background = "\n\n".join(p for p in background_parts if p and p.strip())
         story = "\n\n".join(p for p in story_parts if p and p.strip())
@@ -295,7 +323,9 @@ def build_world_graph(project_id: str):
                 task_id, progress=8, message="LLM 分析设定生成世界本体..."
             )
             generator = OntologyGenerator(llm_client=_build_llm_client_for_project(project_id))
-            ontology = generator.generate(
+            from ..services.ontology_generator import generate_ontology_with_cache
+            ontology = generate_ontology_with_cache(
+                generator=generator,
                 document_texts=[text],
                 simulation_requirement=goal or "构建小说世界的知识图谱",
                 additional_context=(
@@ -303,6 +333,7 @@ def build_world_graph(project_id: str):
                     "请提取适合知识图谱的实体类型（人物/地点/组织/物品/概念等）与关系类型，"
                     "并全部使用与文本一致的中文命名。"
                 ),
+                cache_key_parts=(text, goal or "", generator.llm_client.model),
             )
             task_manager.update_task(
                 task_id, progress=20,

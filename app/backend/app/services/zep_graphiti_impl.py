@@ -555,8 +555,17 @@ class GraphitiClient(ZepClientAdapter):
         模型名使用本体中的原始名称（支持中文，如 学生/大学），
         描述写入模型 __doc__（graphiti 抽取提示会展示），
         属性来自本体 attributes（英文 snake_case，已避开保留字段）。
+
+        注意：LLM 生成的本体可能给实体类型定义与图谱节点字段同名的属性
+        （如 name/uuid/created_at），graphiti 的 validate_entity_types 会
+        直接抛 EntityTypeValidationError 导致整个 episode 失败。这里将
+        冲突属性重命名为 entity_<原名> 保留数据。
         """
         from pydantic import BaseModel, Field
+        from graphiti_core.nodes import EntityNode
+
+        # 图谱节点保留字段（EntityNode.model_fields），冲突即重命名
+        protected_field_names = set(EntityNode.model_fields.keys())
 
         ontology = self._ontology_cache.get(graph_id) or {}
         entity_types: Dict[str, Any] = {}
@@ -570,8 +579,15 @@ class GraphitiClient(ZepClientAdapter):
             field_defs: Dict[str, Any] = {}
             for attr in item.get("attributes") or []:
                 attr_name = str(attr.get("name") or "").strip()
-                if not attr_name:
+                if not attr_name or attr_name.startswith('__'):
                     continue
+                if attr_name in protected_field_names:
+                    safe_name = f"entity_{attr_name}"
+                    logger.warning(
+                        f"实体类型 {name} 的属性 {attr_name!r} 与图谱节点字段冲突，"
+                        f"已重命名为 {safe_name}"
+                    )
+                    attr_name = safe_name
                 annotations[attr_name] = str
                 field_defs[attr_name] = Field(
                     description=str(attr.get("description") or ""),
@@ -660,8 +676,31 @@ class GraphitiClient(ZepClientAdapter):
                     failed += 1
                     logger.warning(f"episode {i} 返回空 uuid（可能是空内容），跳过")
             except Exception as e:
-                failed += 1
-                logger.error(f"episode {i} 添加失败: {e}，继续处理剩余批次")
+                # 瞬态失败重试一次：OpenCode 网关的随机抖动（空响应/断连/
+                # 消歧响应形状不符）大多在重试后消失。重试有界（1 次），
+                # 避免"重试 × 重试"叠加卡死构建。
+                import time as _time
+                logger.warning(
+                    f"episode {i} 添加失败（{str(e)[:120]}），重试 1 次..."
+                )
+                _time.sleep(1.5)
+                try:
+                    uuid = self.add_episode(
+                        graph_id=graph_id,
+                        data=data,
+                        episode_type=ep_type,
+                    )
+                    if uuid:
+                        episode_uuids.append(uuid)
+                        logger.info(f"episode {i} 重试成功")
+                    else:
+                        failed += 1
+                        logger.warning(f"episode {i} 重试后仍返回空 uuid，跳过")
+                except Exception as e2:
+                    failed += 1
+                    logger.error(
+                        f"episode {i} 重试仍失败: {e2}，继续处理剩余批次"
+                    )
 
         if failed:
             logger.warning(f"批次完成: 成功 {len(episode_uuids)}/{len(episodes)}，失败 {failed}")

@@ -73,6 +73,14 @@ class Config:
     NEO4J_USER = os.environ.get('NEO4J_USER', 'neo4j')
     NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD', 'password')
 
+    # Graphiti 边提取模式：'skip-first' | 'always'
+    # - 'skip-first'：当目标 group_id 在图谱中还没有任何 EntityNode 时，
+    #   直接跳过本次边提取（返回空边列表）。首个 episode 建图时实体尚未落库，
+    #   边提取只会对"前序 episode"做无意义的配对搜索/LLM 推理而稳定失败，
+    #   跳过可显著加速首个 chunk 并提升稳定性。
+    # - 'always'：保持 graphiti 原生行为，不跳过。
+    GRAPHITI_EDGE_MODE = os.environ.get('GRAPHITI_EDGE_MODE', 'skip-first')
+
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
     UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '../uploads')

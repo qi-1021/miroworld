@@ -193,7 +193,8 @@
     "extraContextPlaceholder": "// 可选：补充背景约束、关注重点、角色视角等详细说明",
     "worldGoalLabel": "03 / 任务目标",
     "worldGoalMeta": "可选",
-    "worldGoalPlaceholder": "// 可选：世界推演目标（例. 推演三年后谁将统一大陆）"
+    "worldGoalPlaceholder": "// 可选：世界推演目标（例. 推演三年后谁将统一大陆）",
+    "configureModel": "去配置"
   },
   "main": {
     "layoutGraph": "图谱",
@@ -446,7 +447,15 @@
     "notStarted": "未开始",
     "roundsProgress": "{current}/{total} 轮",
     "untitledSimulation": "未命名模拟",
-    "unknownFile": "未知文件"
+    "unknownFile": "未知文件",
+    "loadFailed": "历史项目加载失败，请检查后端服务后重试",
+    "retryLoad": "重试",
+    "retry": "重试",
+    "delete": "删除",
+    "deleteConfirm": "确定删除该项目？此操作不可恢复。",
+    "deleteError": "删除失败",
+    "retryConfirm": "确定重置该项目状态并重新构建图谱？",
+    "retryError": "重置失败"
   },
   "api": {
     "projectNotFound": "项目不存在: {id}",

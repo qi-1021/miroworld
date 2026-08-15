@@ -229,6 +229,13 @@
 
               <!-- 启动按钮 -->
               <div class="console-section btn-section">
+                <div v-if="modelConfigAlert" class="model-config-alert">
+                  <span class="mc-icon">⚠</span>
+                  <span class="mc-text">{{ modelConfigAlert }}</span>
+                  <button class="mc-link" type="button" @click="openModelSettings">
+                    {{ $t('home.configureModel') }}
+                  </button>
+                </div>
                 <button
                   class="start-engine-btn"
                   @click="startSimulation"
@@ -365,6 +372,13 @@
 
               <!-- 创建世界按钮 -->
               <div class="console-section btn-section">
+                <div v-if="modelConfigAlert" class="model-config-alert">
+                  <span class="mc-icon">⚠</span>
+                  <span class="mc-text">{{ modelConfigAlert }}</span>
+                  <button class="mc-link" type="button" @click="openModelSettings">
+                    {{ $t('home.configureModel') }}
+                  </button>
+                </div>
                 <div v-if="worldError" class="world-error">{{ worldError }}</div>
                 <button
                   class="start-engine-btn"
@@ -394,6 +408,7 @@ import HistoryDatabase from '../components/HistoryDatabase.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import { createProject } from '../api/graph'
 import { saveWorldInputMultipart } from '../api/world'
+import { getModelRegistry } from '../api/models'
 
 const router = useRouter()
 
@@ -410,6 +425,39 @@ const files = ref([])
 const loading = ref(false)
 const error = ref('')
 const isDragOver = ref(false)
+
+// ============ 模型配置前置校验 ============
+// 空字符串表示已通过；非空表示需要引导用户前往模型设置
+const modelConfigAlert = ref('')
+
+/**
+ * 提交前校验：注册表中是否存在已通过连接验证（verified）的模型。
+ * 媒体分析 / 世界模拟两种模式共用。
+ * @return {Promise<boolean>} true=可用，可继续；false=无可用模型，已弹出引导
+ */
+const ensureModelConfigured = async () => {
+  try {
+    const res = await getModelRegistry()
+    const registry = res?.data || res || {}
+    const models = registry.models || []
+    const hasVerified = models.some(item => item.verified)
+    if (hasVerified) {
+      modelConfigAlert.value = ''
+      return true
+    }
+    modelConfigAlert.value = '尚未配置可用模型，请先完成模型设置'
+    return false
+  } catch (e) {
+    // 查询失败时同样视为未就绪并引导配置，避免提交后连接凭空失败
+    modelConfigAlert.value = '模型配置查询失败，请先完成模型设置'
+    return false
+  }
+}
+
+// 一键打开模型设置（App.vue 监听 open-model-settings 事件）
+const openModelSettings = () => {
+  window.dispatchEvent(new CustomEvent('open-model-settings'))
+}
 
 // ============ 模式选择：媒体分析 / 世界模拟 ============
 const activeMode = ref('media')
@@ -530,6 +578,9 @@ const removeWorldFile = (index, kind) => {
 const createWorldProject = async () => {
   if (!canCreateWorld.value || loading.value) return
 
+  // 模型前置校验：无已验证模型时阻止创建并引导配置
+  if (!(await ensureModelConfigured())) return
+
   loading.value = true
   worldError.value = ''
   try {
@@ -564,8 +615,11 @@ const scrollToBottom = () => {
 }
 
 // 开始模拟 - 立即跳转，API调用在Process页面进行
-const startSimulation = () => {
+const startSimulation = async () => {
   if (!canSubmit.value || loading.value) return
+
+  // 模型前置校验：无已验证模型时阻止提交并引导配置
+  if (!(await ensureModelConfigured())) return
 
   // 存储待上传的数据
   import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
@@ -1001,6 +1055,49 @@ const startSimulation = () => {
   margin-bottom: 10px;
   font-family: var(--font-mono);
   line-height: 1.5;
+}
+
+/* 模型配置前置校验引导 */
+.model-config-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  border: 1px solid #FFE0B2;
+  background: #FFF8E1;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: #7A5200;
+}
+
+.mc-icon {
+  flex-shrink: 0;
+  color: var(--orange);
+}
+
+.mc-text {
+  flex: 1;
+}
+
+.mc-link {
+  flex-shrink: 0;
+  background: var(--orange);
+  color: var(--white);
+  border: none;
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  white-space: nowrap;
+}
+
+.mc-link:hover {
+  opacity: 0.8;
 }
 
 .console-section {

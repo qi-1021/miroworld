@@ -784,7 +784,7 @@ async function handleBuildGraph() {
     pollGraphTask(res.task_id)
   } catch (e) {
     graphBuilding.value = false
-    graphMsg.value = e.message || '启动构建失败'
+    graphMsg.value = (e.message || '启动构建失败') + '（请检查模型配置）'
     graphMsgError.value = true
   }
 }
@@ -1074,7 +1074,7 @@ function startSimPolling(simulationId) {
       } else if (sim.status === 'failed' || sim.status === 'stopped') {
         clearInterval(simPollTimer)
         simPollTimer = null
-        simMsg.value = sim.status === 'failed' ? `模拟失败：${sim.error || '未知错误'}` : '模拟已停止'
+        simMsg.value = sim.status === 'failed' ? `模拟失败：${sim.error || '未知错误'}（请检查模型配置）` : '模拟已停止'
         simMsgError.value = sim.status === 'failed'
         loadSimHistory()
       }
@@ -1108,7 +1108,7 @@ async function handleStartSim() {
     simPollingId = sim.simulation_id
     startSimPolling(sim.simulation_id)
   } catch (e) {
-    simMsg.value = e.message || '启动失败'
+    simMsg.value = (e.message || '启动失败') + '（请检查模型配置）'
     simMsgError.value = true
     simStatus.value = 'idle'
   } finally {

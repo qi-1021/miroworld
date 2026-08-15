@@ -286,10 +286,13 @@ def generate_ontology():
         # 生成本体
         logger.info("调用 LLM 生成本体定义...")
         generator = OntologyGenerator(llm_client=_build_llm_client_for_project(project.project_id))
-        ontology = generator.generate(
+        from ..services.ontology_generator import generate_ontology_with_cache
+        ontology = generate_ontology_with_cache(
+            generator=generator,
             document_texts=document_texts,
             simulation_requirement=simulation_requirement,
-            additional_context=additional_context if additional_context else None
+            additional_context=additional_context if additional_context else None,
+            cache_key_parts=(all_text, simulation_requirement, generator.llm_client.model),
         )
 
         # 保存本体到项目

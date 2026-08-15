@@ -809,6 +809,111 @@ def list_simulations():
         }), 500
 
 
+@simulation_bp.route('/history', methods=['GET'])
+def simulation_history():
+    """
+    首页「历史项目数据库」数据源：媒体模拟 + 世界项目合并列表。
+
+    每个条目 = 模拟状态 + 项目上下文（文件/需求/状态）+ 世界项目标识
+    （has_world_data / history_type / mode），供前端卡片渲染、
+    失败重试与删除使用。按 created_at 倒序，默认 limit=20。
+
+    注意：本端点必须声明在 '/<simulation_id>' 之前，否则 "history"
+    会被当作 simulation_id 匹配。
+    """
+    try:
+        limit = int(request.args.get('limit', 20))
+        manager = SimulationManager()
+        simulations = manager.list_simulations()
+        # 按创建时间倒序（created_at 为 ISO 字符串，直接比较）
+        simulations.sort(key=lambda s: s.created_at or '', reverse=True)
+        simulations = simulations[:limit]
+
+        from ..models.project import ProjectManager
+        from ..services.world_bible import WorldBibleService
+
+        data = []
+        for s in simulations:
+            entry = s.to_dict()
+            pid = s.project_id
+            project = ProjectManager.get_project(pid) if pid else None
+            if project:
+                entry['files'] = project.files
+                entry['simulation_requirement'] = project.simulation_requirement
+                entry['project_status'] = (
+                    project.status.value if project.status else None
+                )
+                entry['graph_status'] = entry['project_status']
+                entry['project_error'] = project.error
+            bible = None
+            if pid:
+                try:
+                    bible = WorldBibleService.get_bible(pid)
+                except Exception:
+                    bible = None
+            has_world = bool(
+                bible is not None
+                and (bible.background_text.strip() or bible.story_text.strip())
+            )
+            entry['has_world_data'] = has_world
+            entry['history_type'] = 'world' if has_world else 'media'
+            entry['mode'] = (bible.metadata or {}).get('mode', '') if bible else ''
+            entry['kind'] = entry['history_type']
+            data.append(entry)
+
+        # 补充：有世界设定库但没有媒体模拟的项目（纯世界项目在首页可见）
+        try:
+            from ..models.project import ProjectManager as PM
+            media_pids = {e.get('project_id') for e in data if e.get('project_id')}
+            world_projects = []
+            for p in PM.list_projects(limit=200):
+                if p.project_id in media_pids:
+                    continue
+                try:
+                    bible = WorldBibleService.get_bible(p.project_id)
+                except Exception:
+                    bible = None
+                if bible is None or not (
+                    bible.background_text.strip() or bible.story_text.strip()
+                ):
+                    continue
+                world_projects.append((p, bible))
+            world_projects.sort(
+                key=lambda pb: pb[1].updated_at or '', reverse=True
+            )
+            for p, bible in world_projects:
+                data.append({
+                    "simulation_id": f"world_{p.project_id}",
+                    "project_id": p.project_id,
+                    "graph_id": p.graph_id,
+                    "status": p.status.value if p.status else 'created',
+                    "created_at": bible.updated_at,
+                    "updated_at": bible.updated_at,
+                    "files": p.files,
+                    "simulation_requirement": (
+                        (bible.metadata or {}).get('goal', '') or p.simulation_requirement or ''
+                    ),
+                    "has_world_data": True,
+                    "history_type": "world",
+                    "kind": "world",
+                    "mode": (bible.metadata or {}).get('mode', ''),
+                    "project_status": p.status.value if p.status else None,
+                    "project_error": p.error,
+                })
+        except Exception as exc:
+            logger.warning(f"补充世界项目到历史列表失败（不影响主列表）: {exc}")
+
+        return jsonify({"success": True, "data": data, "count": len(data)})
+
+    except Exception as e:
+        logger.error(f"获取历史列表失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
 @simulation_bp.route('/<simulation_id>/profiles', methods=['GET'])
 def get_simulation_profiles(simulation_id: str):
     """

@@ -91,3 +91,37 @@ def test_graphiti_type_models_pass_validation(client):
     entity_types, _ = client._build_graphiti_type_models("graph_3")
 
     assert validate_entity_types(entity_types) is True
+
+
+def test_build_graphiti_type_models_renames_protected_attributes(client):
+    """LLM 本体属性与图谱节点保留字段重名（如 name）时必须重命名而非失败。
+
+    回归：graphiti 的 validate_entity_types 会拒绝与 EntityNode.model_fields
+    重名的属性（EntityTypeValidationError），导致整个 episode 失败、图谱 0 节点。
+    """
+    from graphiti_core.utils.ontology_utils.entity_types_utils import validate_entity_types
+
+    client._ontology_cache["graph_4"] = {
+        "entities": [
+            {
+                "name": "帝国",
+                "description": "国家实体",
+                "attributes": [
+                    {"name": "name", "description": "国名"},      # 冲突 → entity_name
+                    {"name": "territory", "description": "领土"},  # 正常
+                    {"name": "uuid", "description": "编号"},       # 冲突 → entity_uuid
+                ],
+            }
+        ],
+        "edges": [],
+    }
+
+    entity_types, _ = client._build_graphiti_type_models("graph_4")
+
+    model = entity_types["帝国"]
+    assert "name" not in model.model_fields, "name 必须被重命名"
+    assert "entity_name" in model.model_fields, "冲突属性应重命名为 entity_name"
+    assert "entity_uuid" in model.model_fields
+    assert "territory" in model.model_fields
+    # 重命名后必须能通过 graphiti 校验
+    assert validate_entity_types(entity_types) is True

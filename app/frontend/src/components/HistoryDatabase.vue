@@ -17,6 +17,13 @@
       <div class="section-line"></div>
     </div>
 
+    <!-- 历史项目加载失败告警 -->
+    <div v-if="loadError && !loading" class="load-error-banner">
+      <span class="load-error-icon">⚠</span>
+      <span class="load-error-text">{{ loadError }}</span>
+      <button class="load-error-retry" @click="loadHistory">{{ $t('history.retryLoad') }}</button>
+    </div>
+
     <!-- 卡片容器（只在有项目时显示） -->
     <div v-if="projects.length > 0" class="cards-container" :class="{ expanded: isExpanded }" :style="containerStyle">
       <div
@@ -82,6 +89,20 @@
 
         <!-- 卡片描述（模拟需求完整展示） -->
         <p class="card-desc">{{ truncateText(project.simulation_requirement, 55) }}</p>
+
+        <!-- 卡片操作区（hover 时显现：世界标识 / 重试失败 / 删除） -->
+        <div class="card-actions">
+          <span v-if="isWorldProject(project)" class="world-tag" title="世界模拟">◈ WORLD</span>
+          <button
+            v-if="isFailedProject(project)"
+            class="card-action-btn retry"
+            @click="handleRetryProject(project, $event)"
+          >↻ {{ $t('history.retry') }}</button>
+          <button
+            class="card-action-btn delete"
+            @click="handleDeleteProject(project, $event)"
+          >× {{ $t('history.delete') }}</button>
+        </div>
 
         <!-- 卡片底部 -->
         <div class="card-footer">
@@ -183,6 +204,14 @@
             <div class="modal-playback-hint">
               <span class="hint-text">{{ $t('history.replayHint') }}</span>
             </div>
+
+            <!-- 数据管理 -->
+            <div class="modal-manage">
+              <button
+                class="modal-manage-btn danger"
+                @click="handleDeleteProject(selectedProject, $event)"
+              >{{ $t('history.delete') }}</button>
+            </div>
           </div>
         </div>
       </Transition>
@@ -195,6 +224,7 @@ import { ref, computed, onMounted, onUnmounted, onActivated, watch, nextTick } f
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { getSimulationHistory } from '../api/simulation'
+import { deleteProject, resetProject } from '../api/graph'
 
 const router = useRouter()
 const route = useRoute()
@@ -207,6 +237,7 @@ const isExpanded = ref(false)
 const hoveringCard = ref(null)
 const historyContainer = ref(null)
 const selectedProject = ref(null)  // 当前选中的项目（用于弹窗）
+const loadError = ref('')           // 历史项目加载失败的告警信息
 let observer = null
 let isAnimating = false  // 动画锁，防止闪烁
 let expandDebounceTimer = null  // 防抖定时器
@@ -406,10 +437,11 @@ const closeModal = () => {
 // 导航到图谱构建页面（Project）
 const goToProject = () => {
   if (selectedProject.value?.project_id) {
-    router.push({
-      name: 'Process',
-      params: { projectId: selectedProject.value.project_id }
-    })
+    // 世界项目直达世界设定页，其余走媒体分析 Process 页
+    const target = isWorldProject(selectedProject.value)
+      ? { name: 'WorldSetup', params: { projectId: selectedProject.value.project_id } }
+      : { name: 'Process', params: { projectId: selectedProject.value.project_id } }
+    router.push(target)
     closeModal()
   }
 }
@@ -436,17 +468,91 @@ const goToReport = () => {
   }
 }
 
+// ============ 数据管理：删除 / 重试 ============
+
+// 判断项目是否处于失败状态（后端可能以 status / error / last_error 暴露）
+const isFailedProject = (project) => {
+  if (!project) return false
+  const status = String(project.status || project.graph_status || '')
+  if (['failed', 'FAILED', 'error', 'ERROR'].some(s => status === s)) return true
+  if (project.error || project.last_error || project.failed_reason) return true
+  return false
+}
+
+// 判断项目是否为世界模拟项目（后端可能提供 history_type / mode / type 等字段）
+const isWorldProject = (project) => {
+  if (!project) return false
+  const type = String(project.history_type || project.mode || project.type || project.kind || '')
+  if (['world', 'WORLD', '世界模拟'].some(v => type === v)) return true
+  if (project.world_project || project.has_world_data) return true
+  return false
+}
+
+// 根据项目身份判定重试后的跳转路由
+const retryTarget = (project) => {
+  const id = project && (project.project_id || project.id)
+  if (!id) return null
+  return isWorldProject(project)
+    ? { name: 'WorldSetup', params: { projectId: id } }
+    : { name: 'Process', params: { projectId: id } }
+}
+
+// 删除项目
+const handleDeleteProject = async (project, event) => {
+  if (event) event.stopPropagation()
+  const id = project && (project.project_id || project.id || project.simulation_id)
+  if (!id) return
+  if (!window.confirm(t('history.deleteConfirm'))) return
+  try {
+    await deleteProject(id)
+    // 从列表移除
+    const idx = projects.value.findIndex(p => p === project)
+    if (idx >= 0) projects.value.splice(idx, 1)
+    if (selectedProject.value && selectedProject.value === project) {
+      selectedProject.value = null
+    }
+  } catch (e) {
+    alert(e?.message || t('history.deleteError'))
+  }
+}
+
+// 重试失败项目
+const handleRetryProject = async (project, event) => {
+  if (event) event.stopPropagation()
+  const id = project && (project.project_id || project.id)
+  if (!id) return
+  if (!window.confirm(t('history.retryConfirm'))) return
+  try {
+    await resetProject(id)
+    const target = retryTarget(project) || { name: 'Process', params: { projectId: id } }
+    closeModal()
+    router.push(target)
+  } catch (e) {
+    alert(e?.message || t('history.retryError'))
+  }
+}
+
 // 加载历史项目
 const loadHistory = async () => {
   try {
     loading.value = true
+    loadError.value = ''
     const response = await getSimulationHistory(20)
     if (response.success) {
       projects.value = response.data || []
+    } else {
+      projects.value = []
+      loadError.value = response.message || response.error || t('history.loadFailed')
     }
   } catch (error) {
     console.error('加载历史项目失败:', error)
     projects.value = []
+    // 404 等常规失败直接给出友好中文提示；其它情况透出原始错误信息
+    const status = error?.response?.status
+    loadError.value =
+      (status && status >= 400) || !error?.message
+        ? t('history.loadFailed')
+        : error.message
   } finally {
     loading.value = false
   }
@@ -953,6 +1059,116 @@ onUnmounted(() => {
 .card-footer .card-progress.in-progress { color: #F59E0B; }
 .card-footer .card-progress.not-started { color: #9CA3AF; }
 
+/* 卡片操作区 */
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 10px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  min-height: 22px;
+}
+
+.project-card:hover .card-actions,
+.project-card.hovering .card-actions {
+  opacity: 1;
+}
+
+.world-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border: 1px solid #C7E7FF;
+  background: #E6F4FF;
+  color: #0B6FB8;
+  border-radius: 3px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.card-action-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  padding: 3px 8px;
+  border: 1px solid #E5E7EB;
+  border-radius: 3px;
+  background: #FFFFFF;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1;
+  margin-left: auto;
+}
+
+.card-action-btn.retry {
+  color: #2563EB;
+  border-color: #BFDBFE;
+  background: #EFF6FF;
+  margin-left: 0;
+}
+
+.card-action-btn.retry:hover {
+  background: #DBEAFE;
+  border-color: #93C5FD;
+}
+
+.card-action-btn.delete {
+  color: #B91C1C;
+  border-color: #FECACA;
+  background: #FEF2F2;
+}
+
+.card-action-btn.delete:hover {
+  background: #FEE2E2;
+  border-color: #FCA5A5;
+}
+
+/* 历史加载失败告警 */
+.load-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border: 1px solid #FECACA;
+  background: #FEF2F2;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: #B91C1C;
+}
+
+.load-error-icon {
+  flex-shrink: 0;
+  color: #DC2626;
+}
+
+.load-error-text {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.load-error-retry {
+  flex-shrink: 0;
+  border: 1px solid #B91C1C;
+  background: #FFFFFF;
+  color: #B91C1C;
+  padding: 5px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.load-error-retry:hover {
+  background: #B91C1C;
+  color: #FFFFFF;
+}
+
 /* 底部装饰线 */
 .card-bottom-line {
   position: absolute;
@@ -1338,5 +1554,36 @@ onUnmounted(() => {
   letter-spacing: 0.3px;
   text-align: center;
   line-height: 1.5;
+}
+
+/* 弹窗内数据管理 */
+.modal-manage {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 32px 20px;
+  background: #FFFFFF;
+  border-top: 1px solid #F3F4F6;
+}
+
+.modal-manage-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  padding: 7px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.modal-manage-btn.danger {
+  color: #B91C1C;
+  border: 1px solid #FECACA;
+  background: #FFFFFF;
+}
+
+.modal-manage-btn.danger:hover {
+  border-color: #B91C1C;
+  background: #FEF2F2;
 }
 </style>

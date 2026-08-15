@@ -141,3 +141,124 @@ def test_chat_json_falls_back_when_json_mode_returns_non_json_text():
     client, fake = _make_client(["这不是 JSON", '{"ok": true}'])
     assert client.chat_json(messages=[{"role": "user", "content": "hi"}]) == {"ok": True}
     assert fake.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# graphiti_patch._extract_json_from_markdown 的 JSON 鲁棒化
+# （单引号 dict、截断 JSON 收敛）
+# ---------------------------------------------------------------------------
+from app.services.graphiti_patch import _extract_json_from_markdown as _graphiti_json
+
+
+def test_extract_json_single_quote_dict():
+    assert _graphiti_json("{'a': 1, 'b': ['x', 'y']}") == {"a": 1, "b": ["x", "y"]}
+
+
+def test_extract_json_single_quote_dict_with_chinese():
+    assert _graphiti_json(
+        "{'name': '李慕白', 'kind': '剑侠'}"
+    ) == {"name": "李慕白", "kind": "剑侠"}
+
+
+def test_extract_json_truncated_trailing_garbage_converges():
+    # 截断：有效 JSON + 尾部残缺杂文，应收敛到最长可解析前缀
+    assert _graphiti_json('{"a": 1} 截断的后半段……') == {"a": 1}
+
+
+def test_extract_json_truncated_unclosed_array_converges():
+    # 截断：数组最后一个元素未闭合，收敛到较早的完整 JSON 对象
+    assert _graphiti_json('[{"x": 1}, {"y"') == {"x": 1}
+
+
+def test_extract_json_truncated_fenced_block_converges():
+    # Markdown 围栏里被截断：收敛到围栏内完整可解析的对象
+    assert _graphiti_json('[{"x": 1}, {"y"' ) == {"x": 1}
+
+
+def test_extract_json_still_rejects_invalid_text():
+    # 纯文本（无数值载体）仍应失败
+    assert _graphiti_json("这不是 JSON，也没有代码块") is None
+
+
+# ---------------------------------------------------------------------------
+# 响应模型规范化（裸 dict 包装 / 校验失败重试）
+# ---------------------------------------------------------------------------
+from pydantic import BaseModel, Field
+from app.services.graphiti_patch import (
+    _normalize_structured_response,
+    _normalize_and_validate,
+)
+
+
+class _Item(BaseModel):
+    id: int = Field(...)
+    name: str = Field(...)
+    duplicate_idx: int = Field(...)
+    duplicates: list = Field(default_factory=list)
+
+
+class _ListResponse(BaseModel):
+    entity_resolutions: list[_Item] = Field(...)
+
+
+def test_normalize_bare_list_wraps():
+    """裸数组 → {单列表字段: 数组}"""
+    result = _normalize_structured_response(
+        [{"id": 0, "name": "a", "duplicate_idx": -1, "duplicates": []}],
+        _ListResponse,
+    )
+    assert result == {
+        "entity_resolutions": [{"id": 0, "name": "a", "duplicate_idx": -1, "duplicates": []}]
+    }
+
+
+def test_normalize_bare_dict_wraps_single_item():
+    """单条记录的裸 dict → {单列表字段: [该 dict]}（OpenCode 消歧阶段偶发）"""
+    result = _normalize_structured_response(
+        {"id": 0, "name": "科技都市", "duplicate_idx": -1, "duplicates": []},
+        _ListResponse,
+    )
+    assert result == {
+        "entity_resolutions": [{"id": 0, "name": "科技都市", "duplicate_idx": -1, "duplicates": []}]
+    }
+
+
+def test_normalize_already_wrapped_dict_unchanged():
+    result = _normalize_structured_response(
+        {"entity_resolutions": [{"id": 0, "name": "a", "duplicate_idx": -1}]},
+        _ListResponse,
+    )
+    assert "entity_resolutions" in result
+
+
+async def test_normalize_and_validate_retries_on_failure():
+    """校验失败时重试一次 LLM 调用；重试成功返回合法结果。"""
+    calls = {"n": 0}
+
+    async def fake_llm_once():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # 第一次：单条裸 dict 且缺 duplicate_idx（会校验失败）
+            return '{"id": 0, "name": "科技都市", "duplicates": []}'
+        # 第二次：合法响应
+        return '{"entity_resolutions": [{"id": 0, "name": "科技都市", "duplicate_idx": -1, "duplicates": []}]}'
+
+    parsed = {"id": 0, "name": "科技都市", "duplicates": []}
+    result = await _normalize_and_validate(parsed, _ListResponse, fake_llm_once)
+
+    assert calls["n"] == 2
+    assert result["entity_resolutions"][0]["duplicate_idx"] == -1
+
+
+async def test_normalize_and_validate_passes_without_retry():
+    calls = {"n": 0}
+
+    async def fake_llm_once():
+        calls["n"] += 1
+        return "unused"
+
+    parsed = {"entity_resolutions": [{"id": 0, "name": "a", "duplicate_idx": -1}]}
+    result = await _normalize_and_validate(parsed, _ListResponse, fake_llm_once)
+
+    assert calls["n"] == 0, "校验通过不应触发重试"
+    assert result["entity_resolutions"][0]["name"] == "a"

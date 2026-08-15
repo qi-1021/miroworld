@@ -81,3 +81,27 @@ export function getProject(projectId) {
     method: 'get'
   })
 }
+
+/**
+ * 删除项目
+ * @param {String} projectId - 项目ID
+ * @returns {Promise} { success, message }
+ */
+export function deleteProject(projectId) {
+  return service({
+    url: `/api/graph/project/${projectId}`,
+    method: 'delete'
+  })
+}
+
+/**
+ * 重置项目状态（用于重新构建图谱）
+ * @param {String} projectId - 项目ID
+ * @returns {Promise} { success, message, data }
+ */
+export function resetProject(projectId) {
+  return service({
+    url: `/api/graph/project/${projectId}/reset`,
+    method: 'post'
+  })
+}

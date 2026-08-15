@@ -102,7 +102,13 @@ const refreshModelSummary = async () => {
 
 watch(() => route.fullPath, resolveProjectContext, { immediate: true })
 watch(() => route.fullPath, refreshModelSummary, { immediate: true })
-onMounted(refreshModelSummary)
+onMounted(() => {
+  refreshModelSummary()
+  // 供其他页面通过 window 事件一键打开模型设置
+  window.addEventListener('open-model-settings', () => {
+    modelSettingsOpen.value = true
+  })
+})
 </script>
 
 <style>

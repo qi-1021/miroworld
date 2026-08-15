@@ -193,7 +193,8 @@
     "extraContextPlaceholder": "// Optional: constraints, focus areas, character perspectives...",
     "worldGoalLabel": "03 / Task Goal",
     "worldGoalMeta": "Optional",
-    "worldGoalPlaceholder": "// Optional: world simulation goal (e.g. who will unify the continent in 3 years)"
+    "worldGoalPlaceholder": "// Optional: world simulation goal (e.g. who will unify the continent in 3 years)",
+    "configureModel": "Configure"
   },
   "main": {
     "layoutGraph": "Graph",
@@ -446,7 +447,15 @@
     "notStarted": "Not started",
     "roundsProgress": "{current}/{total} rounds",
     "untitledSimulation": "Untitled simulation",
-    "unknownFile": "Unknown file"
+    "unknownFile": "Unknown file",
+    "loadFailed": "Failed to load project history. Please check the backend and retry.",
+    "retryLoad": "Retry",
+    "retry": "Retry",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this project? This cannot be undone.",
+    "deleteError": "Delete failed",
+    "retryConfirm": "Reset this project and rebuild its graph?",
+    "retryError": "Reset failed"
   },
   "api": {
     "projectNotFound": "Project not found: {id}",

@@ -8,9 +8,15 @@
 本测试用假的原始实现替换后再打 patch，验证默认过滤逻辑：
 - 新节点（无摘要）→ 处理
 - 已有摘要的节点 → 跳过
+
+同时也覆盖：
+- edge-skip patch（首个 episode 跳过边提取）
 """
 
 import asyncio
+from types import SimpleNamespace
+
+from app.config import Config
 
 
 class _FakeNode:
@@ -105,3 +111,171 @@ def test_explicit_filter_overrides_default():
 
     assert seen_filters[-1] is always_false, "显式过滤应覆盖默认的新节点过滤"
     assert results == [], "显式过滤为 False 时节点应被跳过"
+
+
+# ---------------------------------------------------------------------------
+# edge-skip patch：首个 episode（group 尚无 EntityNode）时跳过边提取
+# ---------------------------------------------------------------------------
+class _CountDriver:
+    """返回指定 EntityNode 数量；raise_on_query 时让 count 查询抛错。"""
+
+    def __init__(self, count, raise_on_query=False):
+        self._count = count
+        self._raise = raise_on_query
+        self.calls = 0
+
+    async def execute_query(self, query, **kwargs):
+        self.calls += 1
+        if self._raise:
+            raise RuntimeError("neo4j down")
+        record = {"cnt": self._count}
+        return [record], None, None
+
+
+def _patch_edge_ops(orig_impl):
+    """替换 edge_operations.extract_edges 为假实现后应用 patch，返回 (edge_ops_模块, 追踪)。"""
+    from graphiti_core.utils.maintenance import edge_operations as eo
+    from app.services.graphiti_patch import _apply_edge_skip_patch
+
+    calls = {"orig": 0}
+
+    async def fake_original(
+        clients,
+        episode,
+        nodes,
+        previous_episodes,
+        edge_type_map,
+        group_id="",
+        edge_types=None,
+        custom_extraction_instructions=None,
+    ):
+        calls["orig"] += 1
+        return [SimpleNamespace(fake="edge")]
+
+    eo.extract_edges = fake_original
+    assert _apply_edge_skip_patch() is True
+    return eo, calls
+
+
+def test_edge_skip_when_group_has_no_nodes():
+    """group_id 下 EntityNode 数量为 0 且 skip-first → 直接返回 []，不调原函数。"""
+    from graphiti_core.utils.maintenance import edge_operations as eo
+
+    prev_mode = Config.GRAPHITI_EDGE_MODE
+    Config.GRAPHITI_EDGE_MODE = "skip-first"
+    try:
+        _, calls = _patch_edge_ops(None)
+        clients = SimpleNamespace(driver=_CountDriver(0))
+        result = asyncio.run(
+            eo.extract_edges(clients, "ep", "nodes", "prev", {}, group_id="fresh")
+        )
+        assert result == [], "0 实体时应跳过边提取返回空列表"
+        assert calls["orig"] == 0, "不应调用原始 extract_edges"
+    finally:
+        Config.GRAPHITI_EDGE_MODE = prev_mode
+
+
+def test_edge_skip_query_failure_is_conservative():
+    """count 查询失败时保守不跳过，走原始 extract_edges。"""
+    from graphiti_core.utils.maintenance import edge_operations as eo
+
+    prev_mode = Config.GRAPHITI_EDGE_MODE
+    Config.GRAPHITI_EDGE_MODE = "skip-first"
+    try:
+        calls = _patch_edge_ops(None)[1]
+        clients = SimpleNamespace(driver=_CountDriver(999, raise_on_query=True))
+        result = asyncio.run(
+            eo.extract_edges(clients, "ep", "nodes", "prev", {}, group_id="g")
+        )
+        assert result == [SimpleNamespace(fake="edge")] or len(result) > 0
+        assert calls["orig"] == 1, "查询失败应保守调用原始 extract_edges"
+    finally:
+        Config.GRAPHITI_EDGE_MODE = prev_mode
+
+
+def test_edge_skip_disabled_in_always_mode():
+    """GRAPHITI_EDGE_MODE=always 时不跳过，即使 group 无节点也调原始函数。"""
+    from graphiti_core.utils.maintenance import edge_operations as eo
+
+    prev_mode = Config.GRAPHITI_EDGE_MODE
+    Config.GRAPHITI_EDGE_MODE = "always"
+    try:
+        _, calls = _patch_edge_ops(None)
+        clients = SimpleNamespace(driver=_CountDriver(0))
+        result = asyncio.run(
+            eo.extract_edges(clients, "ep", "nodes", "prev", {}, group_id="fresh")
+        )
+        assert calls["orig"] == 1, "always 模式应调用原始 extract_edges（不跳过）"
+    finally:
+        Config.GRAPHITI_EDGE_MODE = prev_mode
+
+
+def test_edge_skip_continues_when_group_has_nodes():
+    """group 已有 EntityNode 时跳过逻辑不触发（仍需 original 实际比对）。"""
+    from graphiti_core.utils.maintenance import edge_operations as eo
+
+    prev_mode = Config.GRAPHITI_EDGE_MODE
+    Config.GRAPHITI_EDGE_MODE = "skip-first"
+    try:
+        _, calls = _patch_edge_ops(None)
+        clients = SimpleNamespace(driver=_CountDriver(5))
+        result = asyncio.run(
+            eo.extract_edges(clients, "ep", "nodes", "prev", {}, group_id="existing")
+        )
+        assert calls["orig"] == 1, "已有节点时应走原始 extract_edges"
+        assert result == [SimpleNamespace(fake="edge")]
+    finally:
+        Config.GRAPHITI_EDGE_MODE = prev_mode
+
+def test_entity_extraction_retry_on_few_entities():
+    """实体提取过少（<3）时自动重试一次；重试更多则采用重试结果。"""
+    import graphiti_core.graphiti as g
+    from graphiti_core.utils.maintenance import node_operations as no
+
+    calls = {"n": 0}
+
+    async def fake_extract(clients, episode, previous_episodes, entity_types=None,
+                           excluded_entity_types=None, custom_extraction_instructions=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return [_FakeNode("敷衍提取")]  # 1 个 → 触发重试
+        return [_FakeNode("苍澜界"), _FakeNode("北境霜国"), _FakeNode("龙脊城")]
+
+    no.extract_nodes = fake_extract
+    g.extract_nodes = fake_extract
+
+    from app.services.graphiti_patch import _apply_entity_extraction_retry_patch
+    assert _apply_entity_extraction_retry_patch() is True
+
+    class _Ep:
+        content = "大陆名唤苍澜界，由三大帝国鼎立：北境霜国以铁骑闻名，龙脊城是贸易重镇。" * 3
+
+    results = asyncio.run(g.extract_nodes(None, _Ep(), []))
+    assert calls["n"] == 2, "应重试一次"
+    assert len(results) == 3, "应采用重试后的完整结果"
+
+
+def test_entity_extraction_no_retry_when_enough():
+    """实体数 >= 3 时不重试。"""
+    import graphiti_core.graphiti as g
+    from graphiti_core.utils.maintenance import node_operations as no
+
+    calls = {"n": 0}
+
+    async def fake_extract(clients, episode, previous_episodes, entity_types=None,
+                           excluded_entity_types=None, custom_extraction_instructions=None):
+        calls["n"] += 1
+        return [_FakeNode("a"), _FakeNode("b"), _FakeNode("c"), _FakeNode("d")]
+
+    no.extract_nodes = fake_extract
+    g.extract_nodes = fake_extract
+
+    from app.services.graphiti_patch import _apply_entity_extraction_retry_patch
+    _apply_entity_extraction_retry_patch()
+
+    class _Ep:
+        content = "很长的一段文本" * 50
+
+    results = asyncio.run(g.extract_nodes(None, _Ep(), []))
+    assert calls["n"] == 1, "实体足够时不应重试"
+    assert len(results) == 4

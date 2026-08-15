@@ -355,10 +355,42 @@ class WorldSimulationService:
         llm: LLMClient,
         goal: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """LLM 生成世界模拟配置（goal 为可选任务目标）"""
+        """LLM 生成世界模拟配置（goal 为可选任务目标）。
+
+        带磁盘缓存：键 = sha256(背景+正文 + goal + model_id)，避免相同设定
+        重复调用 LLM。缓存读写异常静默降级。
+        """
         # 控制输入规模：背景/正文各截取前 6000 字
         bg = background[:6000] if background else ""
         st = story[:6000] if story else ""
+
+        cache_key = None
+        try:
+            from .cache_utils import compute_cache_key, read_cache, write_cache
+            cache_key = compute_cache_key([background, story, goal or "", llm.model])
+        except Exception:
+            cache_key = None
+
+        override = os.environ.get('MIROFISH_WORLD_SIM_CACHE_DIR')
+        if override:
+            world_config_cache_dir = override
+        else:
+            # app/backend/data/world-sim-cache（已 gitignore）
+            world_config_cache_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                'data', 'world-sim-cache',
+            )
+
+        result = None
+        if cache_key:
+            result = read_cache(world_config_cache_dir, cache_key)
+            if result is not None:
+                logger.info(
+                    f"世界配置缓存命中（key={cache_key[:12]}…），跳过 LLM 调用"
+                )
+                # 缓存不含 llm 元信息，重新附加当前 llm 客户端信息
+                result.setdefault("llm", cls._llm_meta(llm))
+                return result
 
         prompt = WORLD_CONFIG_PROMPT.format(
             background=bg or "（无背景设定）",
@@ -380,15 +412,24 @@ class WorldSimulationService:
         if "world" not in result or "characters" not in result or "locations" not in result:
             raise ValueError("世界配置生成失败：缺少必需字段（world/characters/locations）")
 
-        # 补充默认值
+        # 补充默认值（不含 llm 元信息，交由 _llm_meta 在返回时统一附加，
+        # 这样缓存文件不绑定特定 api_key/base_url）
         result.setdefault("connections", [])
         result.setdefault("rules", [])
-        result["llm"] = {
-            "model": llm.model,
-            "base_url": llm.base_url,
-            "api_key": llm.api_key,
-        }
+
+        if cache_key:
+            write_cache(world_config_cache_dir, cache_key, result)
+
+        result["llm"] = cls._llm_meta(llm)
         return result
+
+    @classmethod
+    def _llm_meta(cls, llm: LLMClient) -> Dict[str, str]:
+        return {
+            "model": getattr(llm, "model", ""),
+            "base_url": getattr(llm, "base_url", ""),
+            "api_key": getattr(llm, "api_key", ""),
+        }
 
     # ---------------- 主流程 ----------------
 

@@ -4,8 +4,61 @@
 """
 
 import json
+import os
 from typing import Dict, Any, List, Optional
 from ..utils.llm_client import LLMClient
+
+
+def generate_ontology_with_cache(
+    generator: "OntologyGenerator",
+    document_texts: List[str],
+    simulation_requirement: str,
+    additional_context: Optional[str] = None,
+    cache_key_parts: tuple = (),
+) -> Dict[str, Any]:
+    """
+    在本体生成前先查磁盘缓存；命中直接返回封装后的本体，未命中调用
+    generator.generate 并把结果写回缓存。任何缓存读写异常都静默降级
+    （仅 warning），绝不影响本体生成的正常路径。
+
+    缓存键 = sha256(cache_key_parts)，通常为 (输入文本, goal, model_id)。
+    """
+    try:
+        from ..utils.logger import get_logger
+        from .cache_utils import cache_root, compute_cache_key, read_cache, write_cache
+        logger = get_logger('mirofish.api')
+        # 缓存根目录可从环境变量覆盖（测试隔离）；默认 data/ontology_cache
+        override = os.environ.get('MIROFISH_ONTOLOGY_CACHE_DIR')
+        ontology_cache_dir = override or os.path.join(cache_root(), 'ontology_cache')
+        hash_key = compute_cache_key(list(cache_key_parts))
+    except Exception:
+        hash_key = None
+
+    if hash_key:
+        try:
+            from .cache_utils import read_cache
+            cached = read_cache(ontology_cache_dir, hash_key)
+            if cached is not None:
+                get_logger('mirofish.api').info(
+                    f"本体缓存命中（key={hash_key[:12]}…），跳过 LLM 调用"
+                )
+                return cached
+        except Exception:
+            pass
+
+    ontology = generator.generate(
+        document_texts=document_texts,
+        simulation_requirement=simulation_requirement,
+        additional_context=additional_context,
+    )
+
+    if hash_key:
+        try:
+            from .cache_utils import write_cache
+            write_cache(ontology_cache_dir, hash_key, ontology)
+        except Exception:
+            pass
+    return ontology
 
 
 # 本体生成的系统提示词

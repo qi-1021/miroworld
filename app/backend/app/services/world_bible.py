@@ -112,6 +112,8 @@ class WorldBible:
             "has_story": bool(self.story_text.strip()),
             # 任务目标（首页/设定页可填写，作为世界推演的默认目标）
             "goal": (self.metadata or {}).get("goal", ""),
+            # 用途模式（可选，POST /input 的 mode 参数透传）
+            "mode": (self.metadata or {}).get("mode", ""),
         }
 
 
