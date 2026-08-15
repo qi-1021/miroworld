@@ -236,17 +236,15 @@ async def test_normalize_and_validate_retries_on_failure():
     calls = {"n": 0}
 
     async def fake_llm_once():
+        # 这里的 call_llm_once 代表“重试那一次新的 LLM 调用”，
+        # 因此第一次被调用就应返回合法结构。
         calls["n"] += 1
-        if calls["n"] == 1:
-            # 第一次：单条裸 dict 且缺 duplicate_idx（会校验失败）
-            return '{"id": 0, "name": "科技都市", "duplicates": []}'
-        # 第二次：合法响应
         return '{"entity_resolutions": [{"id": 0, "name": "科技都市", "duplicate_idx": -1, "duplicates": []}]}'
 
     parsed = {"id": 0, "name": "科技都市", "duplicates": []}
     result = await _normalize_and_validate(parsed, _ListResponse, fake_llm_once)
 
-    assert calls["n"] == 2
+    assert calls["n"] == 1
     assert result["entity_resolutions"][0]["duplicate_idx"] == -1
 
 
