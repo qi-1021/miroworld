@@ -657,7 +657,9 @@ def start_world_simulation(project_id: str):
     请求（JSON）：
         {
             "total_steps": 6,          // 可选，模拟步数
-            "time_step_minutes": 30,   // 可选，每步模拟分钟数
+            "time_step_minutes": 30,   // 可选，每步模拟分钟数（time_mode=minutes 时生效）
+            "time_mode": "minutes",    // 可选：minutes | narrative
+            "time_jumps": ["数日后", "三个月后", "一年后"],  // narrative 模式必填
             "goal": "任务目标（可选）"  // 推演目标，如"推演三年后谁将统一大陆"
         }
     """
@@ -668,12 +670,19 @@ def start_world_simulation(project_id: str):
         total_steps = int(data.get('total_steps', 6))
         time_step_minutes = int(data.get('time_step_minutes', 30))
         goal = str(data.get('goal') or '').strip() or None
+        time_mode = str(data.get('time_mode') or 'minutes').strip() or 'minutes'
+        raw_jumps = data.get('time_jumps') or []
+        if isinstance(raw_jumps, str):
+            raw_jumps = [s.strip() for s in raw_jumps.replace('，', ',').split(',') if s.strip()]
+        time_jumps = [str(x).strip() for x in raw_jumps if str(x).strip()]
 
         state = WorldSimulationService.start_simulation(
             project_id=project_id,
             total_steps=total_steps,
             time_step_minutes=time_step_minutes,
             goal=goal,
+            time_mode=time_mode,
+            time_jumps=time_jumps,
         )
         return jsonify({"success": True, "simulation": state.to_dict()})
     except ValueError as e:

@@ -317,8 +317,23 @@
             <input v-model.number="simSteps" type="number" min="1" max="30" class="sim-input" />
           </div>
           <div class="sim-field">
+            <label class="sim-label">{{ $t('world.simTimeModeLabel') }}</label>
+            <select v-model="simTimeMode" class="sim-input">
+              <option value="minutes">{{ $t('world.simTimeModeMinutes') }}</option>
+              <option value="narrative">{{ $t('world.simTimeModeNarrative') }}</option>
+            </select>
+          </div>
+          <div v-if="simTimeMode === 'minutes'" class="sim-field">
             <label class="sim-label">{{ $t('world.simStepMinLabel') }}</label>
             <input v-model.number="simStepMin" type="number" min="1" max="1440" class="sim-input" />
+          </div>
+          <div v-else class="sim-field sim-field-wide">
+            <label class="sim-label">{{ $t('world.simTimeJumpsLabel') }}</label>
+            <input
+              v-model="simTimeJumps"
+              class="sim-input"
+              :placeholder="$t('world.simTimeJumpsPlaceholder')"
+            />
           </div>
           <button class="action-btn sim-start" :disabled="simStarting || simStatus === 'running'" @click="handleStartSim">
             <span v-if="simStarting" class="spinner-sm"></span>
@@ -709,6 +724,8 @@ const savedStFiles = computed(() => savedFiles.value.filter(f => f.source === 's
 // 世界模拟状态
 const simSteps = ref(6)
 const simStepMin = ref(30)
+const simTimeMode = ref('minutes')
+const simTimeJumps = ref('')
 const simGoal = ref('')  // 任务目标（可选，决定推演走向）
 const simStarting = ref(false)
 const simStatus = ref('idle')
@@ -1110,7 +1127,10 @@ async function askAssistantNow() {
     const res = await askAssistant(projectId, q)
     const answer = res?.data?.answer || ''
     if (!answer) throw new Error(t('assistant.emptyAnswer'))
-    assistantAnswer.value = answer
+    const actionResult = res?.data?.action_result
+    assistantAnswer.value = actionResult
+      ? answer + '\n\n' + JSON.stringify(actionResult, null, 2)
+      : answer
   } catch (e) {
     assistantMsg.value = e?.message || t('assistant.failed')
     assistantMsgError.value = true
@@ -1372,9 +1392,15 @@ async function handleStartSim() {
   simCtlMsg.value = ''
   simCtlMsgError.value = false
   try {
+    const jumps = simTimeJumps.value
+      .split(/[,，、;；]+/)
+      .map(s => s.trim())
+      .filter(Boolean)
     const res = await startWorldSimulation(projectId, {
       total_steps: simSteps.value || 6,
       time_step_minutes: simStepMin.value || 30,
+      time_mode: simTimeMode.value || 'minutes',
+      time_jumps: jumps,
       goal: simGoal.value.trim() || undefined
     })
     const sim = res.simulation

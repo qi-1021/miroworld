@@ -282,23 +282,56 @@ class ProjectManager:
         return recovered
 
     @classmethod
+    def _remove_if_exists(cls, path: str) -> bool:
+        """安全删除文件/目录；不存在返回 False。"""
+        if os.path.isfile(path) or os.path.islink(path):
+            os.remove(path)
+            return True
+        if os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+            return True
+        return False
+
+    @classmethod
     def delete_project(cls, project_id: str) -> bool:
         """
-        删除项目及其所有文件
+        删除项目及其所有文件（含世界设定库、时间线、世界模拟、图谱缓存等）。
+
+        兼容“空项目/残缺项目”：即使 uploads/projects/<pid> 目录不存在，
+        只要其它关联数据目录存在也会一并清理并返回 True。
 
         Args:
             project_id: 项目ID
 
         Returns:
-            是否删除成功
+            是否删除成功（至少删除了一个关联目录）
         """
         project_dir = cls._get_project_dir(project_id)
+        removed_any = cls._remove_if_exists(project_dir)
 
-        if not os.path.exists(project_dir):
-            return False
+        # 清理项目关联的独立数据目录（这些目录不挂在 uploads/projects 下）
+        try:
+            from ..services.world_bible import WORLD_DATA_ROOT
+            removed_any = cls._remove_if_exists(os.path.join(WORLD_DATA_ROOT, project_id)) or removed_any
+        except Exception:
+            pass
+        try:
+            from ..services.timeline_service import TIMELINE_ROOT
+            removed_any = cls._remove_if_exists(os.path.join(TIMELINE_ROOT, project_id)) or removed_any
+        except Exception:
+            pass
+        try:
+            from ..services.world_simulation import WORLD_SIM_ROOT
+            removed_any = cls._remove_if_exists(os.path.join(WORLD_SIM_ROOT, project_id)) or removed_any
+        except Exception:
+            pass
+        try:
+            from ..services.world_graph_refill import WORLD_GRAPH_ROOT
+            removed_any = cls._remove_if_exists(os.path.join(WORLD_GRAPH_ROOT, project_id)) or removed_any
+        except Exception:
+            pass
 
-        shutil.rmtree(project_dir)
-        return True
+        return removed_any
 
     @classmethod
     def save_file_to_project(cls, project_id: str, file_storage, original_filename: str) -> Dict[str, str]:

@@ -491,6 +491,8 @@ class WorldSimulationService:
         total_steps: int = 6,
         time_step_minutes: int = 30,
         goal: Optional[str] = None,
+        time_mode: str = "minutes",
+        time_jumps: Optional[List[str]] = None,
     ) -> WorldSimulationState:
         """
         启动世界模拟：
@@ -502,6 +504,11 @@ class WorldSimulationService:
         bible = WorldBibleService.get_bible(project_id)
         if bible is None or (not bible.background_text.strip() and not bible.story_text.strip()):
             raise ValueError("尚未提交世界输入，请先在「世界设定」中保存背景/正文")
+
+        if time_mode not in ("minutes", "narrative"):
+            raise ValueError("time_mode 必须是 minutes 或 narrative")
+        if time_mode == "narrative" and not time_jumps:
+            raise ValueError("narrative 模式需要提供 time_jumps 时间标签列表")
 
         sim_id = f"worldsim_{datetime.now().strftime('%Y%m%d%H%M%S')}_{project_id[-6:]}"
         sim_dir = os.path.join(WORLD_SIM_ROOT, project_id, sim_id)
@@ -527,6 +534,8 @@ class WorldSimulationService:
                 )
                 config["world"]["total_steps"] = int(total_steps)
                 config["world"]["time_step_minutes"] = int(time_step_minutes)
+                config["world"]["time_mode"] = time_mode
+                config["world"]["time_jumps"] = list(time_jumps or [])
 
                 config_path = os.path.join(sim_dir, 'world_config.json')
                 with open(config_path, 'w', encoding='utf-8') as f:

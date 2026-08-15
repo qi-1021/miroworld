@@ -395,10 +395,50 @@ _THREAD_SYSTEM = (
     "最多输出 20 条；如果文本没有明显多线，可以只输出 1 条 main。"
 )
 
+_THREAD_CHUNK_CHARS = 6000
+_THREAD_MAX = 20
 
-def _identify_threads(llm, text: str) -> List[Dict[str, Any]]:
-    """第一遍：识别背景文本中的时间线线索（线程）。失败抛异常。"""
-    user = f"请识别下面世界背景中的时间线线索：\n<文本>\n{text[:8000]}\n"
+
+def _normalize_thread(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """把一条 LLM 线索项规范化为内部 dict；非法返回 None。"""
+    if not isinstance(item, dict):
+        return None
+    tid = str(item.get("id") or item.get("name") or "").strip()
+    name = str(item.get("name") or tid or "").strip()
+    if not tid and not name:
+        return None
+    return {
+        "id": (tid or name)[:80],
+        "name": name[:80],
+        "dimension": str(item.get("dimension") or "main").strip()[:40] or "main",
+        "parallel_group": str(item.get("parallel_group") or "").strip()[:80],
+        "description": str(item.get("description") or "").strip()[:300],
+    }
+
+
+def _merge_thread(existing: Dict[str, Dict[str, Any]], item: Dict[str, Any]) -> None:
+    """按 id 或 name 合并线索；已存在时保留更完整的 description。"""
+    if not item:
+        return
+    key = item.get("id") or item.get("name")
+    if not key:
+        return
+    cur = existing.get(key)
+    if cur is None:
+        existing[key] = item
+        return
+    if not cur.get("description") and item.get("description"):
+        cur["description"] = item["description"]
+    if not cur.get("parallel_group") and item.get("parallel_group"):
+        cur["parallel_group"] = item["parallel_group"]
+
+
+def _identify_threads_chunk(llm, chunk: str, existing: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """对单个文本块识别线索；失败抛异常。"""
+    user = f"请识别下面世界背景中的时间线线索：\n<文本>\n{chunk}\n"
+    if existing:
+        names = "、".join(t.get("name") or t.get("id") for t in existing[:20])
+        user += f"\n已识别线索（请避免重复）：{names}\n"
     resp = llm.chat(
         messages=[
             {"role": "system", "content": _THREAD_SYSTEM},
@@ -412,22 +452,38 @@ def _identify_threads(llm, text: str) -> List[Dict[str, Any]]:
         raise ValueError("线索识别响应不是数组")
     out = []
     for item in arr:
-        if not isinstance(item, dict):
-            continue
-        tid = str(item.get("id") or item.get("name") or "").strip()
-        name = str(item.get("name") or tid or "").strip()
-        if not tid and not name:
-            continue
-        out.append({
-            "id": (tid or name)[:80],
-            "name": name[:80],
-            "dimension": str(item.get("dimension") or "main").strip()[:40] or "main",
-            "parallel_group": str(item.get("parallel_group") or "").strip()[:80],
-            "description": str(item.get("description") or "").strip()[:300],
-        })
-        if len(out) >= 20:
+        t = _normalize_thread(item)
+        if t is not None:
+            out.append(t)
+        if len(out) >= _THREAD_MAX:
             break
     return out
+
+
+def _identify_threads(llm, text: str) -> List[Dict[str, Any]]:
+    """第一遍：识别背景文本中的时间线线索（线程）。
+
+    对长文本做分块识别并合并，避免一次性把全部设定塞进一个 prompt 导致
+    超长/失败后整段降级为普通抽取。任一分块失败只跳过该块。
+    """
+    if not text or not text.strip():
+        return []
+    chunks = chunk_text(text, _THREAD_CHUNK_CHARS)
+    if not chunks:
+        chunks = [text]
+    merged: Dict[str, Dict[str, Any]] = {}
+    for chunk in chunks:
+        try:
+            items = _identify_threads_chunk(llm, chunk, list(merged.values()))
+            for it in items:
+                _merge_thread(merged, it)
+                if len(merged) >= _THREAD_MAX:
+                    break
+        except Exception as e:
+            logger.warning(f"线索识别分块失败（跳过该块）: {e}")
+        if len(merged) >= _THREAD_MAX:
+            break
+    return list(merged.values())[:_THREAD_MAX]
 
 
 def _thread_hint_block(threads: List[Dict[str, Any]]) -> str:

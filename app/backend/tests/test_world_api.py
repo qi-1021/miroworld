@@ -553,8 +553,11 @@ def test_simulate_passes_goal(client, monkeypatch):
 
     captured = {}
 
-    def fake_start(cls, project_id, total_steps=6, time_step_minutes=30, goal=None):
+    def fake_start(cls, project_id, total_steps=6, time_step_minutes=30, goal=None,
+                   time_mode="minutes", time_jumps=None):
         captured["goal"] = goal
+        captured["time_mode"] = time_mode
+        captured["time_jumps"] = time_jumps
         from app.services.world_simulation import WorldSimulationState
         return WorldSimulationState(
             simulation_id="ws_goal", project_id=project_id, status="preparing"
@@ -567,6 +570,8 @@ def test_simulate_passes_goal(client, monkeypatch):
     )
     assert rv.status_code == 200
     assert captured["goal"] == "推演结局"
+    assert captured["time_mode"] == "minutes"
+    assert captured["time_jumps"] == []
 
 
 def test_simulate_goal_default_none(client, monkeypatch):
@@ -575,7 +580,8 @@ def test_simulate_goal_default_none(client, monkeypatch):
 
     captured = {}
 
-    def fake_start(cls, project_id, total_steps=6, time_step_minutes=30, goal=None):
+    def fake_start(cls, project_id, total_steps=6, time_step_minutes=30, goal=None,
+                   time_mode="minutes", time_jumps=None):
         captured["goal"] = goal
         from app.services.world_simulation import WorldSimulationState
         return WorldSimulationState(
@@ -586,3 +592,28 @@ def test_simulate_goal_default_none(client, monkeypatch):
     rv = client.post("/api/world/p1/simulate", json={"total_steps": 5})
     assert rv.status_code == 200
     assert captured["goal"] is None
+
+
+def test_simulate_passes_narrative_time_mode(client, monkeypatch):
+    """narrative 模式把 time_mode/time_jumps 透传给 start_simulation。"""
+    from app.services.world_simulation import WorldSimulationService
+
+    captured = {}
+
+    def fake_start(cls, project_id, total_steps=6, time_step_minutes=30, goal=None,
+                   time_mode="minutes", time_jumps=None):
+        captured["time_mode"] = time_mode
+        captured["time_jumps"] = time_jumps
+        from app.services.world_simulation import WorldSimulationState
+        return WorldSimulationState(
+            simulation_id="ws_narr", project_id=project_id, status="preparing"
+        )
+
+    monkeypatch.setattr(WorldSimulationService, "start_simulation", classmethod(fake_start))
+    rv = client.post(
+        "/api/world/p1/simulate",
+        json={"time_mode": "narrative", "time_jumps": ["数日后", "三个月后", "一年后"]},
+    )
+    assert rv.status_code == 200
+    assert captured["time_mode"] == "narrative"
+    assert captured["time_jumps"] == ["数日后", "三个月后", "一年后"]

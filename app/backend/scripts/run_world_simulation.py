@@ -196,6 +196,12 @@ class WorldEnv:
         self.time_step_minutes = int(wc.get("time_step_minutes", 60))
         self.total_steps = int(wc.get("total_steps", 10))
         self.current_step = 0
+        # 灵活时间模式：
+        # - "minutes": 固定每步分钟数（默认，适合舆情/短时推演）
+        # - "narrative": 叙事时间跳跃，使用 time_jumps 列表作为每步时间标签
+        self.time_mode = str(wc.get("time_mode") or "minutes")
+        self.time_jumps = list(wc.get("time_jumps") or []) if isinstance(wc.get("time_jumps"), list) else []
+        self.current_step_label = ""
         try:
             self.current_time = datetime.fromisoformat(wc.get("initial_time", "2026-01-01 08:00"))
         except ValueError:
@@ -351,9 +357,19 @@ class WorldEnv:
 
     def advance_clock(self):
         """推进世界时间（current_step 由主循环统一递增）"""
+        if self.time_mode == "narrative":
+            # 叙事时间跳跃：按用户提供的标签推进，不再使用固定分钟
+            idx = self.current_step - 1
+            self.current_step_label = (
+                self.time_jumps[idx] if 0 <= idx < len(self.time_jumps) else f"第 {self.current_step} 阶段"
+            )
+            return
+        self.current_step_label = ""
         self.current_time += timedelta(minutes=self.time_step_minutes)
 
     def time_str(self) -> str:
+        if self.time_mode == "narrative" and self.current_step_label:
+            return self.current_step_label
         return self.current_time.strftime("%m-%d %H:%M")
 
     # ---------- 感知 ----------

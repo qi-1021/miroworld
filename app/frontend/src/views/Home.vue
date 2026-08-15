@@ -90,11 +90,11 @@
       <div class="console-head">
         <h2 class="section-title">{{ $t('home.consoleTitle') }}</h2>
         <div class="mode-tabs">
-          <button class="mode-tab" :class="{ active: activeMode === 'media' }" @click="activeMode = 'media'">
-            {{ $t('home.modeMedia') }}
-          </button>
           <button class="mode-tab" :class="{ active: activeMode === 'world' }" @click="activeMode = 'world'">
             {{ $t('home.modeWorld') }}
+          </button>
+          <button class="mode-tab" :class="{ active: activeMode === 'media' }" @click="activeMode = 'media'">
+            {{ $t('home.modeMedia') }}
           </button>
         </div>
       </div>
@@ -302,8 +302,8 @@ const openModelSettings = () => {
   window.dispatchEvent(new CustomEvent('open-model-settings'))
 }
 
-// ============ 模式选择：媒体分析 / 世界模拟 ============
-const activeMode = ref('media')
+// ============ 模式选择：世界推演（第一优先）/ 舆情分析（第二） ============
+const activeMode = ref('world')
 
 // 世界模拟：背景资料 / 章节正文（各支持多文件 + 直接文本）
 const worldBgFiles = ref([])

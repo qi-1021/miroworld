@@ -54,3 +54,39 @@ def test_list_projects_skips_non_directories(projects_root):
     (projects_root / "not_a_project.json").write_text("{}", encoding="utf-8")
     listed = ProjectManager.list_projects()
     assert [x.project_id for x in listed] == [p.project_id]
+
+
+def test_delete_project_removes_related_data_dirs(tmp_path, monkeypatch):
+    """删除项目时同步清理世界设定库/时间线/世界模拟/图谱缓存目录。"""
+    from app.services import world_bible, timeline_service, world_simulation, world_graph_refill
+
+    monkeypatch.setattr(world_bible, "WORLD_DATA_ROOT", str(tmp_path / "world"))
+    monkeypatch.setattr(timeline_service, "TIMELINE_ROOT", str(tmp_path / "timeline"))
+    monkeypatch.setattr(world_simulation, "WORLD_SIM_ROOT", str(tmp_path / "world-sim"))
+    monkeypatch.setattr(world_graph_refill, "WORLD_GRAPH_ROOT", str(tmp_path / "world-graph"))
+
+    p = ProjectManager.create_project("待删除")
+    # 制造各关联目录（即使 project 目录本身被删掉，也应清理残留）
+    for root in (
+        world_bible.WORLD_DATA_ROOT,
+        timeline_service.TIMELINE_ROOT,
+        world_simulation.WORLD_SIM_ROOT,
+        world_graph_refill.WORLD_GRAPH_ROOT,
+    ):
+        os.makedirs(os.path.join(root, p.project_id), exist_ok=True)
+
+    # 先模拟“空项目/残缺项目”：把项目主目录删掉
+    import shutil
+    shutil.rmtree(ProjectManager._get_project_dir(p.project_id))
+
+    assert ProjectManager.delete_project(p.project_id) is True
+    for root in (
+        world_bible.WORLD_DATA_ROOT,
+        timeline_service.TIMELINE_ROOT,
+        world_simulation.WORLD_SIM_ROOT,
+        world_graph_refill.WORLD_GRAPH_ROOT,
+    ):
+        assert not os.path.exists(os.path.join(root, p.project_id))
+
+    # 完全不存在时返回 False
+    assert ProjectManager.delete_project("proj_000000000000") is False
