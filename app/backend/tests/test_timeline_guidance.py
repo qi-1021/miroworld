@@ -22,6 +22,7 @@ def tl_service(tmp_path, monkeypatch):
     monkeypatch.setattr(svc, "TIMELINE_ROOT", str(tmp_path / "world-timeline"))
     with svc._task_lock:
         svc._tasks.clear()
+        svc._tasks_loaded = False
     monkeypatch.setattr(svc, "FORK_GUIDANCE_WINDOW", 0.05)  # 测试加速：跳过批2等待窗口
     yield svc
 
@@ -223,6 +224,7 @@ def test_characters_endpoints(tl_service, monkeypatch):
     monkeypatch.setattr(svc, "TIMELINE_ROOT", str(__import__("tempfile").mkdtemp()))
     with svc._task_lock:
         svc._tasks.clear()
+        svc._tasks_loaded = False
     _seed(svc)
     app = create_app(); app.config["TESTING"] = True
     with app.test_client() as c:

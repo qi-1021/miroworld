@@ -975,7 +975,9 @@
     "early": "早期",
     "late": "晚期",
     "happened": "已发生",
-    "notHappened": "未发生"
+    "notHappened": "未发生",
+    "taskLost": "任务不存在，请重新发起",
+    "retryLaunch": "重新发起"
   },
   "fork": {
     "forkBtn": "在此分叉推演",
@@ -991,7 +993,8 @@
     "forkStarted": "分叉推演已启动",
     "forkDone": "分叉推演完成",
     "forkTimeout": "推演超时",
-    "forkDoneCount": "推演完成，追加 {n} 条分支事件"
+    "forkDoneCount": "推演完成，追加 {n} 条分支事件",
+    "interrupted": "任务已中断，请重新发起"
   },
   "objection": {
     "objectionBtn": "提交异议",
@@ -1039,6 +1042,46 @@
     "saved": "人物设定已保存",
     "saveFailed": "保存失败",
     "loadFailed": "人物加载失败",
-    "referChips": "将参考的人物设定"
+    "referChips": "将参考的人物设定",
+    "generate": "一键生成初稿",
+    "generating": "生成中...",
+    "generated": "已生成人物设定初稿",
+    "allFilled": "所有人物已有设定",
+    "genFailed": "生成失败",
+    "genInterrupted": "生成已中断，请重试",
+    "genTimeout": "生成超时"
+  },
+  "extract": {
+    "interrupted": "任务已中断，请重新发起"
+  },
+  "compare": {
+    "title": "对比主线",
+    "before": "主线",
+    "baseOnly": "仅主线",
+    "branchNew": "分支新增",
+    "changed": "变化",
+    "close": "关闭",
+    "loadFailed": "对比加载失败",
+    "empty": "暂无差异事件",
+    "branchPoint": "分叉点",
+    "loading": "对比中..."
+  },
+  "delete": {
+    "do": "删除事件",
+    "deleting": "删除中...",
+    "confirm": "确定删除该事件？此操作不可恢复。",
+    "done": "事件已删除",
+    "failed": "删除失败"
+  },
+  "merge": {
+    "title": "合并到…",
+    "selectPlaceholder": "选择合并目标事件",
+    "do": "合并",
+    "done": "合并完成",
+    "failed": "合并失败"
+  },
+  "drag": {
+    "reordered": "事件顺序已更新",
+    "reorderFailed": "重排保存失败"
   }
 }

@@ -20,6 +20,7 @@ def tl_service(tmp_path, monkeypatch):
     monkeypatch.setattr(svc, "TIMELINE_ROOT", str(tmp_path / "world-timeline"))
     with svc._task_lock:
         svc._tasks.clear()
+        svc._tasks_loaded = False
     monkeypatch.setattr(svc, "_build_llm_client", lambda: _OkLLM())
     monkeypatch.setattr(svc, "FORK_GUIDANCE_WINDOW", 0.05)  # 测试加速：跳过批2等待窗口
     yield svc
@@ -30,6 +31,7 @@ def tl_client(tmp_path, monkeypatch):
     monkeypatch.setattr(svc, "TIMELINE_ROOT", str(tmp_path / "world-timeline"))
     with svc._task_lock:
         svc._tasks.clear()
+        svc._tasks_loaded = False
     app = create_app()
     app.config["TESTING"] = True
     with app.test_client() as c:
@@ -187,6 +189,7 @@ def test_endpoint_fork_returns_task(tl_client, monkeypatch):
     monkeypatch.setattr(svc, "_build_llm_client", lambda: _OkLLM())
     with svc._task_lock:
         svc._tasks.clear()
+        svc._tasks_loaded = False
     # seed 一条事件
     _seed(svc)
     ev_id = svc.load_timeline("proj_0123456789ab", None)["events"][0]["id"]
@@ -200,6 +203,7 @@ def test_endpoint_objection(tl_client, monkeypatch):
     monkeypatch.setattr(svc, "TIMELINE_ROOT", str(__import__("tempfile").mkdtemp()))
     with svc._task_lock:
         svc._tasks.clear()
+        svc._tasks_loaded = False
     _seed(svc)
     ev_id = svc.load_timeline("proj_0123456789ab", None)["events"][0]["id"]
     r = tl_client.post(

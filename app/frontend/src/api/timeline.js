@@ -151,3 +151,58 @@ export function saveTimelineCharacters(projectId, characters) {
     data: { characters }
   })
 }
+
+/**
+ * 对比某分支与主线的事件差异
+ * @param {String} projectId
+ * @param {String} branchId
+ * @returns {Promise} { success, data: { branch_id, branch_point_id, branch_point_summary, entries:[...] }, count }
+ *   entries[].kind: 'before'|'base_only'|'branch_new'|'changed'
+ */
+export function getBranchCompare(projectId, branchId) {
+  return service({
+    url: '/api/timeline/' + projectId + '/branch/compare',
+    method: 'get',
+    params: { branch_id: branchId }
+  })
+}
+
+/**
+ * 删除单个事件
+ * @param {String} projectId
+ * @param {String} eventId
+ * @returns {Promise} { success, data: { deleted: true } }；404 不存在
+ */
+export function deleteTimelineEvent(projectId, eventId) {
+  return service({
+    url: '/api/timeline/' + projectId + '/' + eventId,
+    method: 'delete'
+  })
+}
+
+/**
+ * 将多个事件合并到目标事件
+ * @param {String} projectId
+ * @param {String} targetId
+ * @param {Array} sourceIds - 待合并源事件 id 列表（非空）
+ * @returns {Promise} { success, data: 合并后事件 }
+ */
+export function mergeTimelineEvents(projectId, targetId, sourceIds) {
+  return service({
+    url: '/api/timeline/' + projectId + '/merge',
+    method: 'post',
+    data: { target_id: targetId, source_ids: sourceIds }
+  })
+}
+
+/**
+ * 一键生成人物设定初稿（后台任务，复用 /api/timeline/status 轮询）
+ * @param {String} projectId
+ * @returns {Promise} { success, data: { task_id } }
+ */
+export function generateTimelineCharacters(projectId) {
+  return service({
+    url: '/api/timeline/' + projectId + '/characters/generate',
+    method: 'post'
+  })
+}

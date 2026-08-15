@@ -479,3 +479,55 @@ def test_run_event_detail_contains_filtered():
     for e in events:
         assert "filtered" in e.detail
         assert isinstance(e.detail["filtered"], list)
+
+
+# ---------------------------------------------------------------- 角色发言增强
+
+def test_decision_prompt_contains_goal_memory_and_persona():
+    """决策提示词注入：当前目标 + 最近发生的事（角色记忆）+ 性格化要求"""
+    env = make_env()
+    calls = []
+
+    async def fake_llm(text):
+        calls.append(text)
+        return "前往城门"
+
+    import asyncio as _a
+    _a.run(env.run(fake_llm))
+
+    assert len(calls) == 6  # 2 角色 × 3 步
+    first = calls[0]
+    # 目标注入
+    assert "当前目标" in first
+    assert "打听城门修缮的进展" in first or "按人设自然行动" in first
+    # 性格化要求
+    assert "严格以" in first and "人物设定" in first
+    # 卡拉第二轮（calls[2]）的提示词应包含第一步的事件记忆（该角色相关）
+    kara_round2 = calls[2]
+    assert "最近发生的事" in kara_round2
+    assert "卡拉" in kara_round2  # 记忆里出现角色名
+    assert "（暂无）" not in kara_round2  # 已有记忆，不再是空
+
+
+def test_recent_context_filters_by_character_and_truncates():
+    """_recent_context 只返回该角色相关事件，且超长截断"""
+    env = make_env()
+    # 手工构造事件流：卡拉 1 条 + 埃尔德里 1 条 + 卡拉长事件 1 条
+    env.events = [
+        WorldEvent(step=1, time="01-01 08:00", character_id="kara", character_name="卡拉",
+                   action_type="talk", action_desc="和埃尔德里聊城门修缮", result="埃尔德里点头",
+                   location="集市"),
+        WorldEvent(step=1, time="01-01 08:10", character_id="eldrin", character_name="埃尔德里",
+                   action_type="move", action_desc="前往酒馆", result="你来到了【老橡木酒馆】",
+                   location="老橡木酒馆"),
+        WorldEvent(step=2, time="01-01 08:30", character_id="kara", character_name="卡拉",
+                   action_type="talk", action_desc="讲述" + "长" * 200, result="讲述完毕",
+                   location="集市"),
+    ]
+    ctx = env._recent_context(env.characters["kara"])
+    lines = ctx.split("\n")
+    assert len(lines) == 2  # 只取卡拉相关的 2 条（埃尔德里那条被过滤）
+    assert "卡拉" in ctx and "前往酒馆" not in ctx  # 埃尔德里的事件被过滤
+    # 超长条目被截断到 max_len + 省略号
+    assert all(len(l) <= 60 + 1 for l in lines)  # 60 字符 + "…" 1 字符
+    assert any(l.endswith("…") for l in lines)

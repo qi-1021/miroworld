@@ -21,6 +21,7 @@ def tl_service(tmp_path, monkeypatch):
     # 清空任务表，避免跨用例串扰
     with svc._task_lock:
         svc._tasks.clear()
+        svc._tasks_loaded = False
     yield svc
 
 
@@ -29,6 +30,7 @@ def tl_client(tmp_path, monkeypatch):
     monkeypatch.setattr(svc, "TIMELINE_ROOT", str(tmp_path / "world-timeline"))
     with svc._task_lock:
         svc._tasks.clear()
+        svc._tasks_loaded = False
     app = create_app()
     app.config["TESTING"] = True
     with app.test_client() as c:
@@ -179,6 +181,7 @@ def _mock_extract_endpoints(client, monkeypatch, llm_factory):
     monkeypatch.setattr(svc, "TIMELINE_ROOT", str(__import__("tempfile").mkdtemp()))
     with svc._task_lock:
         svc._tasks.clear()
+        svc._tasks_loaded = False
 
     def _fake_bible(project_id):
         class B:

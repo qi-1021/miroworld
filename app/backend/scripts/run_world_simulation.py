@@ -358,6 +358,29 @@ class WorldEnv:
 
     # ---------- 感知 ----------
 
+    def _recent_context(self, character: WorldCharacter, limit: int = 6, max_len: int = 60) -> str:
+        """返回该角色最近参与/目睹的事件摘要（供决策提示词注入，形成角色记忆）。
+
+        - 只取该角色相关的事件（本角色发起的，或结果/描述中出现其名的）；
+        - 按事件顺序取最近 limit 条，每条截断 max_len 字符；
+        - 无相关事件返回空串。
+        """
+        relevant = []
+        for ev in self.events:
+            if ev.character_id != character.id and not (
+                character.name and character.name in (ev.action_desc or ev.result or "")
+            ):
+                continue
+            body = f"{ev.action_desc or ''} {ev.result or ''}".strip()
+            relevant.append(f"{ev.character_name}：{body}")
+        lines = []
+        for text in relevant[-limit:]:
+            line = "- " + str(text).strip().replace("\n", " ")
+            if len(line) > max_len:
+                line = line[:max_len] + "…"
+            lines.append(line)
+        return "\n".join(lines)
+
     def observe(self, character: WorldCharacter) -> str:
         """角色感知：位置 + 在场角色 + 环境 + 规则 + 时间（含视角过滤与知识边界）
 
@@ -551,8 +574,16 @@ class WorldEnv:
                 observation = self.observe(char)
                 # 2. 决策（LLM）
                 try:
+                    _goal = (char.goal or "").strip() or "按人设自然行动"
+                    _recent = self._recent_context(char)
                     decision = await llm_call(
-                        f"你是{char.name}。{char.persona}\n你的身份知识：{'、'.join(char.knowledge) if char.knowledge else '无'}\n\n{observation}"
+                        f"你是{char.name}。{char.persona}\n"
+                        f"当前目标：{_goal}\n"
+                        f"你的身份知识：{'、'.join(char.knowledge) if char.knowledge else '无'}\n"
+                        f"最近发生的事：\n{_recent or '（暂无）'}\n\n"
+                        f"{observation}\n"
+                        f"请严格以{char.name}的身份与性格行动：语气、价值观、口癖都符合人物设定（persona），"
+                        f"不要说出超出其身份与见闻的内容。"
                     )
                 except Exception as e:
                     print(f"  ⚠ {char.name} LLM 调用失败: {e}")

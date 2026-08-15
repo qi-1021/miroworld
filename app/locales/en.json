@@ -975,7 +975,9 @@
     "early": "Early",
     "late": "Late",
     "happened": "Happened",
-    "notHappened": "Not happened"
+    "notHappened": "Not happened",
+    "taskLost": "Task not found. Please restart.",
+    "retryLaunch": "Restart"
   },
   "fork": {
     "forkBtn": "Fork here",
@@ -991,7 +993,8 @@
     "forkStarted": "Fork started",
     "forkDone": "Fork complete",
     "forkTimeout": "Fork timed out",
-    "forkDoneCount": "Fork complete, {n} branch events added"
+    "forkDoneCount": "Fork complete, {n} branch events added",
+    "interrupted": "Task interrupted. Please restart."
   },
   "objection": {
     "objectionBtn": "Raise objection",
@@ -1039,6 +1042,46 @@
     "saved": "Characters saved",
     "saveFailed": "Save failed",
     "loadFailed": "Failed to load characters",
-    "referChips": "Referenced characters"
+    "referChips": "Referenced characters",
+    "generate": "Auto-generate draft",
+    "generating": "Generating...",
+    "generated": "Character drafts generated",
+    "allFilled": "All characters already have settings",
+    "genFailed": "Generation failed",
+    "genInterrupted": "Generation interrupted. Please retry.",
+    "genTimeout": "Generation timed out"
+  },
+  "extract": {
+    "interrupted": "Task interrupted. Please restart."
+  },
+  "compare": {
+    "title": "Compare with mainline",
+    "before": "Mainline",
+    "baseOnly": "Mainline only",
+    "branchNew": "New in branch",
+    "changed": "Changed",
+    "close": "Close",
+    "loadFailed": "Failed to load comparison",
+    "empty": "No differences",
+    "branchPoint": "Branch point",
+    "loading": "Loading..."
+  },
+  "delete": {
+    "do": "Delete event",
+    "deleting": "Deleting...",
+    "confirm": "Delete this event? This cannot be undone.",
+    "done": "Event deleted",
+    "failed": "Delete failed"
+  },
+  "merge": {
+    "title": "Merge into...",
+    "selectPlaceholder": "Select target event",
+    "do": "Merge",
+    "done": "Merged",
+    "failed": "Merge failed"
+  },
+  "drag": {
+    "reordered": "Event order updated",
+    "reorderFailed": "Failed to save reorder"
   }
 }

@@ -493,7 +493,7 @@ def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
-# 任务状态管理（进程内存）
+# 任务状态管理（进程内存 + 落盘持久化）
 #
 # 每个任务 dict 除旧字段（status/total_chunks/done_chunks/llm_ok/heuristic/
 # message，保持前端兼容）外，新增：
@@ -503,18 +503,91 @@ def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> List[str]:
 #   started_at: str  ISO 时间串（任务创建时写入）
 #   elapsed   : float 秒，每次更新时刷新 = now - started_at
 #   error     : str   status=failed 时写入失败原因；正常为空
+#
+# 持久化：data/world-timeline/tasks/<task_id>.json（data/ 已 gitignore）
+#   - _new_task 创建时 _update_task/_task_log 每次更新时落盘
+#   - 落盘在带锁取副本、锁外写文件，避免持锁做 I/O
+#   - 启动经 _ensure_tasks_loaded() 懒加载一次；status=running 的任务恢复为 interrupted
 # ---------------------------------------------------------------------------
 _tasks: Dict[str, Dict[str, Any]] = {}
 _task_lock = threading.Lock()
 _STEPS_MAX = 50
+_tasks_loaded = False
+
+_TASKS_DIR = os.path.join(TIMELINE_ROOT, "tasks")
+
+
+def _task_file_path(task_id: str) -> str:
+    return os.path.join(_TASKS_DIR, f"{task_id}.json")
+
+
+def _persist_task(task_id: str) -> None:
+    """在带锁取副本、锁外写文件。写失败仅警告（不阻断任务主流程）。"""
+    if not task_id:
+        return
+    with _task_lock:
+        if task_id not in _tasks:
+            return
+        snap = json.dumps(_tasks[task_id], ensure_ascii=False)
+    try:
+        os.makedirs(_TASKS_DIR, exist_ok=True)
+        path = _task_file_path(task_id)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(snap)
+    except Exception as e:
+        logger.warning(f"持久化任务状态失败: {e}")
+
+
+def _restore_interrupted(task: Dict[str, Any]) -> Dict[str, Any]:
+    """把重启时残留的 running 任务标记为 interrupted。"""
+    if task.get("status") == "running":
+        task["status"] = "interrupted"
+        task["stage"] = "已中断"
+        task["error"] = "服务重启，任务中断"
+        task["message"] = "任务已中断，请重新发起"
+        steps = task.setdefault("steps", [])
+        steps.append("[" + datetime.now().strftime("%H:%M:%S") + "] 服务重启，任务中断")
+        if len(steps) > _STEPS_MAX:
+            del steps[:-_STEPS_MAX]
+        task["elapsed"] = _elapsed_seconds(task)
+    return task
+
+
+def _ensure_tasks_loaded() -> None:
+    """懒加载一次磁盘上的任务状态；status=running → interrupted。幂等。"""
+    global _tasks_loaded
+    with _task_lock:
+        if _tasks_loaded:
+            return
+        _tasks_loaded = True
+        loaded = {}
+        try:
+            if os.path.isdir(_TASKS_DIR):
+                for fn in os.listdir(_TASKS_DIR):
+                    if not fn.endswith(".json"):
+                        continue
+                    tid = fn[:-5]
+                    try:
+                        with open(os.path.join(_TASKS_DIR, fn), "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                        if isinstance(data, dict) and data.get("id"):
+                            loaded[tid] = _restore_interrupted(dict(data))
+                    except Exception:
+                        continue
+        except Exception as e:
+            logger.warning(f"加载任务状态失败: {e}")
+        for tid, st in loaded.items():
+            _tasks[tid] = st
 
 
 def _new_task(prefix: str, message: str) -> str:
-    """创建后台任务 dict，返回 task_id（统一打点基准）。"""
+    """创建后台任务 dict（落盘），返回 task_id（统一打点基准）。"""
+    _ensure_tasks_loaded()
     task_id = f"{prefix}_{uuid.uuid4().hex[:12]}"
     now = datetime.now()
     with _task_lock:
         _tasks[task_id] = {
+            "id": task_id,
             "status": "running",
             "total_chunks": 0, "done_chunks": 0, "llm_ok": 0, "heuristic": 0,
             "message": message,
@@ -525,6 +598,7 @@ def _new_task(prefix: str, message: str) -> str:
             "elapsed": 0.0,
             "error": "",
         }
+    _persist_task(task_id)
     return task_id
 
 
@@ -539,30 +613,41 @@ def _elapsed_seconds(task: Dict[str, Any]) -> float:
 
 
 def _update_task(task_id: str, **kw) -> None:
-    """更新任务字段并刷新 elapsed（带锁，线程安全）。"""
+    """更新任务字段并刷新 elapsed（带锁），并落盘。"""
+    _ensure_tasks_loaded()
+    changed = False
     with _task_lock:
         if task_id not in _tasks:
             return
         task = _tasks[task_id]
         task.update(kw)
         task["elapsed"] = _elapsed_seconds(task)
+        changed = True
+    if changed:
+        _persist_task(task_id)
 
 
 def _task_log(task_id: str, text: str) -> None:
-    """追加一条步骤日志（自动带 [HH:MM:SS] 时间戳，自动截断到 50 条），并刷新 elapsed。"""
+    """追加一条步骤日志（自动带 [HH:MM:SS] 时间戳，自动截断到 50 条），刷新 elapsed + 落盘。"""
+    _ensure_tasks_loaded()
+    changed = False
     ts = datetime.now().strftime("%H:%M:%S")
     with _task_lock:
         if task_id not in _tasks:
             return
         task = _tasks[task_id]
         steps = task.setdefault("steps", [])
-        steps.append(f"[{ts}] {text}")
+        steps.append("[" + ts + "] " + text)
         if len(steps) > _STEPS_MAX:
             del steps[:-_STEPS_MAX]
         task["elapsed"] = _elapsed_seconds(task)
+        changed = True
+    if changed:
+        _persist_task(task_id)
 
 
 def get_status(task_id: str) -> Optional[Dict[str, Any]]:
+    _ensure_tasks_loaded()
     with _task_lock:
         return dict(_tasks.get(task_id, {}))
 
@@ -1121,6 +1206,68 @@ def branch_exists(project_id: str, branch_id: str) -> bool:
         return False
 
 
+def compare_branch(project_id: str, branch_id: str):
+    """对比某分支与主线的差异。
+
+    读全部事件：分叉点 sort=bp_sort；before=分叉点及之前的主线事件；
+    base_after=主线事件 sort>bp_sort；branch_events=该分支事件（升序）。
+    贪心配对 difflib.SequenceMatcher ratio>=0.55 → changed（event=分支事件、
+    base_event=主线事件）；未配对 → base_only / branch_new。
+    分支不存在返回 None。返回 {branch_id, branch_point_id, branch_point_summary, entries}。
+    """
+    import difflib
+    data = load_timeline(project_id, None)
+    events = data.get("events", [])
+    branch_events = sorted([e for e in events if e.get("branch_id") == branch_id],
+                           key=lambda e: e.get("sort_lower") or 0)
+    if not branch_events:
+        return None
+    bp_id = branch_events[0].get("branch_point") or ""
+    bp_ev = next((e for e in events if e.get("id") == bp_id), None)
+    bp_sort = float(bp_ev.get("sort_lower") or 0.0) if bp_ev else 0.0
+    bp_summary = str(bp_ev.get("summary") or "") if bp_ev else ""
+    # 主线事件 = 非分支事件（不含本次分支及其它分支），用于对比
+    mainline = [e for e in events if e.get("kind") != "branch"]
+    before = [e for e in mainline if (e.get("sort_lower") or 0.0) <= bp_sort]
+    base_after = [e for e in mainline if (e.get("sort_lower") or 0.0) > bp_sort]
+
+    def _sim(a, b):
+        return difflib.SequenceMatcher(None, str(a or ""), str(b or "")).ratio()
+
+    entries = []
+    for e in before:
+        entries.append({"kind": "before", "event": e})
+    # 贪心配对：对每个 branch_event 找一个未配对的 base_after 事件最大相似
+    base_used = [False] * len(base_after)
+    branch_new = []
+    for be in branch_events:
+        best_i = -1
+        best_ratio = 0.0
+        for bi, me in enumerate(base_after):
+            if base_used[bi]:
+                continue
+            ratio = _sim(be.get("summary"), me.get("summary"))
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_i = bi
+        if best_i != -1 and best_ratio >= 0.55:
+            base_used[best_i] = True
+            entries.append({"kind": "changed", "event": be, "base_event": base_after[best_i]})
+        else:
+            branch_new.append(be)
+    for bi, me in enumerate(base_after):
+        if not base_used[bi]:
+            entries.append({"kind": "base_only", "event": me})
+    for be in branch_new:
+        entries.append({"kind": "branch_new", "event": be})
+    return {
+        "branch_id": branch_id,
+        "branch_point_id": bp_id,
+        "branch_point_summary": bp_summary,
+        "entries": entries,
+    }
+
+
 def start_branch_continue(project_id: str, branch_id: str, guidance=None,
                           horizon: Optional[int] = None) -> str:
     """从某分支当前末尾续推（后台任务 tl_forkcont_*），返回 task_id；复用 /status。"""
@@ -1216,3 +1363,208 @@ def patch_event(project_id: str, event_id: str, patch: Dict[str, Any]) -> Option
     events.sort(key=lambda e: (e.get("sort_lower") or 0))
     _save_timeline(project_id, events)
     return dict(target)
+# ---------------------------------------------------------------------------
+# 事件删除（delete）与合并（merge）
+# ---------------------------------------------------------------------------
+def delete_event(project_id: str, event_id: str) -> bool:
+    """删除指定事件并持久化（仅删该事件，不级联删分支）。存在返回 True，不存在返回 False。"""
+    data = load_timeline(project_id, None)
+    events = data.get("events", [])
+    before = len(events)
+    events = [e for e in events if e.get("id") != event_id]
+    if len(events) == before:
+        return False
+    events.sort(key=lambda e: e.get("sort_lower") or 0)
+    _save_timeline(project_id, events)
+    return True
+
+
+def merge_events(project_id: str, target_id: str, source_ids: List[str]) -> Optional[Dict[str, Any]]:
+    """把若干 source 事件合并进 target 事件，删除 source，持久化，返回合并后 target。
+
+    - characters/entities 去重合并（target 在前）
+    - objections 拼接
+    - confidence 取 max
+    - location_name 若 target 为空则取第一个非空 source
+    - target 或任一 source 不存在 → 返回 None
+    """
+    data = load_timeline(project_id, None)
+    events = data.get("events", [])
+    src_ids = [s for s in (source_ids or []) if s]
+    if not target_id or not src_ids:
+        return None
+    target = next((e for e in events if e.get("id") == target_id), None)
+    if target is None:
+        return None
+    sources = []
+    for sid in src_ids:
+        src = next((e for e in events if e.get("id") == sid), None)
+        if src is None:
+            return None
+        sources.append(src)
+
+    # characters/entities 去重（target 在前）
+    def _merge_uniq(target_list, src_list):
+        seen = set()
+        out = []
+        for v in list(target_list or []) + list(src_list or []):
+            key = str(v).strip()
+            if key and key not in seen:
+                seen.add(key)
+                out.append(str(v))
+        return out
+
+    target["characters"] = _merge_uniq(target.get("characters"), _concat_lists([s.get("characters") for s in sources]))
+    target["entities"] = _merge_uniq(target.get("entities"), _concat_lists([s.get("entities") for s in sources]))
+
+    # objections 拼接
+    objs = []
+    for s in sources:
+        for o in (s.get("objections") or []):
+            objs.append(o)
+    target["objections"] = (target.get("objections") or []) + objs
+
+    # confidence 取 max
+    c = target.get("confidence")
+    for s in sources:
+        sc = s.get("confidence")
+        if isinstance(sc, (int, float)) and (not isinstance(c, (int, float)) or sc > c):
+            c = sc
+    if isinstance(c, (int, float)):
+        target["confidence"] = c
+
+    # location_name 若 target 空则取第一个非空 source
+    if not str(target.get("location_name") or "").strip():
+        for s in sources:
+            ln = str(s.get("location_name") or "").strip()
+            if ln:
+                target["location_name"] = ln
+                break
+
+    target["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    # 删除 source
+    source_set = set(s.get("id") for s in sources)
+    events = [e for e in events if e.get("id") not in source_set]
+    events.sort(key=lambda e: (e.get("sort_lower") or 0))
+    _save_timeline(project_id, events)
+    return dict(target)
+
+
+def _concat_lists(lists) -> List[str]:
+    out = []
+    for lst in lists:
+        for v in (lst or []):
+            out.append(v)
+    return out
+_CHAR_GEN_SYSTEM = (
+    "你是小说世界人物设定助手。请为给定的人物名单生成简短的 traits（性格/特质，<=120字）"
+    "与 description（背景描述，<=300字）。仅输出一个 JSON 数组，每项含 name/traits/description，"
+    "不要多余文字。")
+_CHAR_GEN_CANDIDATE_LIMIT = 20
+
+
+def _characters_generate_body(project_id: str, task_id: str) -> None:
+    with _task_lock:
+        if task_id in _tasks:
+            _tasks[task_id]["status"] = "running"
+    try:
+        _task_log(task_id, "读取人物设定档案")
+        _update_task(task_id, stage="构建输入", progress=15)
+        profiles = ensure_characters(project_id)
+        # 候选 = traits 与 description 均为空的条目（最多 20）
+        candidates = [
+            p for p in profiles
+            if not str(p.get("traits") or "").strip() and not str(p.get("description") or "").strip()
+        ][:_CHAR_GEN_CANDIDATE_LIMIT]
+        if not candidates:
+            _task_log(task_id, "所有人物已有设定，无需生成")
+            _update_task(task_id, status="completed", progress=100, stage="完成",
+                         message="所有人物已有设定，无需生成")
+            return
+
+        names = [str(p.get("name") or "") for p in candidates]
+        # 输入：候选名字 + 时间线事件摘要（前 30 条，40 字截断）
+        data = load_timeline(project_id, None)
+        events = data.get("events", [])
+        ctx_lines = []
+        for e in events[:30]:
+            s = _trunc_summary(e.get("summary"))
+            if s:
+                ctx_lines.append("- " + s)
+        ctx = "\n".join(ctx_lines) if ctx_lines else "（无时间线事件）"
+        user = (
+            "需生成设定的人物："
+            + "、".join(names)
+            + "\n时间线事件（供参考）：\n"
+            + ctx
+            + "\n请为每个人物输出 traits 与 description，JSON 数组。"
+        )
+
+        _task_log(task_id, "调用模型生成人物设定")
+        _update_task(task_id, stage="调用模型", progress=50)
+        llm = _build_llm_client()
+        arr = _char_gen_call(llm, user)
+        _task_log(task_id, "解析生成结果")
+        _update_task(task_id, stage="解析结果", progress=80)
+        if not arr:
+            raise ValueError("人物设定生成失败：LLM 未返回数组")
+
+        _task_log(task_id, "合并保存（仅填空字段，不覆盖既有设定）")
+        _update_task(task_id, stage="合并保存", progress=90)
+        by_name = {}
+        for p in profiles:
+            by_name[str(p.get("name") or "").strip()] = p
+        filled = 0
+        for item in arr:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            target = by_name.get(name)
+            if target is None:
+                continue
+            # 仅当 traits/description 仍为空时填入；不覆盖非空
+            if not str(target.get("traits") or "").strip():
+                target["traits"] = str(item.get("traits") or "").strip()[:_CHAR_TRAITS_MAX]
+            if not str(target.get("description") or "").strip():
+                target["description"] = str(item.get("description") or "").strip()[:_CHAR_DESC_MAX]
+            if (str(target.get("traits") or "").strip() or str(target.get("description") or "").strip()):
+                filled += 1
+        save_characters(project_id, profiles)
+        _task_log(task_id, f"已生成 {filled} 位人物设定初稿")
+        _update_task(task_id, status="completed", progress=100, stage="完成",
+                     message=f"已生成 {filled} 位人物设定初稿")
+    except Exception as e:
+        logger.error(f"[{task_id}] characters generate 失败: {e}")
+        _task_log(task_id, f"失败：{e}")
+        _update_task(task_id, status="failed", error=str(e), stage="失败", message=str(e))
+
+
+def _char_gen_call(llm, user):
+    """一次人物设定生成调用（允许 1 次重试），返回 [{name,traits,description}] 数组或 None。"""
+    for attempt in range(2):
+        try:
+            resp = llm.chat(
+                messages=[
+                    {"role": "system", "content": _CHAR_GEN_SYSTEM},
+                    {"role": "user", "content": user},
+                ],
+                temperature=0.6, max_tokens=4096,
+            )
+            arr = _extract_json_array(resp)
+            if arr:
+                return arr
+        except Exception:
+            if attempt == 0:
+                continue
+    return None
+
+
+def start_characters_generate(project_id: str) -> str:
+    """异步生成人物设定初稿（后台任务 tl_chargen_*），返回 task_id；复用 /status 轮询。"""
+    validate_project_id(project_id)
+    task_id = _new_task("tl_chargen", "生成人物设定中")
+    threading.Thread(target=_characters_generate_body, args=(project_id, task_id),
+                     daemon=True).start()
+    return task_id

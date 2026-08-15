@@ -49,7 +49,13 @@
           <div class="tl-char-actions">
             <button class="tl-btn ghost" @click="addCharacterRow">{{ $t('characters.add') }}</button>
             <button class="tl-btn primary" :disabled="charactersSaving" @click="saveCharacters">{{ charactersSaving ? $t('characters.saving') : $t('characters.save') }}</button>
+            <button class="tl-btn gen" :disabled="charGenerating || !hasEmptyCharacters" :title="!hasEmptyCharacters ? $t('characters.allFilled') : ''" @click="runGenerateCharacters">
+              <span v-if="charGenerating" class="spinner-sm"></span>
+              {{ charGenerating ? $t('characters.generating') : $t('characters.generate') }}
+            </button>
           </div>
+          <div v-if="!hasEmptyCharacters && charactersList.length" class="tl-char-hint">{{ $t('characters.allFilled') }}</div>
+          <div v-if="charGenMsg" class="tl-status" :class="{ error: charGenMsgError }">{{ charGenMsg }}</div>
           <div v-if="charactersMsg" class="tl-status" :class="{ error: charactersMsgError }">{{ charactersMsg }}</div>
         </template>
       </div>
@@ -70,12 +76,22 @@
         <div v-for="(s, si) in extractSteps" :key="si" class="tl-progress-step">{{ s }}</div>
       </div>
       <div v-if="extractError" class="tl-progress-error">{{ extractError }}</div>
+      <div v-if="extractInterrupted || extractError" class="tl-edit-btns">
+        <button class="tl-btn primary" @click="runExtract">{{ $t('timeline.retryLaunch') }}</button>
+      </div>
     </div>
 
     <!-- 分支切换器 -->
     <div v-if="branchIds.length > 1" class="branch-switcher">
       <button class="branch-chip" :class="{ active: branchId === 'base' }" @click="selectBranch('base')">{{ $t('fork.branchBase') }}</button>
       <button v-for="(b, i) in branchList" :key="b" class="branch-chip" :class="{ active: branchId === b }" @click="selectBranch(b)">{{ $t('fork.branchN', { n: i + 1 }) }}</button>
+    </div>
+    <!-- 对比主线（仅非 base 分支显示） -->
+    <div v-if="branchId !== 'base'" class="branch-compare-row">
+      <button class="tl-btn ghost" :disabled="compareLoading" @click="openCompare">
+        <span v-if="compareLoading" class="spinner-sm"></span>
+        {{ $t('compare.title') }}
+      </button>
     </div>
 
     <!-- 空/加载/错误 -->
@@ -124,6 +140,14 @@
               :style="pointColor(ev)"
               :title="ev.time_text || ev.summary"
             ></div>
+          </div>
+          <!-- 拖拽重排占位 -->
+          <div
+            v-if="dragReorder"
+            class="tl-point-wrap tl-drag-placeholder"
+            :style="{ left: dragPlaceholderLeft }"
+          >
+            <div class="tl-point" :class="'et-' + (dragReorder.ev_type || 'other')" style="outline:2px dashed #FF5722; outline-offset:1px;"></div>
           </div>
           <!-- scrubber 手柄 -->
           <div class="tl-scrubber" :style="{ left: scrubPct + '%' }">
@@ -227,6 +251,23 @@
             <button class="tl-btn ghost" @click="closeDetail">{{ $t('timeline.editCancel') }}</button>
           </div>
           <div v-if="editMsg" class="tl-status" :class="{ error: editMsgError }">{{ editMsg }}</div>
+        </div>
+
+        <!-- 数据管理：合并 / 删除 -->
+        <div class="tl-manage-box">
+          <div class="tl-manage-row">
+            <span class="f-k">{{ $t('merge.title') }}</span>
+            <select v-model="mergeTarget" class="tl-edit-med">
+              <option value="">{{ $t('merge.selectPlaceholder') }}</option>
+              <option v-for="m in mergeCandidates" :key="m.event_id" :value="m.event_id">{{ mergeOptionLabel(m) }}</option>
+            </select>
+            <button class="tl-btn ghost" :disabled="!mergeTarget" @click="runMerge">{{ $t('merge.do') }}</button>
+          </div>
+          <div v-if="mergeMsg" class="tl-status" :class="{ error: mergeMsgError }">{{ mergeMsg }}</div>
+          <div class="tl-manage-row">
+            <button class="tl-btn danger" :disabled="deletingEvent" @click="runDelete">{{ deletingEvent ? $t('delete.deleting') : $t('delete.do') }}</button>
+          </div>
+          <div v-if="deleteMsg" class="tl-status" :class="{ error: deleteMsgError }">{{ deleteMsg }}</div>
         </div>
       </div>
     </div>
@@ -336,6 +377,36 @@
         <div v-if="objectionMsg" class="tl-status" :class="{ error: objectionMsgError }">{{ objectionMsg }}</div>
       </div>
     </div>
+    <!-- 分支对比弹窗 -->
+    <div v-if="compareOpen" class="tl-modal-mask" @click.self="closeCompare">
+      <div class="tl-modal compare">
+        <div class="tl-modal-head">
+          <span class="tl-modal-type">{{ $t('compare.title') }}</span>
+          <button class="tl-modal-close" @click="closeCompare">×</button>
+        </div>
+        <div v-if="compareBranchPoint" class="compare-point">{{ $t('compare.branchPoint') }}：{{ compareBranchPoint }}</div>
+
+        <div v-if="compareLoading" class="tl-state"><span class="spinner-sm"></span><span>{{ $t('compare.loading') }}</span></div>
+        <div v-else-if="compareError" class="tl-state error">
+          <span>{{ compareError }}</span>
+          <button class="tl-btn ghost" @click="openCompare">{{ $t('timeline.retry') }}</button>
+        </div>
+        <div v-else-if="!compareEntries.length" class="tl-state">{{ $t('compare.empty') }}</div>
+        <div v-else class="compare-list">
+          <div v-for="(ent, i) in compareEntries" :key="i" class="compare-item" :class="'kind-' + ent.kind">
+            <div class="compare-item-head">
+              <span class="compare-kind" :class="'kind-' + ent.kind">{{ compareKindLabel(ent.kind) }}</span>
+              <span class="compare-time">{{ evTimeText(ent.event) }}</span>
+            </div>
+            <div class="compare-item-summary">{{ ent.event?.summary }}</div>
+            <div v-if="ent.kind === 'changed' && ent.base_event" class="compare-changed">
+              <div class="cp-before">{{ $t('compare.before') }}：{{ ent.base_event.summary }}</div>
+              <div class="cp-after">→ {{ ent.event.summary }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -353,7 +424,11 @@ import {
   submitForkGuidance,
   continueBranch,
   getTimelineCharacters,
-  saveTimelineCharacters
+  saveTimelineCharacters,
+  getBranchCompare,
+  deleteTimelineEvent,
+  mergeTimelineEvents,
+  generateTimelineCharacters
 } from '../api/timeline'
 
 const props = defineProps({ projectId: { type: String, required: true } })
@@ -370,6 +445,17 @@ const editDraft = ref({ summary: '', age: null, sort_lower: null, location_name:
 const savingEdit = ref(false)
 const editMsg = ref('')
 const editMsgError = ref(false)
+// 删除 / 合并
+const deletingEvent = ref(false)
+const deleteMsg = ref('')
+const deleteMsgError = ref(false)
+const mergeTarget = ref('')
+const mergeMsg = ref('')
+const mergeMsgError = ref(false)
+// 拖拽重排持久化
+const dragReorder = ref(null)
+const dragOrigSort = ref(0)
+const dragPlaceholderSort = ref(0)
 
 // 抽取 / 未来
 const extracting = ref(false)
@@ -379,6 +465,7 @@ const extractStage = ref('')
 const extractSteps = ref([])
 const extractError = ref('')
 const extractDetail = ref(false)
+const extractInterrupted = ref(false)
 const statusMessage = ref('')
 const statusError = ref(false)
 const futureGoal = ref('')
@@ -410,7 +497,14 @@ const forkError = ref('')
 const forkPercent = ref(0)
 const forkEventCount = ref(0)
 const forkBranchId = ref('')
+const forkInterrupted = ref(false)
 let forkElapsedTimer = null
+// 分支对比
+const compareOpen = ref(false)
+const compareLoading = ref(false)
+const compareError = ref('')
+const compareEntries = ref([])
+const compareBranchPoint = ref('')
 // 运行中补充设定
 const guideInput = ref('')
 const guideSubmitting = ref(false)
@@ -429,6 +523,13 @@ const charactersLoading = ref(false)
 const charactersSaving = ref(false)
 const charactersMsg = ref('')
 const charactersMsgError = ref(false)
+// 一键生成初稿
+const charGenerating = ref(false)
+const charGenMsg = ref('')
+const charGenMsgError = ref(false)
+let charGenTimer = null
+let charGenTaskId = ''
+let charGenTries = 0
 
 // 异议
 const objectionEvent = ref(null)
@@ -467,6 +568,36 @@ const branchList = computed(() => branchIds.value.slice());
 function isBranchEvent(ev) { return !!(ev.branch_id && ev.branch_id !== 'base'); }
 
 function selectBranch(b) { branchId.value = b; }
+
+// ===== 分支对比 =====
+async function openCompare() {
+  if (!forkBranchId.value && branchId.value !== 'base') {
+    // 尚未从任务拿到 branch_id 时用当前选中的分支
+    forkBranchId.value = branchId.value;
+  }
+  const bid = forkBranchId.value || branchId.value;
+  if (!bid || bid === 'base') return;
+  compareOpen.value = true;
+  compareLoading.value = true; compareError.value = ''; compareEntries.value = []; compareBranchPoint.value = '';
+  try {
+    const res = await getBranchCompare(props.projectId, bid);
+    const body = res?.data || res || {};
+    compareEntries.value = (body.entries || body.data?.entries || []).slice();
+    const bp = body.branch_point_id || (body.data && body.data.branch_point_id);
+    const bps = body.branch_point_summary || (body.data && body.data.branch_point_summary);
+    if (bp) compareBranchPoint.value = bps || bp;
+  } catch (e) {
+    compareError.value = e?.message || t('compare.loadFailed');
+  } finally { compareLoading.value = false; }
+}
+function closeCompare() { compareOpen.value = false; }
+function compareKindLabel(kind) {
+  const map = { before: 'compare.before', base_only: 'compare.baseOnly', branch_new: 'compare.branchNew', changed: 'compare.changed' };
+  return t(map[kind] || 'compare.branchNew');
+}
+function evTimeText(ev) {
+  return (ev && (ev.time_text || ev.summary)) || '';
+}
 
 function pointColor(ev) {
 
@@ -541,6 +672,9 @@ const extractPercent = computed(() => {
 function pointLeft(ev) {
   return 'calc(' + (((sortNum(ev) - minSort()) / spanSort()) * 100).toFixed(2) + '% )';
 }
+const dragPlaceholderLeft = computed(() => {
+  return 'calc(' + (((dragPlaceholderSort.value - minSort()) / spanSort()) * 100).toFixed(2) + '% )';
+});
 function scrubLabel() {
   return scrubT.value ? String(Math.round(scrubT.value)) : '';
 }
@@ -556,18 +690,80 @@ function onBarClick(e) {
   const pct = ((e.clientX - rect.left) / rect.width) * 100;
   setScrub(minSort() + (pct / 100) * spanSort());
 }
+// 事件点 mousedown：阈值判定区分「点击定位」与「拖拽重排」
 function startDrag(ev, e) {
+  e.preventDefault();
   e.stopPropagation();
-  setScrub(sortNum(ev));
-  locateEvent(ev);
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const el = barEl.value;
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  let reorderActive = false;
+  const threshold = 6; // reorder mode threshold (px)
   const move = (me) => {
-    const rect = barEl.value.getBoundingClientRect();
+    if (!reorderActive) {
+      const dx = me.clientX - startX;
+      const dy = me.clientY - startY;
+      if (Math.hypot(dx, dy) < threshold) return;
+      reorderActive = true;
+      dragOrigSort.value = sortNum(ev);
+      dragPlaceholderSort.value = sortNum(ev);
+      dragReorder.value = ev;
+    }
     const pct = (me.clientX - rect.left) / rect.width;
-    setScrub(minSort() + pct * spanSort());
+    const target = Math.round(minSort() + pct * spanSort());
+    dragPlaceholderSort.value = Math.max(minSort(), Math.min(maxSort(), target));
+    setScrub(dragPlaceholderSort.value);
   };
-  const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+  const up = () => {
+    window.removeEventListener('mousemove', move);
+    window.removeEventListener('mouseup', up);
+    window.removeEventListener('keydown', onEscDuringReorder);
+    if (reorderActive) {
+      const moved = dragReorder.value && dragPlaceholderSort.value !== dragOrigSort.value;
+      if (moved) {
+        commitDragReorder(ev, dragPlaceholderSort.value);
+      } else {
+        dragReorder.value = null;
+      }
+    } else {
+      // 视为点击：定位并打开详情
+      setScrub(sortNum(ev));
+      locateEvent(ev);
+    }
+  };
+  const onEscDuringReorder = (ke) => { if (ke.key === 'Escape') { cancelDragReorder(); up(); } };
   window.addEventListener('mousemove', move);
   window.addEventListener('mouseup', up);
+  window.addEventListener('keydown', onEscDuringReorder);
+}
+function cancelDragReorder() {
+  if (dragReorder.value) {
+    dragReorder.value = null;
+    dragPlaceholderSort.value = dragOrigSort.value;
+  }
+}
+async function commitDragReorder(ev, newSort) {
+  const target = { ...ev, sort_lower: newSort, sort_upper: newSort };
+  dragReorder.value = null;
+  try {
+    const patch = { sort_lower: newSort, sort_upper: newSort, manual: true };
+    const res = await updateTimelineEvent(props.projectId, ev.event_id, patch);
+    const updated = res?.data || {};
+    if (updated.id || updated.event_id) {
+      const upId = updated.id || updated.event_id;
+      const i = events.value.findIndex(x => x.event_id === upId);
+      if (i >= 0) events.value[i] = { ...events.value[i], ...updated, event_id: upId };
+    }
+    statusMessage.value = t('drag.reordered');
+    statusError.value = false;
+    await loadEvents(true);
+  } catch (e) {
+    statusMessage.value = e?.message || t('drag.reorderFailed');
+    statusError.value = true;
+    await loadEvents(true);
+  }
 }
 
 
@@ -668,7 +864,7 @@ async function runExtract() {
   if (extracting.value) return;
   extracting.value = true; statusMessage.value = ''; statusError.value = false;
   extractProgress.value = { done: 0, total: 0 };
-  extractStage.value = ''; extractSteps.value = []; extractError.value = ''; extractDetail.value = true; extractTries = 0;
+  extractStage.value = ''; extractSteps.value = []; extractError.value = ''; extractDetail.value = true; extractTries = 0; extractInterrupted.value = false;
   try {
     const res = await extractTimeline({ project_id: props.projectId, source: source.value });
     const taskId = res?.data?.task_id || res?.task_id;
@@ -691,8 +887,26 @@ function pollExtract() {
       if (s === 'completed') { stopExtractPoll(); await loadEvents(true); statusMessage.value = t('timeline.extractDone', { n: events.value.length }); }
       else if (s === 'partial_failed') { stopExtractPoll(); await loadEvents(true); statusMessage.value = t('timeline.extractPartial', { n: events.value.length }); }
       else if (s === 'failed') { stopExtractPoll(); extractError.value = st.error || st.message || ''; statusMessage.value = st.message || t('timeline.extractFailed'); statusError.value = true; }
-    } catch (e) { }
-    if (extractTries > 300) stopExtractPoll();
+      else if (s === 'interrupted') {
+        // 服务重启导致任务中断
+        stopExtractPoll();
+        extractError.value = st.error || st.message || '';
+        statusMessage.value = st.message || t('extract.interrupted');
+        statusError.value = true;
+        extractInterrupted.value = true;
+      }
+    } catch (e) {
+      // 任务不存在（404）或请求错误：停止轮询并提示重新发起
+      if (isNotFoundError(e)) {
+        stopExtractPoll();
+        extractError.value = t('timeline.taskLost');
+        statusMessage.value = t('timeline.taskLost');
+        statusError.value = true;
+        extractInterrupted.value = true;
+        return;
+      }
+    }
+    if (extractTries > 300) { stopExtractPoll(); extractInterrupted.value = true; statusMessage.value = t('timeline.taskLost'); statusError.value = true; }
   }, 2000);
 }
 function stopExtractPoll() { clearInterval(extractTimer); extractTimer = null; extractTask.value = ''; extracting.value = false; }
@@ -714,6 +928,7 @@ function openFork(ev) {
   forkEvent.value = ev; forkGoal.value = ''; forkHorizon.value = null; forkMsg.value = ''; forkMsgError.value = false;
   resetForkProgress();
   forkEventCount.value = 0; forkBranchId.value = ''; continueGoalInput.value = ''; guideInput.value = '';
+  forkInterrupted.value = false;
 }
 function resetForkProgress() {
   forkTaskId.value = ''; forkStage.value = ''; forkSteps.value = []; forkElapsed.value = 0;
@@ -727,7 +942,7 @@ async function submitFork() {
   if (forkRunning.value || !ev || !goal) return;
   lastForkGoal.value = goal; lastForkHorizon.value = forkHorizon.value;
   forkRunning.value = true; forkMsg.value = ''; forkMsgError.value = false;
-  forkError.value = ''; forkSteps.value = []; forkElapsed.value = 0; forkEventCount.value = 0; forkBranchId.value = '';
+  forkError.value = ''; forkSteps.value = []; forkElapsed.value = 0; forkEventCount.value = 0; forkBranchId.value = ''; forkInterrupted.value = false;
   if (forkElapsedTimer) clearInterval(forkElapsedTimer);
   forkElapsedTimer = setInterval(() => { forkElapsed.value += 1; }, 1000);
   try {
@@ -773,8 +988,26 @@ function pollFork(taskId) {
         forkError.value = st.error || st.message || '';
         forkMsg.value = st.message || t('fork.forkFailed'); forkMsgError.value = true;
         return;
+      } else if (s === 'interrupted') {
+        // 服务重启导致任务中断
+        forkRunning.value = false;
+        if (forkElapsedTimer) clearInterval(forkElapsedTimer); forkElapsedTimer = null;
+        forkError.value = st.error || st.message || '';
+        forkMsg.value = st.message || t('fork.interrupted'); forkMsgError.value = true;
+        forkInterrupted.value = true;
+        return;
       }
-    } catch (e) { }
+    } catch (e) {
+      // 轮询 404（任务不存在）或请求错误：停止并提示重新发起
+      if (isNotFoundError(e)) {
+        forkRunning.value = false;
+        if (forkElapsedTimer) clearInterval(forkElapsedTimer); forkElapsedTimer = null;
+        forkError.value = t('timeline.taskLost');
+        forkMsg.value = t('timeline.taskLost'); forkMsgError.value = true;
+        forkInterrupted.value = true;
+        return;
+      }
+    }
     if (forkTries < 300) forkPollTimerId = setTimeout(poll, 2000);
     else { forkRunning.value = false; if (forkElapsedTimer) clearInterval(forkElapsedTimer); forkElapsedTimer = null; forkMsg.value = t('fork.forkTimeout'); forkMsgError.value = true; }
   };
@@ -834,6 +1067,13 @@ async function runContinue() {
 function backendErrorMessage(e) {
   return e?.response?.data?.error?.message || e?.response?.data?.error || e?.response?.data?.message || '';
 }
+function isNotFoundError(e) {
+  const status = e?.response?.status;
+  return status === 404 || status === 400;
+}
+function isAxiosError(e) {
+  return !!(e && (e.isAxiosError || e.response));
+}
 
 // ===== 异议 =====
 function openObjection(ev) { objectionEvent.value = ev; objectionCategory.value = 'other'; objectionReason.value = ''; objectionSuggestion.value = ''; objectionMsg.value = ''; objectionMsgError.value = false; }
@@ -882,6 +1122,61 @@ async function saveEdit() {
   finally { savingEdit.value = false; }
 }
 
+// ===== 删除 / 合并 =====
+const mergeCandidates = computed(() => {
+  const cur = selectedEvent.value;
+  if (!cur) return [];
+  return events.value
+    .filter(x => x.event_id && x.event_id !== cur.event_id)
+    .slice()
+    .sort((a, b) => sortNum(a) - sortNum(b));
+});
+function mergeOptionLabel(ev) {
+  const text = ev.summary || ev.time_text || '';
+  return (ev.time_text || formatSort(ev)) + ' · ' + (text.length > 40 ? text.slice(0, 40) + '…' : text);
+}
+async function runMerge() {
+  const ev = selectedEvent.value;
+  const targetId = mergeTarget.value;
+  if (!ev || !targetId) return;
+  const sourceIds = [ev.event_id];
+  mergeMsg.value = ''; mergeMsgError.value = false;
+  try {
+    const res = await mergeTimelineEvents(props.projectId, targetId, sourceIds);
+    const updated = res?.data || {};
+    const upId = updated.id || updated.event_id;
+    statusMessage.value = t('merge.done');
+    statusError.value = false;
+    mergeTarget.value = '';
+    await loadEvents(true);
+    if (upId) {
+      const found = events.value.find(x => x.event_id === upId);
+      selectedEvent.value = found || null;
+    } else {
+      selectedEvent.value = null;
+    }
+  } catch (e) {
+    mergeMsg.value = backendErrorMessage(e) || e?.message || t('merge.failed');
+    mergeMsgError.value = true;
+  }
+}
+async function runDelete() {
+  const ev = selectedEvent.value;
+  if (!ev || deletingEvent.value) return;
+  if (!window.confirm(t('delete.confirm'))) return;
+  deletingEvent.value = true; deleteMsg.value = ''; deleteMsgError.value = false;
+  try {
+    await deleteTimelineEvent(props.projectId, ev.event_id);
+    statusMessage.value = t('delete.done');
+    statusError.value = false;
+    selectedEvent.value = null;
+    await loadEvents(true);
+  } catch (e) {
+    deleteMsg.value = backendErrorMessage(e) || e?.message || t('delete.failed');
+    deleteMsgError.value = true;
+  } finally { deletingEvent.value = false; }
+}
+
 // ===== 人物设定面板 =====
 async function toggleCharacters() {
   charactersOpen.value = !charactersOpen.value;
@@ -912,9 +1207,70 @@ async function saveCharacters() {
   } catch (e) { charactersMsg.value = e?.message || t('characters.saveFailed'); charactersMsgError.value = true; }
   finally { charactersSaving.value = false; }
 }
+// 是否存在 traits 与 description 均为空的人物（可一键生成）
+const hasEmptyCharacters = computed(() => {
+  return charactersList.value.some(c => !(c.traits || '').trim() && !(c.description || '').trim());
+});
+async function runGenerateCharacters() {
+  if (charGenerating.value) return;
+  charGenerating.value = true; charGenMsg.value = ''; charGenMsgError.value = false; charGenTries = 0;
+  try {
+    const res = await generateTimelineCharacters(props.projectId);
+    charGenTaskId = res?.data?.task_id || res?.task_id;
+    if (!charGenTaskId) throw new Error(t('characters.genFailed'));
+    charGenMsg.value = t('characters.generating');
+    pollCharGen();
+  } catch (e) {
+    charGenerating.value = false;
+    charGenMsg.value = backendErrorMessage(e) || e?.message || t('characters.genFailed');
+    charGenMsgError.value = true;
+  }
+}
+function pollCharGen() {
+  clearInterval(charGenTimer);
+  charGenTimer = setInterval(async () => {
+    charGenTries++;
+    if (!charGenTaskId) { stopCharGen(); return; }
+    try {
+      const res = await getTimelineStatus(charGenTaskId);
+      const st = res?.data || res || {};
+      const s = String(st.status || 'running');
+      if (s === 'completed' || s === 'partial_failed') {
+        stopCharGen();
+        charGenMsg.value = st.message || t('characters.generated');
+        charGenMsgError.value = false;
+        await loadCharacters();
+        return;
+      } else if (s === 'failed' || s === 'interrupted') {
+        stopCharGen();
+        charGenMsg.value = st.message || (s === 'interrupted' ? t('characters.genInterrupted') : t('characters.genFailed'));
+        charGenMsgError.value = true;
+        return;
+      }
+    } catch (e) {
+      // 404 任务不存在
+      if (isNotFoundError(e)) {
+        stopCharGen();
+        charGenMsg.value = t('timeline.taskLost'); charGenMsgError.value = true;
+        return;
+      }
+    }
+    if (charGenTries > 300) { stopCharGen(); charGenMsg.value = t('characters.genTimeout'); charGenMsgError.value = true; }
+  }, 2000);
+}
+function stopCharGen() {
+  clearInterval(charGenTimer); charGenTimer = null; charGenTaskId = ''; charGenerating.value = false;
+}
 const forkCharChips = computed(() => charactersList.value.filter(c => c.name).slice(0, 8));
 
 onMounted(() => { loadEvents(true); loadCharacters(); });
+onUnmounted(() => {
+  stopCharGen();
+  stopExtractPoll();
+  stopPlay();
+  if (forkElapsedTimer) clearInterval(forkElapsedTimer);
+  if (forkPollTimerId) clearTimeout(forkPollTimerId);
+});
 </script>
 
 <style scoped>
@@ -1163,5 +1519,43 @@ onMounted(() => { loadEvents(true); loadCharacters(); });
 .tl-guide-title { font-size: 12px; font-weight: 600; margin-bottom: 8px; }
 .tl-guide-title.continue { margin-top: 10px; }
 .tl-guide-row { display: flex; gap: 6px; }
+
+
+/* t31: 分支对比 + 中断 */
+.branch-compare-row { display: flex; margin-bottom: 8px; }
+.tl-modal.compare { width: 620px; }
+.compare-point { font-size: 11px; color: #666; margin-bottom: 10px; font-family: 'JetBrains Mono', monospace; }
+.compare-list { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow-y: auto; }
+.compare-item { border: 1px solid #EAEAEA; border-radius: 6px; padding: 8px 10px; }
+.compare-item.kind-before { opacity: 0.6; background: #F9FAFB; }
+.compare-item.kind-base_only { border-left: 3px solid #94A3B8; background: #F1F5F9; }
+.compare-item.kind-branch_new { border-left: 3px solid #FF5722; background: #FFF7ED; }
+.compare-item.kind-changed { border-left: 3px solid #0EA5E9; background: #F0F9FF; }
+.compare-item-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+.compare-kind { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+.compare-kind.kind-before { background: #E2E8F0; color: #64748B; }
+.compare-kind.kind-base_only { background: #E2E8F0; color: #475569; }
+.compare-kind.kind-branch_new { background: #FFEDD5; color: #C2410C; }
+.compare-kind.kind-changed { background: #E0F2FE; color: #0369A1; }
+.compare-time { margin-left: auto; font-size: 11px; color: #9CA3AF; font-family: 'JetBrains Mono', monospace; }
+.compare-item-summary { font-size: 12.5px; line-height: 1.5; color: #111; }
+.compare-changed { margin-top: 6px; font-size: 12px; line-height: 1.5; }
+.cp-before { color: #94A3B8; text-decoration: line-through; }
+.cp-after { color: #0369A1; }
+
+
+/* t32: 删除/合并 + 拖拽重排 */
+.tl-manage-box { border-top: 1px dashed #E5E7EB; margin-top: 12px; padding-top: 10px; }
+.tl-manage-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.tl-btn.danger { background: #DC2626; border-color: #DC2626; }
+.tl-btn.danger:disabled { background: #FCA5A5; }
+.tl-drag-placeholder { z-index: 8; pointer-events: none; }
+.tl-drag-placeholder .tl-point { background: #FF5722; opacity: 0.75; }
+
+
+/* t33: 一键生成初稿 */
+.tl-btn.gen { background: #FF5722; border-color: #FF5722; }
+.tl-btn.gen:disabled { background: #FDBA74; border-color: #FDBA74; }
+.tl-char-hint { font-size: 11px; color: #2E7D32; }
 
 </style>

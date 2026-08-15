@@ -189,6 +189,28 @@ def branch_continue(project_id):
         return jsonify({"success": False, "error": f"续推失败: {e}"}), 500
 
 
+@timeline_bp.route('/<project_id>/branch/compare', methods=['GET'])
+def compare_branch(project_id):
+    """对比某分支与主线的差异（before/base_only/changed/branch_new 分类）。"""
+    try:
+        branch_id = str(request.args.get('branch_id') or '').strip()
+        if not branch_id:
+            return jsonify({"success": False, "error": "缺少 branch_id"}), 400
+        result = timeline_service.compare_branch(project_id, branch_id)
+        if result is None:
+            return jsonify({"success": False, "error": "分支不存在"}), 404
+        return jsonify({
+            "success": True,
+            "data": result,
+            "count": len(result.get("entries", [])),
+        })
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"对比分支失败: {e}")
+        return jsonify({"success": False, "error": f"对比失败: {e}"}), 500
+
+
 @timeline_bp.route('/<project_id>/characters', methods=['GET'])
 def get_characters(project_id):
     """获取人物设定档案；空则从事件自动种子。"""
@@ -223,6 +245,19 @@ def put_characters(project_id):
         return jsonify({"success": False, "error": f"保存失败: {e}"}), 500
 
 
+@timeline_bp.route('/<project_id>/characters/generate', methods=['POST'])
+def generate_characters(project_id):
+    """异步生成人物设定初稿（后台任务）；复用 /status 轮询。"""
+    try:
+        task_id = timeline_service.start_characters_generate(project_id)
+        return jsonify({"success": True, "data": {"task_id": task_id}})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"触发人物设定生成失败: {e}")
+        return jsonify({"success": False, "error": f"生成失败: {e}"}), 500
+
+
 @timeline_bp.route('/<project_id>/<event_id>', methods=['PATCH'])
 def patch_event(project_id, event_id):
     """人工修正/重排一条事件，持久化。"""
@@ -237,6 +272,44 @@ def patch_event(project_id, event_id):
     except Exception as e:
         logger.error(f"更新时间线事件失败: {e}")
         return jsonify({"success": False, "error": f"更新失败: {e}"}), 500
+
+
+@timeline_bp.route('/<project_id>/<event_id>', methods=['DELETE'])
+def delete_event(project_id, event_id):
+    """删除一条事件（仅删该事件，不级联删分支）。"""
+    try:
+        deleted = timeline_service.delete_event(project_id, event_id)
+        if not deleted:
+            return jsonify({"success": False, "error": "事件不存在"}), 404
+        return jsonify({"success": True, "data": {"deleted": True}})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"删除事件失败: {e}")
+        return jsonify({"success": False, "error": f"删除失败: {e}"}), 500
+
+
+@timeline_bp.route('/<project_id>/merge', methods=['POST'])
+def merge_events(project_id):
+    """把若干 source 事件合并进 target 事件，删除 source，返回合并后 target。"""
+    try:
+        body = request.get_json(silent=True) or {}
+        target_id = str(body.get('target_id') or '').strip()
+        source_ids = body.get('source_ids') or []
+        if not isinstance(source_ids, list) or not [s for s in source_ids if str(s).strip()]:
+            return jsonify({"success": False, "error": "source_ids 必须是非空数组"}), 400
+        merged = timeline_service.merge_events(
+            project_id, target_id,
+            [str(s).strip() for s in source_ids if str(s).strip()],
+        )
+        if merged is None:
+            return jsonify({"success": False, "error": "target 或 source 事件不存在"}), 404
+        return jsonify({"success": True, "data": merged})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"合并事件失败: {e}")
+        return jsonify({"success": False, "error": f"合并失败: {e}"}), 500
 
 
 @timeline_bp.route('/<project_id>/<event_id>/objection', methods=['POST'])
