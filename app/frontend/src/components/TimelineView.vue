@@ -1531,10 +1531,13 @@ onUnmounted(() => {
 
 <style scoped>
 .timeline-view {
-  background: #fff;
-  border: 1px solid #EAEAEA;
-  border-radius: 6px;
+  background: rgba(255,255,255,0.6);
+  border: 1px solid rgba(255,255,255,0.65);
+  border-radius: 14px;
   padding: 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.7);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
   font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
   color: #000;
 }

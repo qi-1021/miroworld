@@ -24,7 +24,7 @@ echo "===================="
 echo "项目路径: $PROJECT_ROOT"
 echo ""
 
-# 按端口停止本项目进程
+# 按端口停止本项目进程；先 SIGTERM，给 3 秒后仍存活则 SIGKILL
 stop_port() {
     local port="$1"
     local pids pid cmd
@@ -45,6 +45,19 @@ stop_port() {
                 ;;
         esac
     done
+    # 等待 3 秒后强制结束仍未退出的本项目进程
+    sleep 3
+    for pid in $pids; do
+        if kill -0 "$pid" 2>/dev/null; then
+            cmd=$(ps -p "$pid" -o command= 2>/dev/null | head -1)
+            case "$cmd" in
+                *mirofish-portable*|*run.py*|*vite*|*concurrently*|*npm*run*dev*)
+                    echo "  ⚠️ pid=$pid 未退出，强制结束"
+                    kill -9 "$pid" 2>/dev/null || true
+                    ;;
+            esac
+        fi
+    done
 }
 
 echo "== 停止前端 + 后端 =="
@@ -53,20 +66,31 @@ stop_port 5001
 
 # 兜底：清理未绑定端口的残留子进程（concurrently/npm 壳进程 + 模拟子进程）
 echo "== 兜底清理残留壳进程 =="
-for pat in "run.py" "vite" "concurrently" "npm run dev" \
-    "run_world_simulation.py" "run_parallel_simulation.py" \
-    "run_reddit_simulation.py" "run_twitter_simulation.py"; do
-    # 用 pgrep 全盘匹配 + 工作目录校验属于本项目（避免误杀）
-    for pid in $(pgrep -f "$pat" 2>/dev/null || true); do
-        cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | grep '^n' | head -1 | cut -c2-)
-        case "$cwd" in
-            "$PROJECT_ROOT"*)
-                echo "  停止残留 pid=$pid（$(ps -p $pid -o command= | tail -1 | cut -c1-60)）"
-                kill "$pid" 2>/dev/null || true
-                ;;
-        esac
+kill_project_residual() {
+    local force="$1"
+    for pat in "run.py" "vite" "concurrently" "npm run dev" \
+        "run_world_simulation.py" "run_parallel_simulation.py" \
+        "run_reddit_simulation.py" "run_twitter_simulation.py"; do
+        # 用 pgrep 全盘匹配 + 工作目录校验属于本项目（避免误杀）
+        for pid in $(pgrep -f "$pat" 2>/dev/null || true); do
+            cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | grep '^n' | head -1 | cut -c2-)
+            case "$cwd" in
+                "$PROJECT_ROOT"*)
+                    if [ "$force" = "1" ]; then
+                        echo "  强制结束残留 pid=$pid"
+                        kill -9 "$pid" 2>/dev/null || true
+                    else
+                        echo "  停止残留 pid=$pid（$(ps -p $pid -o command= | tail -1 | cut -c1-60)）"
+                        kill "$pid" 2>/dev/null || true
+                    fi
+                    ;;
+            esac
+        done
     done
-done
+}
+kill_project_residual 0
+sleep 3
+kill_project_residual 1
 
 # 可选：停止本项目 Neo4j
 if [ "$STOP_NEO4J" = "1" ]; then
@@ -91,11 +115,11 @@ else
     echo "Neo4j 未停止（如需停止请加 --neo4j：bash scripts/stop.sh --neo4j）"
 fi
 
-# 等待端口释放（最多 8 秒）
+# 等待端口释放（最多 15 秒；若仍被本项目进程占用则强制结束）
 echo ""
 echo "== 等待端口释放 =="
 i=0
-while [ $i -lt 8 ]; do
+while [ $i -lt 15 ]; do
     if ! lsof -nP -iTCP:3000 -sTCP:LISTEN -t >/dev/null 2>&1 && \
        ! lsof -nP -iTCP:5001 -sTCP:LISTEN -t >/dev/null 2>&1; then
         echo "✓ 3000/5001 已释放"
@@ -103,6 +127,18 @@ while [ $i -lt 8 ]; do
     fi
     sleep 1
     i=$((i + 1))
+done
+# 超时后仍占用则强制清理（只清理本项目进程）
+for port in 3000 5001; do
+    for pid in $(lsof -nP -iTCP:$port -sTCP:LISTEN -t 2>/dev/null || true); do
+        cmd=$(ps -p "$pid" -o command= 2>/dev/null | head -1)
+        case "$cmd" in
+            *mirofish-portable*|*run.py*|*vite*|*concurrently*|*npm*run*dev*)
+                echo "  ⚠️ 端口 $port 仍被本项目进程占用，强制结束 pid=$pid"
+                kill -9 "$pid" 2>/dev/null || true
+                ;;
+        esac
+    done
 done
 
 echo ""

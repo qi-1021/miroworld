@@ -280,15 +280,28 @@ cleanup_previous() {
         done
     done
 
-    # 等待端口释放（最多 10 秒）
+    # 等待端口释放（最多 15 秒）
     local i
-    for i in $(seq 1 10); do
+    for i in $(seq 1 15); do
         if ! lsof -nP -iTCP:3000 -sTCP:LISTEN -t >/dev/null 2>&1 &&            ! lsof -nP -iTCP:5001 -sTCP:LISTEN -t >/dev/null 2>&1; then
             log_info "✓ 端口已释放"
             return 0
         fi
         sleep 1
     done
+    # 超时后强制结束仍占用的本项目进程
+    for port in 3000 5001; do
+        for pid in $(lsof -nP -iTCP:$port -sTCP:LISTEN -t 2>/dev/null || true); do
+            cmd=$(ps -p "$pid" -o command= 2>/dev/null | head -1)
+            case "$cmd" in
+                *mirofish-portable*|*run.py*|*vite*|*concurrently*|*npm*run*dev*)
+                    log_warn "端口 $port 仍被本项目进程占用，强制结束 pid=$pid"
+                    kill -9 "$pid" 2>/dev/null || true
+                    ;;
+            esac
+        done
+    done
+    sleep 2
     log_warn "端口未完全释放，将继续尝试启动（若失败请手动检查占用）"
 }
 

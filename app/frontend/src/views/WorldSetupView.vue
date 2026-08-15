@@ -1774,13 +1774,15 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-/* 卡片（与 Step1 的 step-card 一致） */
+/* 卡片（与 Step1 的 step-card 一致；液态玻璃风格） */
 .step-card {
-  background: #FFF;
-  border-radius: 8px;
+  background: rgba(255,255,255,0.62);
+  border-radius: 14px;
   padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  border: 1px solid #EAEAEA;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.7);
+  border: 1px solid rgba(255,255,255,0.6);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
   transition: all 0.3s ease;
 }
 .card-header {

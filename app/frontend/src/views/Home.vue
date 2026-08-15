@@ -838,9 +838,12 @@ const startSimulation = async () => {
   color: var(--ink);
 }
 .console-card {
-  background: #fff;
-  border-radius: 20px;
-  box-shadow: var(--card-shadow);
+  background: rgba(255,255,255,0.58);
+  border-radius: 24px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.7);
+  border: 1px solid rgba(255,255,255,0.65);
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
   max-width: 900px;
   margin: 0 auto;
   padding: 48px;

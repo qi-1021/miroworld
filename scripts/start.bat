@@ -48,6 +48,10 @@ if errorlevel 1 (
 )
 echo [INFO] ✓ Java 已就绪
 
+REM 清理上次残留（避免端口占用导致启动失败）
+echo [INFO] 清理上次运行残留...
+call "%SCRIPT_DIR%stop.bat" >nul 2>nul
+
 echo.
 echo [INFO] 启动 Neo4j...
 

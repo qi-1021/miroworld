@@ -103,7 +103,44 @@ scripts\stop.bat --all
 
 ---
 
-## 6. 内置项目助手
+## 6. 命令行 CLI（供 AI Agent / 自动化操作）
+
+后端自带一个面向 AI Agent 的命令行工具，所有操作都支持 `--json` 输出。
+
+```bash
+cd app/backend
+
+# 健康检查
+python scripts/mirofish_cli.py --json health
+
+# 项目
+python scripts/mirofish_cli.py --json project list
+python scripts/mirofish_cli.py --json project create --name "新项目"
+python scripts/mirofish_cli.py --json project export --project-id proj_xxx --output backup.mirofish.json
+python scripts/mirofish_cli.py --json project import --file backup.mirofish.json
+
+# 世界设定库
+python scripts/mirofish_cli.py --json world save --project-id proj_xxx --background "..." --story "..."
+python scripts/mirofish_cli.py --json world get --project-id proj_xxx
+
+# 时间线
+python scripts/mirofish_cli.py --json timeline extract --project-id proj_xxx --source bg --wait
+python scripts/mirofish_cli.py --json timeline get --project-id proj_xxx
+python scripts/mirofish_cli.py --json timeline threads --project-id proj_xxx
+
+# 冲突检测
+python scripts/mirofish_cli.py --json conflict detect --project-id proj_xxx
+
+# 世界模拟
+python scripts/mirofish_cli.py --json sim start --project-id proj_xxx --steps 6 --time-mode narrative --time-jumps "数日后,三个月后,一年后"
+
+# 内置助手
+python scripts/mirofish_cli.py --json assistant ask --project-id proj_xxx --question "结尾和前面不像同一世界，怎么办？"
+```
+
+> 注意：`--json` 要放在子命令前面，例如 `mirofish --json project list`。
+
+## 7. 内置项目助手
 
 在世界设定库右上角点击“助手”：
 
