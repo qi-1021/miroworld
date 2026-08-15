@@ -203,6 +203,9 @@ class WorldSimulationService:
         os.makedirs(commands_dir, exist_ok=True)
         os.makedirs(responses_dir, exist_ok=True)
 
+        # 顺带清理超过 1 小时的残留命令/响应文件（失败/超时可能残留）
+        cls._cleanup_stale_ipc_files(sim_dir, max_age_seconds=3600)
+
         command_id = str(uuid.uuid4())
         command = {
             "command_id": command_id,
@@ -210,10 +213,32 @@ class WorldSimulationService:
             "args": args or {},
             "timestamp": datetime.now().isoformat(timespec='seconds'),
         }
-        with open(os.path.join(commands_dir, f"{command_id}.json"), 'w', encoding='utf-8') as f:
-            json.dump(command, f, ensure_ascii=False, indent=2)
+        atomic_write_json(os.path.join(commands_dir, f"{command_id}.json"), command)
         logger.info(f"发送世界模拟 IPC 命令: {command_type}, {simulation_id}, command_id={command_id}")
         return command_id
+
+    @classmethod
+    def _cleanup_stale_ipc_files(cls, sim_dir: str, max_age_seconds: float = 3600) -> int:
+        """清理 IPC 命令/响应目录中超过 max_age_seconds 的残留 JSON 文件。"""
+        removed = 0
+        for sub in (IPC_COMMANDS_DIR, IPC_RESPONSES_DIR):
+            d = os.path.join(sim_dir, sub)
+            if not os.path.isdir(d):
+                continue
+            now = time.time()
+            for fn in os.listdir(d):
+                if not fn.endswith(".json"):
+                    continue
+                path = os.path.join(d, fn)
+                try:
+                    if now - os.path.getmtime(path) > max_age_seconds:
+                        os.remove(path)
+                        removed += 1
+                except Exception as e:
+                    logger.debug(f"清理 IPC 文件失败（跳过）: {path}, {e}")
+        if removed:
+            logger.info(f"已清理 {removed} 个过期世界模拟 IPC 文件: {sim_dir}")
+        return removed
 
     @classmethod
     def _read_world_response(
@@ -230,12 +255,24 @@ class WorldSimulationService:
         """
         responses_dir = os.path.join(cls._sim_dir(project_id, simulation_id), IPC_RESPONSES_DIR)
         response_file = os.path.join(responses_dir, f"{command_id}.json")
+        commands_dir = os.path.join(cls._sim_dir(project_id, simulation_id), IPC_COMMANDS_DIR)
         start = time.time()
         while time.time() - start < timeout:
             if os.path.exists(response_file):
                 try:
                     with open(response_file, 'r', encoding='utf-8') as f:
-                        return json.load(f)
+                        data = json.load(f)
+                    # 读取成功后清理命令/响应文件，避免目录长期堆积
+                    try:
+                        os.remove(response_file)
+                    except OSError:
+                        pass
+                    command_file = os.path.join(commands_dir, f"{command_id}.json")
+                    try:
+                        os.remove(command_file)
+                    except OSError:
+                        pass
+                    return data
                 except (json.JSONDecodeError, OSError) as e:
                     logger.warning(f"解析世界模拟 IPC 响应失败: {e}")
             time.sleep(poll_interval)

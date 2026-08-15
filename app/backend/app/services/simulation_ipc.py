@@ -144,6 +144,9 @@ class SimulationIPCClient:
             args=args
         )
 
+        # 发送前清理超过 1 小时的残留命令/响应（上次超时/失败可能遗留）
+        self._cleanup_stale_files(max_age_seconds=3600)
+
         # 写入命令文件（原子写，避免模拟脚本读到半个 JSON）
         command_file = os.path.join(self.commands_dir, f"{command_id}.json")
         atomic_write_json(command_file, command.to_dict())
@@ -266,6 +269,27 @@ class SimulationIPCClient:
             args={},
             timeout=timeout
         )
+
+    def _cleanup_stale_files(self, max_age_seconds: float = 3600) -> int:
+        """清理 commands/responses 目录中超过 max_age_seconds 的残留 JSON 文件。"""
+        removed = 0
+        now = time.time()
+        for d in (self.commands_dir, self.responses_dir):
+            if not os.path.isdir(d):
+                continue
+            for fn in os.listdir(d):
+                if not fn.endswith(".json"):
+                    continue
+                path = os.path.join(d, fn)
+                try:
+                    if now - os.path.getmtime(path) > max_age_seconds:
+                        os.remove(path)
+                        removed += 1
+                except OSError:
+                    continue
+        if removed:
+            logger.info(f"已清理 {removed} 个过期 IPC 文件: {self.simulation_dir}")
+        return removed
 
     def check_env_alive(self) -> bool:
         """

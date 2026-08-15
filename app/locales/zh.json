@@ -237,7 +237,12 @@
       "开始模拟",
       "报告生成",
       "深度互动"
-    ]
+    ],
+    "statusError": "错误",
+    "statusReady": "就绪",
+    "statusBuildingGraph": "图谱构建中",
+    "statusGeneratingOntology": "本体生成中",
+    "statusInitializing": "初始化中"
   },
   "step1": {
     "ontologyGeneration": "本体生成",

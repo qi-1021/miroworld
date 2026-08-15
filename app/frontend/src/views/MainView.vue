@@ -148,11 +148,11 @@ const statusClass = computed(() => {
 })
 
 const statusText = computed(() => {
-  if (error.value) return 'Error'
-  if (currentPhase.value >= 2) return 'Ready'
-  if (currentPhase.value === 1) return 'Building Graph'
-  if (currentPhase.value === 0) return 'Generating Ontology'
-  return 'Initializing'
+  if (error.value) return t('main.statusError')
+  if (currentPhase.value >= 2) return t('main.statusReady')
+  if (currentPhase.value === 1) return t('main.statusBuildingGraph')
+  if (currentPhase.value === 0) return t('main.statusGeneratingOntology')
+  return t('main.statusInitializing')
 })
 
 // --- Helpers ---

@@ -237,7 +237,12 @@
       "Run Simulation",
       "Report Generation",
       "Deep Interaction"
-    ]
+    ],
+    "statusError": "Error",
+    "statusReady": "Ready",
+    "statusBuildingGraph": "Building Graph",
+    "statusGeneratingOntology": "Generating Ontology",
+    "statusInitializing": "Initializing"
   },
   "step1": {
     "ontologyGeneration": "Ontology Generation",
