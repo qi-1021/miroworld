@@ -1,403 +1,231 @@
+<!--
+  首页（Apple 极简白 + 柑橘橙主题）
+  设计 tokens：背景 #fff/#f5f5f7，文字 #1d1d1f/#6e6e73，强调色 citrus orange #FF9500
+  禁用：蓝紫色系、渐变、玻璃拟态、粗阴影（见 apple-minimal skill 规范）
+  品牌名来自 src/config/brand.js（改名只改一处）
+-->
 <template>
-  <div class="home-container">
-    <!-- 顶部导航栏 -->
-    <nav class="navbar">
-      <div class="nav-brand">MIROFISH</div>
-      <div class="nav-links">
+  <div class="home">
+    <!-- 单行导航 -->
+    <nav class="nav">
+      <span class="nav-brand">{{ BRAND.name }}</span>
+      <div class="nav-right">
         <LanguageSwitcher />
-        <a href="https://github.com/666ghj/MiroFish" target="_blank" class="github-link">
-          {{ $t('nav.visitGithub') }} <span class="arrow">↗</span>
-        </a>
+        <a class="nav-link" :href="BRAND.repo" target="_blank" rel="noopener">{{ $t('nav.visitGithub') }}<span class="arrow">↗</span></a>
       </div>
     </nav>
 
-    <div class="main-content">
-      <!-- 上半部分：Hero 区域 -->
-      <section class="hero-section">
-        <div class="hero-left">
-          <div class="tag-row">
-            <span class="orange-tag">{{ $t('home.tagline') }}</span>
-            <span class="version-text">{{ $t('home.version') }}</span>
+    <!-- Hero -->
+    <header class="hero">
+      <p class="hero-kicker">{{ $t('home.heroKicker') }}</p>
+      <h1 class="hero-title">
+        {{ $t('home.heroTitle1') }}<br />
+        <span class="accent">{{ $t('home.heroTitle2') }}</span>
+      </h1>
+      <p class="hero-desc">{{ $t('home.heroDescNew') }}</p>
+      <div class="hero-cta">
+        <button class="btn btn-primary" @click="scrollToConsole">{{ $t('home.ctaStart') }}</button>
+      </div>
+
+      <!-- 产品视觉：纯 CSS 时间线示意图（主线 + 橙色分支） -->
+      <div class="hero-visual" aria-hidden="true">
+        <div class="tl-demo">
+          <div class="tl-main">
+            <span class="dot done"></span>
+            <span class="dot done"></span>
+            <span class="dot done"></span>
+            <span class="dot now"></span>
+            <span class="dot future"></span>
+            <span class="dot future"></span>
           </div>
-
-          <h1 class="main-title">
-            {{ $t('home.heroTitle1') }}<br>
-            <span class="gradient-text">{{ $t('home.heroTitle2') }}</span>
-          </h1>
-
-          <div class="hero-desc">
-            <p>
-              <i18n-t keypath="home.heroDesc" tag="span">
-                <template #brand><span class="highlight-bold">{{ $t('home.heroDescBrand') }}</span></template>
-                <template #agentScale><span class="highlight-orange">{{ $t('home.heroDescAgentScale') }}</span></template>
-                <template #optimalSolution><span class="highlight-code">{{ $t('home.heroDescOptimalSolution') }}</span></template>
-              </i18n-t>
-            </p>
-            <p class="slogan-text">
-              {{ $t('home.slogan') }}<span class="blinking-cursor">_</span>
-            </p>
+          <div class="tl-branch">
+            <span class="branch-node"></span>
+            <span class="branch-line-h"></span>
+            <span class="branch-node"></span>
+            <span class="branch-line-h"></span>
+            <span class="branch-node"></span>
+            <span class="branch-label">{{ $t('home.visualBranch') }}</span>
           </div>
-
-          <div class="decoration-square"></div>
+          <div class="tl-caption">
+            <span class="cap now-label">{{ $t('home.visualNow') }}</span>
+            <span class="cap future-label">{{ $t('home.visualFuture') }}</span>
+          </div>
         </div>
+      </div>
+    </header>
 
-        <div class="hero-right">
-          <!-- Logo 区域 -->
-          <div class="logo-container">
-            <img src="../assets/logo/MiroFish_logo_left.jpeg" alt="MiroFish Logo" class="hero-logo" />
-          </div>
+    <!-- 特性 -->
+    <section class="features">
+      <div class="features-head">
+        <h2 class="section-title">{{ $t('home.featuresTitle') }}</h2>
+        <p class="section-desc">{{ $t('home.featuresDesc') }}</p>
+      </div>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <div class="f-icon">▤</div>
+          <h3 class="f-title">{{ $t('home.f1Title') }}</h3>
+          <p class="f-desc">{{ $t('home.f1Desc') }}</p>
+        </div>
+        <div class="feature-card">
+          <div class="f-icon">⑃</div>
+          <h3 class="f-title">{{ $t('home.f2Title') }}</h3>
+          <p class="f-desc">{{ $t('home.f2Desc') }}</p>
+        </div>
+        <div class="feature-card">
+          <div class="f-icon">◉</div>
+          <h3 class="f-title">{{ $t('home.f3Title') }}</h3>
+          <p class="f-desc">{{ $t('home.f3Desc') }}</p>
+        </div>
+        <div class="feature-card">
+          <div class="f-icon">✎</div>
+          <h3 class="f-title">{{ $t('home.f4Title') }}</h3>
+          <p class="f-desc">{{ $t('home.f4Desc') }}</p>
+        </div>
+      </div>
+    </section>
 
-          <button class="scroll-down-btn" @click="scrollToBottom">
-            ↓
+    <!-- 控制台 -->
+    <section class="console-section" ref="consoleRef">
+      <div class="console-head">
+        <h2 class="section-title">{{ $t('home.consoleTitle') }}</h2>
+        <div class="mode-tabs">
+          <button class="mode-tab" :class="{ active: activeMode === 'media' }" @click="activeMode = 'media'">
+            {{ $t('home.modeMedia') }}
+          </button>
+          <button class="mode-tab" :class="{ active: activeMode === 'world' }" @click="activeMode = 'world'">
+            {{ $t('home.modeWorld') }}
           </button>
         </div>
-      </section>
+      </div>
 
-      <!-- 下半部分：双栏布局 -->
-      <section class="dashboard-section">
-        <!-- 左栏：状态与步骤 -->
-        <div class="left-panel">
-          <div class="panel-header">
-            <span class="status-dot">■</span> {{ $t('home.systemStatus') }}
-          </div>
-
-          <h2 class="section-title">{{ $t('home.systemReady') }}</h2>
-          <p class="section-desc">
-            {{ $t('home.systemReadyDesc') }}
-          </p>
-
-          <!-- 数据指标卡片 -->
-          <div class="metrics-row">
-            <div class="metric-card">
-              <div class="metric-value">{{ $t('home.metricLowCost') }}</div>
-              <div class="metric-label">{{ $t('home.metricLowCostDesc') }}</div>
-            </div>
-            <div class="metric-card">
-              <div class="metric-value">{{ $t('home.metricHighAvail') }}</div>
-              <div class="metric-label">{{ $t('home.metricHighAvailDesc') }}</div>
-            </div>
-          </div>
-
-          <!-- 项目模拟步骤介绍 (新增区域) -->
-          <div class="steps-container">
-            <div class="steps-header">
-               <span class="diamond-icon">◇</span> {{ $t('home.workflowSequence') }}
-            </div>
-            <div class="workflow-list">
-              <div class="workflow-item">
-                <span class="step-num">01</span>
-                <div class="step-info">
-                  <div class="step-title">{{ $t('home.step01Title') }}</div>
-                  <div class="step-desc">{{ $t('home.step01Desc') }}</div>
-                </div>
+      <div class="console-card">
+        <!-- ===== 媒体分析 ===== -->
+        <template v-if="activeMode === 'media'">
+          <div class="form-row">
+            <label class="field-label">{{ $t('home.realitySeed') }}<span class="field-meta">{{ $t('home.supportedFormats') }}</span></label>
+            <div class="upload-zone" :class="{ 'drag-over': isDragOver, 'has-files': files.length > 0 }"
+              @dragover.prevent="handleDragOver" @dragleave.prevent="handleDragLeave"
+              @drop.prevent="handleDrop" @click="triggerFileInput">
+              <input ref="fileInput" type="file" multiple accept=".pdf,.md,.txt" @change="handleFileSelect" style="display: none" :disabled="loading" />
+              <div v-if="files.length === 0" class="upload-placeholder">
+                <div class="upload-icon">↑</div>
+                <div class="upload-title">{{ $t('home.dragToUpload') }}</div>
+                <div class="upload-hint">{{ $t('home.orBrowse') }}</div>
               </div>
-              <div class="workflow-item">
-                <span class="step-num">02</span>
-                <div class="step-info">
-                  <div class="step-title">{{ $t('home.step02Title') }}</div>
-                  <div class="step-desc">{{ $t('home.step02Desc') }}</div>
-                </div>
-              </div>
-              <div class="workflow-item">
-                <span class="step-num">03</span>
-                <div class="step-info">
-                  <div class="step-title">{{ $t('home.step03Title') }}</div>
-                  <div class="step-desc">{{ $t('home.step03Desc') }}</div>
-                </div>
-              </div>
-              <div class="workflow-item">
-                <span class="step-num">04</span>
-                <div class="step-info">
-                  <div class="step-title">{{ $t('home.step04Title') }}</div>
-                  <div class="step-desc">{{ $t('home.step04Desc') }}</div>
-                </div>
-              </div>
-              <div class="workflow-item">
-                <span class="step-num">05</span>
-                <div class="step-info">
-                  <div class="step-title">{{ $t('home.step05Title') }}</div>
-                  <div class="step-desc">{{ $t('home.step05Desc') }}</div>
+              <div v-else class="file-list">
+                <div v-for="(file, index) in files" :key="index" class="file-item">
+                  <span class="file-icon">📄</span>
+                  <span class="file-name">{{ file.name }}</span>
+                  <button @click.stop="removeFile(index)" class="remove-btn">×</button>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- 右栏：交互控制台 -->
-        <div class="right-panel">
-          <div class="console-box">
-            <!-- 模式选择：媒体分析 / 世界模拟 -->
-            <div class="mode-tabs">
-              <button
-                class="mode-tab"
-                :class="{ active: activeMode === 'media' }"
-                @click="activeMode = 'media'"
-              >
-                <span class="mode-icon">◉</span>{{ $t('home.modeMedia') }}
-              </button>
-              <button
-                class="mode-tab"
-                :class="{ active: activeMode === 'world' }"
-                @click="activeMode = 'world'"
-              >
-                <span class="mode-icon">◈</span>{{ $t('home.modeWorld') }}
-              </button>
-            </div>
-
-            <!-- ============ 模式一：媒体分析（原首页流程） ============ -->
-            <template v-if="activeMode === 'media'">
-              <!-- 上传区域 -->
-              <div class="console-section">
-                <div class="console-header">
-                  <span class="console-label">{{ $t('home.realitySeed') }}</span>
-                  <span class="console-meta">{{ $t('home.supportedFormats') }}</span>
-                </div>
-
-                <div
-                  class="upload-zone"
-                  :class="{ 'drag-over': isDragOver, 'has-files': files.length > 0 }"
-                  @dragover.prevent="handleDragOver"
-                  @dragleave.prevent="handleDragLeave"
-                  @drop.prevent="handleDrop"
-                  @click="triggerFileInput"
-                >
-                  <input
-                    ref="fileInput"
-                    type="file"
-                    multiple
-                    accept=".pdf,.md,.txt"
-                    @change="handleFileSelect"
-                    style="display: none"
-                    :disabled="loading"
-                  />
-
-                  <div v-if="files.length === 0" class="upload-placeholder">
-                    <div class="upload-icon">↑</div>
-                    <div class="upload-title">{{ $t('home.dragToUpload') }}</div>
-                    <div class="upload-hint">{{ $t('home.orBrowse') }}</div>
-                  </div>
-
-                  <div v-else class="file-list">
-                    <div v-for="(file, index) in files" :key="index" class="file-item">
-                      <span class="file-icon">📄</span>
-                      <span class="file-name">{{ file.name }}</span>
-                      <button @click.stop="removeFile(index)" class="remove-btn">×</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 分割线 -->
-              <div class="console-divider">
-                <span>{{ $t('home.inputParams') }}</span>
-              </div>
-
-              <!-- 任务目标（必填） -->
-              <div class="console-section">
-                <div class="console-header">
-                  <span class="console-label">{{ $t('home.taskGoal') }}</span>
-                  <span class="console-meta">{{ $t('home.taskGoalMeta') }}</span>
-                </div>
-                <div class="input-wrapper">
-                  <textarea
-                    v-model="formData.simulationRequirement"
-                    class="code-input"
-                    :placeholder="$t('home.taskGoalPlaceholder')"
-                    rows="2"
-                    :disabled="loading"
-                  ></textarea>
-                </div>
-              </div>
-
-              <!-- 附加说明（可选） -->
-              <div class="console-section">
-                <div class="console-header">
-                  <span class="console-label">{{ $t('home.extraContext') }}</span>
-                  <span class="console-meta">{{ $t('home.extraContextMeta') }}</span>
-                </div>
-                <div class="input-wrapper">
-                  <textarea
-                    v-model="formData.additionalContext"
-                    class="code-input"
-                    :placeholder="$t('home.extraContextPlaceholder')"
-                    rows="3"
-                    :disabled="loading"
-                  ></textarea>
-                  <div class="model-badge">{{ $t('home.engineBadge') }}</div>
-                </div>
-              </div>
-
-              <!-- 启动按钮 -->
-              <div class="console-section btn-section">
-                <div v-if="modelConfigAlert" class="model-config-alert">
-                  <span class="mc-icon">⚠</span>
-                  <span class="mc-text">{{ modelConfigAlert }}</span>
-                  <button class="mc-link" type="button" @click="openModelSettings">
-                    {{ $t('home.configureModel') }}
-                  </button>
-                </div>
-                <button
-                  class="start-engine-btn"
-                  @click="startSimulation"
-                  :disabled="!canSubmit || loading"
-                >
-                  <span v-if="!loading">{{ $t('home.startEngine') }}</span>
-                  <span v-else>{{ $t('home.initializing') }}</span>
-                  <span class="btn-arrow">→</span>
-                </button>
-              </div>
-            </template>
-
-            <!-- ============ 模式二：世界模拟（独立模式，首页直达） ============ -->
-            <template v-else>
-              <!-- 背景世界资料 -->
-              <div class="console-section">
-                <div class="console-header">
-                  <span class="console-label">{{ $t('home.worldBgLabel') }}</span>
-                  <span class="console-meta">{{ $t('home.supportedFormats') }}</span>
-                </div>
-
-                <div
-                  class="upload-zone compact"
-                  :class="{ 'drag-over': bgDragOver, 'has-files': worldBgFiles.length > 0 }"
-                  @dragover.prevent="bgDragOver = true"
-                  @dragleave.prevent="bgDragOver = false"
-                  @drop.prevent="handleWorldDrop($event, 'bg')"
-                  @click="triggerWorldInput('bg')"
-                >
-                  <input
-                    ref="bgFileInput"
-                    type="file"
-                    multiple
-                    accept=".pdf,.md,.txt"
-                    @change="handleWorldFiles($event, 'bg')"
-                    style="display: none"
-                    :disabled="loading"
-                  />
-                  <div v-if="worldBgFiles.length === 0" class="upload-placeholder">
-                    <div class="upload-icon">↑</div>
-                    <div class="upload-title">{{ $t('home.worldBgUpload') }}</div>
-                    <div class="upload-hint">{{ $t('home.orBrowse') }}</div>
-                  </div>
-                  <div v-else class="file-list">
-                    <div v-for="(file, index) in worldBgFiles" :key="index" class="file-item">
-                      <span class="file-icon">📄</span>
-                      <span class="file-name">{{ file.name }}</span>
-                      <button @click.stop="removeWorldFile(index, 'bg')" class="remove-btn">×</button>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="input-wrapper world-text">
-                  <textarea
-                    v-model="worldBgText"
-                    class="code-input"
-                    :placeholder="$t('home.worldBgTextPlaceholder')"
-                    rows="3"
-                    :disabled="loading"
-                  ></textarea>
-                </div>
-              </div>
-
-              <!-- 分割线 -->
-              <div class="console-divider">
-                <span>{{ $t('home.worldDivider') }}</span>
-              </div>
-
-              <!-- 章节正文 -->
-              <div class="console-section">
-                <div class="console-header">
-                  <span class="console-label">{{ $t('home.worldStoryLabel') }}</span>
-                  <span class="console-meta">{{ $t('home.supportedFormats') }}</span>
-                </div>
-
-                <div
-                  class="upload-zone compact"
-                  :class="{ 'drag-over': storyDragOver, 'has-files': worldStoryFiles.length > 0 }"
-                  @dragover.prevent="storyDragOver = true"
-                  @dragleave.prevent="storyDragOver = false"
-                  @drop.prevent="handleWorldDrop($event, 'story')"
-                  @click="triggerWorldInput('story')"
-                >
-                  <input
-                    ref="storyFileInput"
-                    type="file"
-                    multiple
-                    accept=".pdf,.md,.txt"
-                    @change="handleWorldFiles($event, 'story')"
-                    style="display: none"
-                    :disabled="loading"
-                  />
-                  <div v-if="worldStoryFiles.length === 0" class="upload-placeholder">
-                    <div class="upload-icon">↑</div>
-                    <div class="upload-title">{{ $t('home.worldStoryUpload') }}</div>
-                    <div class="upload-hint">{{ $t('home.orBrowse') }}</div>
-                  </div>
-                  <div v-else class="file-list">
-                    <div v-for="(file, index) in worldStoryFiles" :key="index" class="file-item">
-                      <span class="file-icon">📄</span>
-                      <span class="file-name">{{ file.name }}</span>
-                      <button @click.stop="removeWorldFile(index, 'story')" class="remove-btn">×</button>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="input-wrapper world-text">
-                  <textarea
-                    v-model="worldStoryText"
-                    class="code-input"
-                    :placeholder="$t('home.worldStoryTextPlaceholder')"
-                    rows="3"
-                    :disabled="loading"
-                  ></textarea>
-                </div>
-              </div>
-
-              <!-- 任务目标（可选，作为世界推演的默认目标） -->
-              <div class="console-section">
-                <div class="console-header">
-                  <span class="console-label">{{ $t('home.worldGoalLabel') }}</span>
-                  <span class="console-meta">{{ $t('home.worldGoalMeta') }}</span>
-                </div>
-                <div class="input-wrapper">
-                  <textarea
-                    v-model="worldGoal"
-                    class="code-input"
-                    :placeholder="$t('home.worldGoalPlaceholder')"
-                    rows="2"
-                    :disabled="loading"
-                  ></textarea>
-                </div>
-              </div>
-
-              <!-- 创建世界按钮 -->
-              <div class="console-section btn-section">
-                <div v-if="modelConfigAlert" class="model-config-alert">
-                  <span class="mc-icon">⚠</span>
-                  <span class="mc-text">{{ modelConfigAlert }}</span>
-                  <button class="mc-link" type="button" @click="openModelSettings">
-                    {{ $t('home.configureModel') }}
-                  </button>
-                </div>
-                <div v-if="worldError" class="world-error">{{ worldError }}</div>
-                <button
-                  class="start-engine-btn"
-                  @click="createWorldProject"
-                  :disabled="!canCreateWorld || loading"
-                >
-                  <span v-if="!loading">{{ $t('home.createWorld') }}</span>
-                  <span v-else>{{ $t('home.creatingWorld') }}</span>
-                  <span class="btn-arrow">→</span>
-                </button>
-              </div>
-            </template>
+          <div class="form-row">
+            <label class="field-label">{{ $t('home.taskGoal') }}<span class="field-meta">{{ $t('home.taskGoalMeta') }}</span></label>
+            <textarea v-model="formData.simulationRequirement" class="field-input" rows="2"
+              :placeholder="$t('home.taskGoalPlaceholder')" :disabled="loading"></textarea>
           </div>
-        </div>
-      </section>
 
-      <!-- 历史项目数据库 -->
+          <div class="form-row">
+            <label class="field-label">{{ $t('home.extraContext') }}<span class="field-meta">{{ $t('home.extraContextMeta') }}</span></label>
+            <textarea v-model="formData.additionalContext" class="field-input" rows="3"
+              :placeholder="$t('home.extraContextPlaceholder')" :disabled="loading"></textarea>
+          </div>
+
+          <div class="form-actions">
+            <div v-if="modelConfigAlert" class="model-config-alert">
+              <span class="mc-text">⚠ {{ modelConfigAlert }}</span>
+              <button class="mc-link" type="button" @click="openModelSettings">{{ $t('home.configureModel') }}</button>
+            </div>
+            <button class="btn btn-primary btn-lg" @click="startSimulation" :disabled="!canSubmit || loading">
+              <span v-if="!loading">{{ $t('home.startEngine') }}</span>
+              <span v-else>{{ $t('home.initializing') }}</span>
+              <span class="btn-arrow">→</span>
+            </button>
+          </div>
+        </template>
+
+        <!-- ===== 世界模拟 ===== -->
+        <template v-else>
+          <div class="form-row">
+            <label class="field-label">{{ $t('home.worldBgLabel') }}<span class="field-meta">{{ $t('home.supportedFormats') }}</span></label>
+            <div class="upload-zone compact" :class="{ 'drag-over': bgDragOver, 'has-files': worldBgFiles.length > 0 }"
+              @dragover.prevent="bgDragOver = true" @dragleave.prevent="bgDragOver = false"
+              @drop.prevent="handleWorldDrop($event, 'bg')" @click="triggerWorldInput('bg')">
+              <input ref="bgFileInput" type="file" multiple accept=".pdf,.md,.txt" @change="handleWorldFiles($event, 'bg')" style="display: none" :disabled="loading" />
+              <div v-if="worldBgFiles.length === 0" class="upload-placeholder">
+                <div class="upload-icon">↑</div>
+                <div class="upload-title">{{ $t('home.worldBgUpload') }}</div>
+                <div class="upload-hint">{{ $t('home.orBrowse') }}</div>
+              </div>
+              <div v-else class="file-list">
+                <div v-for="(file, index) in worldBgFiles" :key="index" class="file-item">
+                  <span class="file-icon">📄</span>
+                  <span class="file-name">{{ file.name }}</span>
+                  <button @click.stop="removeWorldFile(index, 'bg')" class="remove-btn">×</button>
+                </div>
+              </div>
+            </div>
+            <textarea v-model="worldBgText" class="field-input" rows="2" :placeholder="$t('home.worldBgTextPlaceholder')" :disabled="loading"></textarea>
+          </div>
+
+          <div class="form-row">
+            <label class="field-label">{{ $t('home.worldStoryLabel') }}<span class="field-meta">{{ $t('home.supportedFormats') }}</span></label>
+            <div class="upload-zone compact" :class="{ 'drag-over': storyDragOver, 'has-files': worldStoryFiles.length > 0 }"
+              @dragover.prevent="storyDragOver = true" @dragleave.prevent="storyDragOver = false"
+              @drop.prevent="handleWorldDrop($event, 'story')" @click="triggerWorldInput('story')">
+              <input ref="storyFileInput" type="file" multiple accept=".pdf,.md,.txt" @change="handleWorldFiles($event, 'story')" style="display: none" :disabled="loading" />
+              <div v-if="worldStoryFiles.length === 0" class="upload-placeholder">
+                <div class="upload-icon">↑</div>
+                <div class="upload-title">{{ $t('home.worldStoryUpload') }}</div>
+                <div class="upload-hint">{{ $t('home.orBrowse') }}</div>
+              </div>
+              <div v-else class="file-list">
+                <div v-for="(file, index) in worldStoryFiles" :key="index" class="file-item">
+                  <span class="file-icon">📄</span>
+                  <span class="file-name">{{ file.name }}</span>
+                  <button @click.stop="removeWorldFile(index, 'story')" class="remove-btn">×</button>
+                </div>
+              </div>
+            </div>
+            <textarea v-model="worldStoryText" class="field-input" rows="2" :placeholder="$t('home.worldStoryTextPlaceholder')" :disabled="loading"></textarea>
+          </div>
+
+          <div class="form-row">
+            <label class="field-label">{{ $t('home.worldGoalLabel') }}<span class="field-meta">{{ $t('home.worldGoalMeta') }}</span></label>
+            <textarea v-model="worldGoal" class="field-input" rows="2" :placeholder="$t('home.worldGoalPlaceholder')" :disabled="loading"></textarea>
+          </div>
+
+          <div class="form-row">
+            <p class="world-divider">{{ $t('home.worldDivider') }}</p>
+          </div>
+
+          <div class="form-actions">
+            <div v-if="worldError" class="world-error">{{ worldError }}</div>
+            <div v-if="modelConfigAlert" class="model-config-alert">
+              <span class="mc-text">⚠ {{ modelConfigAlert }}</span>
+              <button class="mc-link" type="button" @click="openModelSettings">{{ $t('home.configureModel') }}</button>
+            </div>
+            <button class="btn btn-primary btn-lg" @click="createWorldProject" :disabled="!canCreateWorld || loading">
+              <span v-if="!loading">{{ $t('home.createWorld') }}</span>
+              <span v-else>{{ $t('home.creatingWorld') }}</span>
+              <span class="btn-arrow">→</span>
+            </button>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <!-- 历史项目 -->
+    <section class="history-section">
       <HistoryDatabase />
-    </div>
+    </section>
+
+    <footer class="footer">
+      <span class="footer-note">© {{ year }} {{ BRAND.name }} · {{ $t('home.footerNote') }}</span>
+    </footer>
   </div>
 </template>
 
@@ -406,6 +234,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import HistoryDatabase from '../components/HistoryDatabase.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+import { BRAND } from '../config/brand'
 import { createProject } from '../api/graph'
 import { saveWorldInputMultipart } from '../api/world'
 import { getModelRegistry } from '../api/models'
@@ -425,6 +254,8 @@ const files = ref([])
 const loading = ref(false)
 const error = ref('')
 const isDragOver = ref(false)
+const consoleRef = ref(null)
+const year = new Date().getFullYear()
 
 // ============ 模型配置前置校验 ============
 // 空字符串表示已通过；非空表示需要引导用户前往模型设置
@@ -576,7 +407,7 @@ const removeWorldFile = (index, kind) => {
 
 // 创建世界项目：建项目 → 上传资料 → 进入世界设定页
 const createWorldProject = async () => {
-  if (!canCreateWorld.value || loading.value) return
+  if (!canCreateWorld.value || loading) return
 
   // 模型前置校验：无已验证模型时阻止创建并引导配置
   if (!(await ensureModelConfigured())) return
@@ -606,12 +437,9 @@ const createWorldProject = async () => {
   }
 }
 
-// 滚动到底部
-const scrollToBottom = () => {
-  window.scrollTo({
-    top: document.body.scrollHeight,
-    behavior: 'smooth'
-  })
+// 滚动到控制台区域
+const scrollToConsole = () => {
+  consoleRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 // 开始模拟 - 立即跳转，API调用在Process页面进行
@@ -639,738 +467,463 @@ const startSimulation = async () => {
 </script>
 
 <style scoped>
-/* 全局变量与重置 */
-:root {
-  --black: #000000;
-  --white: #FFFFFF;
-  --orange: #FF4500;
-  --gray-light: #F5F5F5;
-  --gray-text: #666666;
-  --border: #E5E5E5;
-  /*
-    使用 Space Grotesk 作为主要标题字体，JetBrains Mono 作为代码/标签字体
-    确保已在 index.html 引入这些 Google Fonts
-  */
-  --font-mono: 'JetBrains Mono', monospace;
-  --font-sans: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
-  --font-cn: 'Noto Sans SC', system-ui, sans-serif;
+/* ============ Apple 极简白 + 柑橘橙 ============ */
+.home {
+  --canvas: #ffffff;
+  --canvas-alt: #f5f5f7;
+  --ink: #1d1d1f;
+  --ink-muted: #6e6e73;
+  --ink-subtle: #86868b;
+  --hairline: #d2d2d7;
+  --accent: #ff9500;        /* 柑橘橙 */
+  --accent-hover: #ff7a00;
+  --accent-soft: #fff4e5;
+  --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  --radius: 16px;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'PingFang SC',
+    'Noto Sans SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
 }
 
-.home-container {
-  min-height: 100vh;
-  background: var(--white);
-  font-family: var(--font-sans);
-  color: var(--black);
-}
-
-/* 顶部导航 */
-.navbar {
-  height: 60px;
-  background: var(--black);
-  color: var(--white);
+/* ---------- 导航 ---------- */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 0 40px;
+  justify-content: space-between;
+  padding: 18px 40px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--hairline);
 }
-
 .nav-brand {
-  font-family: var(--font-mono);
-  font-weight: 800;
-  letter-spacing: 1px;
-  font-size: 1.2rem;
-}
-
-.nav-links {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.github-link {
-  color: var(--white);
-  text-decoration: none;
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: opacity 0.2s;
-}
-
-.github-link:hover {
-  opacity: 0.8;
-}
-
-.arrow {
-  font-family: sans-serif;
-}
-
-/* 主要内容区 */
-.main-content {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 60px 40px;
-}
-
-/* Hero 区域 */
-.hero-section {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 80px;
-  position: relative;
-}
-
-.hero-left {
-  flex: 1;
-  padding-right: 60px;
-}
-
-.tag-row {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  margin-bottom: 25px;
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-}
-
-.orange-tag {
-  background: var(--orange);
-  color: var(--white);
-  padding: 4px 10px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  font-size: 0.75rem;
-}
-
-.version-text {
-  color: #999;
-  font-weight: 500;
-  letter-spacing: 0.5px;
-}
-
-.main-title {
-  font-size: 4.5rem;
-  line-height: 1.2;
-  font-weight: 500;
-  margin: 0 0 40px 0;
-  letter-spacing: -2px;
-  color: var(--black);
-}
-
-.gradient-text {
-  background: linear-gradient(90deg, #000000 0%, #444444 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  display: inline-block;
-}
-
-.hero-desc {
-  font-size: 1.05rem;
-  line-height: 1.8;
-  color: var(--gray-text);
-  max-width: 640px;
-  margin-bottom: 50px;
-  font-weight: 400;
-  text-align: justify;
-}
-
-.hero-desc p {
-  margin-bottom: 1.5rem;
-}
-
-.highlight-bold {
-  color: var(--black);
-  font-weight: 700;
-}
-
-.highlight-orange {
-  color: var(--orange);
-  font-weight: 700;
-  font-family: var(--font-mono);
-}
-
-.highlight-code {
-  background: rgba(0, 0, 0, 0.05);
-  padding: 2px 6px;
-  border-radius: 2px;
-  font-family: var(--font-mono);
-  font-size: 0.9em;
-  color: var(--black);
+  font-size: 17px;
   font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink);
 }
-
-.slogan-text {
-  font-size: 1.2rem;
-  font-weight: 520;
-  color: var(--black);
-  letter-spacing: 1px;
-  border-left: 3px solid var(--orange);
-  padding-left: 15px;
-  margin-top: 20px;
-}
-
-.blinking-cursor {
-  color: var(--orange);
-  animation: blink 1s step-end infinite;
-  font-weight: 700;
-}
-
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-.decoration-square {
-  width: 16px;
-  height: 16px;
-  background: var(--orange);
-}
-
-.hero-right {
-  flex: 0.8;
+.nav-right {
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: flex-end;
+  align-items: center;
+  gap: 24px;
 }
-
-.logo-container {
-  width: 100%;
-  display: flex;
-  justify-content: flex-end;
-  padding-right: 40px;
+.nav-link {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink-muted);
+  text-decoration: none;
 }
+.nav-link:hover { color: var(--ink); }
+.nav-link .arrow { margin-left: 2px; font-size: 12px; }
 
-.hero-logo {
-  max-width: 500px; /* 调整logo大小 */
-  width: 100%;
+/* ---------- Hero ---------- */
+.hero {
+  padding: 96px 40px 0;
+  text-align: center;
 }
+.hero-kicker {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  text-transform: uppercase;
+  margin-bottom: 20px;
+}
+.hero-title {
+  font-size: clamp(44px, 7vw, 80px);
+  font-weight: 600;
+  line-height: 1.06;
+  letter-spacing: -0.02em;
+  margin: 0 auto 24px;
+  max-width: 16em;
+  color: var(--ink);
+}
+.hero-title .accent { color: var(--accent); }
+.hero-desc {
+  font-size: 19px;
+  line-height: 1.6;
+  color: var(--ink-muted);
+  max-width: 640px;
+  margin: 0 auto 36px;
+}
+.hero-cta { margin-bottom: 80px; }
 
-.scroll-down-btn {
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--border);
-  background: transparent;
+/* ---------- 按钮 ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 980px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 10px 22px;
+  transition: background 0.18s ease, transform 0.12s ease, box-shadow 0.18s ease;
+}
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.btn-primary:active:not(:disabled) { transform: scale(0.98); }
+.btn-lg { padding: 14px 30px; font-size: 16px; }
+.btn-arrow { font-size: 15px; }
+
+/* ---------- Hero 视觉：时间线示意图 ---------- */
+.hero-visual {
+  background: var(--canvas-alt);
+  border-radius: 20px;
+  padding: 64px 24px;
+  max-width: 900px;
+  margin: 0 auto 96px;
+}
+.tl-demo { position: relative; }
+.tl-main {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  color: var(--orange);
-  font-size: 1.2rem;
-  transition: all 0.2s;
-}
-
-.scroll-down-btn:hover {
-  border-color: var(--orange);
-}
-
-/* Dashboard 双栏布局 */
-.dashboard-section {
-  display: flex;
-  gap: 60px;
-  border-top: 1px solid var(--border);
-  padding-top: 60px;
-  align-items: flex-start;
-}
-
-.dashboard-section .left-panel,
-.dashboard-section .right-panel {
-  display: flex;
-  flex-direction: column;
-}
-
-/* 左侧面板 */
-.left-panel {
-  flex: 0.8;
-}
-
-.panel-header {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  color: #999;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 20px;
-}
-
-.status-dot {
-  color: var(--orange);
-  font-size: 0.8rem;
-}
-
-.section-title {
-  font-size: 2rem;
-  font-weight: 520;
-  margin: 0 0 15px 0;
-}
-
-.section-desc {
-  color: var(--gray-text);
-  margin-bottom: 25px;
-  line-height: 1.6;
-}
-
-.metrics-row {
-  display: flex;
-  gap: 20px;
-  margin-bottom: 15px;
-}
-
-.metric-card {
-  border: 1px solid var(--border);
-  padding: 20px 30px;
-  min-width: 150px;
-}
-
-.metric-value {
-  font-family: var(--font-mono);
-  font-size: 1.8rem;
-  font-weight: 520;
-  margin-bottom: 5px;
-}
-
-.metric-label {
-  font-size: 0.85rem;
-  color: #999;
-}
-
-/* 项目模拟步骤介绍 */
-.steps-container {
-  border: 1px solid var(--border);
-  padding: 30px;
+  gap: 56px;
   position: relative;
+  padding: 12px 0;
 }
-
-.steps-header {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  color: #999;
-  margin-bottom: 25px;
+.tl-main::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 6%;
+  right: 6%;
+  height: 2px;
+  background: var(--hairline);
+}
+.dot {
+  position: relative;
+  z-index: 1;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+.dot.now {
+  width: 18px;
+  height: 18px;
+  background: var(--accent);
+  box-shadow: 0 0 0 6px rgba(255, 149, 0, 0.18);
+}
+.dot.future {
+  background: transparent;
+  border: 2px solid var(--ink-subtle);
+}
+.tl-branch {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-16px);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 28px;
+  z-index: 2;
+}
+.tl-branch::before {
+  content: '';
+  position: absolute;
+  top: -34px;
+  left: 7px;
+  width: 2px;
+  height: 30px;
+  background: var(--accent);
+}
+.branch-line-h {
+  width: 42px;
+  height: 2px;
+  background: var(--accent);
+}
+.branch-node {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.branch-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+  margin-left: 4px;
+}
+.tl-caption {
+  display: flex;
+  justify-content: space-between;
+  max-width: 70%;
+  margin: 28px auto 0;
+  font-size: 13px;
+  color: var(--ink-subtle);
+}
+.tl-caption .now-label::before {
+  content: '● ';
+  color: var(--accent);
+}
+.tl-caption .future-label::before {
+  content: '○ ';
 }
 
-.diamond-icon {
-  font-size: 1.2rem;
+/* ---------- 特性 ---------- */
+.features {
+  padding: 0 40px 96px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.features-head {
+  text-align: center;
+  margin-bottom: 56px;
+}
+.section-title {
+  font-size: 40px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 12px;
+  color: var(--ink);
+}
+.section-desc {
+  font-size: 17px;
+  color: var(--ink-muted);
+  margin: 0;
+}
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+.feature-card {
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 32px 24px;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.feature-card:hover {
+  box-shadow: var(--card-shadow);
+  transform: translateY(-2px);
+}
+.f-icon {
+  font-size: 26px;
+  color: var(--accent);
+  margin-bottom: 16px;
   line-height: 1;
 }
+.f-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 10px;
+  color: var(--ink);
+}
+.f-desc {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-muted);
+  margin: 0;
+}
 
-.workflow-list {
+/* ---------- 控制台 ---------- */
+.console-section {
+  background: var(--canvas-alt);
+  padding: 96px 40px;
+}
+.console-head {
+  max-width: 900px;
+  margin: 0 auto 40px;
+  text-align: center;
+}
+.mode-tabs {
+  display: inline-flex;
+  gap: 4px;
+  background: #ececee;
+  border-radius: 980px;
+  padding: 4px;
+  margin-top: 20px;
+}
+.mode-tab {
+  border: none;
+  background: transparent;
+  border-radius: 980px;
+  padding: 8px 22px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.mode-tab.active {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  font-weight: 500;
+}
+.console-card {
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: var(--card-shadow);
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 48px;
+}
+.form-row { margin-bottom: 32px; }
+.field-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 12px;
+}
+.field-meta {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-subtle);
+}
+.upload-zone {
+  border: 1.5px dashed var(--hairline);
+  border-radius: var(--radius);
+  padding: 28px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+  margin-bottom: 12px;
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.upload-zone.has-files { text-align: left; padding: 16px 20px; }
+.upload-icon {
+  font-size: 22px;
+  color: var(--ink-muted);
+  margin-bottom: 8px;
+}
+.upload-title { font-size: 15px; font-weight: 500; color: var(--ink); }
+.upload-hint { font-size: 13px; color: var(--ink-subtle); margin-top: 4px; }
+.file-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.file-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--canvas-alt);
+  border-radius: 980px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.remove-btn {
+  border: none;
+  background: transparent;
+  color: var(--ink-subtle);
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1;
+}
+.remove-btn:hover { color: var(--accent); }
+.field-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--ink);
+  background: #fff;
+  resize: vertical;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.field-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 149, 0, 0.15);
+}
+.field-input::placeholder { color: var(--ink-subtle); }
+.form-actions {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  align-items: center;
+  gap: 14px;
+  padding-top: 8px;
 }
-
-.workflow-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 20px;
-}
-
-.step-num {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  color: var(--black);
-  opacity: 0.3;
-}
-
-.step-info {
-  flex: 1;
-}
-
-.step-title {
-  font-weight: 520;
-  font-size: 1rem;
-  margin-bottom: 4px;
-}
-
-.step-desc {
-  font-size: 0.85rem;
-  color: var(--gray-text);
-}
-
-/* 右侧交互控制台 */
-.right-panel {
-  flex: 1.2;
-}
-
-.console-box {
-  border: 1px solid #CCC; /* 外部实线 */
-  padding: 8px; /* 内边距形成双重边框感 */
-}
-
-/* 模式选择标签 */
-.mode-tabs {
-  display: flex;
-  border-bottom: 1px solid #EEE;
-  padding: 0 10px;
-  margin-bottom: 4px;
-}
-
-.mode-tab {
-  background: none;
-  border: none;
-  padding: 14px 18px;
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  color: #999;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  letter-spacing: 1px;
-  transition: all 0.2s;
-}
-
-.mode-tab:hover {
-  color: var(--black);
-}
-
-.mode-tab.active {
-  color: var(--black);
-  border-bottom-color: var(--orange);
-  font-weight: 700;
-}
-
-.mode-icon {
-  margin-right: 6px;
-  font-size: 0.7rem;
-}
-
-/* 世界模式：紧凑上传区与文本输入 */
-.upload-zone.compact {
-  height: 120px;
-}
-
-.world-text {
-  margin-top: 10px;
-}
-
-.world-error {
-  color: #D32F2F;
-  font-size: 0.8rem;
-  margin-bottom: 10px;
-  font-family: var(--font-mono);
-  line-height: 1.5;
-}
-
-/* 模型配置前置校验引导 */
 .model-config-alert {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  margin-bottom: 10px;
-  border: 1px solid #FFE0B2;
-  background: #FFF8E1;
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  line-height: 1.4;
-  color: #7A5200;
+  gap: 12px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(255, 149, 0, 0.35);
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: #b25000;
+  max-width: 100%;
 }
-
-.mc-icon {
-  flex-shrink: 0;
-  color: var(--orange);
-}
-
-.mc-text {
-  flex: 1;
-}
-
 .mc-link {
-  flex-shrink: 0;
-  background: var(--orange);
-  color: var(--white);
-  border: none;
-  padding: 5px 10px;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  cursor: pointer;
-  transition: opacity 0.2s;
-  white-space: nowrap;
-}
-
-.mc-link:hover {
-  opacity: 0.8;
-}
-
-.console-section {
-  padding: 20px;
-}
-
-.console-section.btn-section {
-  padding-top: 0;
-}
-
-.console-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 15px;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: #666;
-}
-
-.upload-zone {
-  border: 1px dashed #CCC;
-  height: 200px;
-  overflow-y: auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.3s;
-  background: #FAFAFA;
-}
-
-.upload-zone.has-files {
-  align-items: flex-start;
-}
-
-.upload-zone:hover {
-  background: #F0F0F0;
-  border-color: #999;
-}
-
-.upload-placeholder {
-  text-align: center;
-}
-
-.upload-icon {
-  width: 40px;
-  height: 40px;
-  border: 1px solid #DDD;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 15px;
-  color: #999;
-}
-
-.upload-title {
-  font-weight: 500;
-  font-size: 0.9rem;
-  margin-bottom: 5px;
-}
-
-.upload-hint {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: #999;
-}
-
-.file-list {
-  width: 100%;
-  padding: 15px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.file-item {
-  display: flex;
-  align-items: center;
-  background: var(--white);
-  padding: 8px 12px;
-  border: 1px solid #EEE;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-}
-
-.file-name {
-  flex: 1;
-  margin: 0 10px;
-}
-
-.remove-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 1.2rem;
-  color: #999;
-}
-
-.console-divider {
-  display: flex;
-  align-items: center;
-  margin: 10px 0;
-}
-
-.console-divider::before,
-.console-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: #EEE;
-}
-
-.console-divider span {
-  padding: 0 15px;
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: #BBB;
-  letter-spacing: 1px;
-}
-
-.input-wrapper {
-  position: relative;
-  border: 1px solid #DDD;
-  background: #FAFAFA;
-}
-
-.code-input {
-  width: 100%;
   border: none;
   background: transparent;
-  padding: 20px;
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
-  line-height: 1.6;
-  resize: vertical;
-  outline: none;
-  min-height: 150px;
-}
-
-.model-badge {
-  position: absolute;
-  bottom: 10px;
-  right: 15px;
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: #AAA;
-}
-
-.start-engine-btn {
-  width: 100%;
-  background: var(--black);
-  color: var(--white);
-  border: none;
-  padding: 20px;
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 1.1rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s ease;
-  letter-spacing: 1px;
-  position: relative;
-  overflow: hidden;
+  padding: 0;
+  font-family: inherit;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+.world-error { color: #d70015; font-size: 13px; }
+.world-divider {
+  font-size: 13px;
+  color: var(--ink-subtle);
+  text-align: center;
+  margin: 0;
 }
 
-/* 可点击状态（非禁用） */
-.start-engine-btn:not(:disabled) {
-  background: var(--black);
-  border: 1px solid var(--black);
-  animation: pulse-border 2s infinite;
+/* ---------- 历史项目 ---------- */
+.history-section { padding: 96px 40px 0; }
+
+/* ---------- Footer ---------- */
+.footer {
+  border-top: 1px solid var(--hairline);
+  padding: 36px 40px 48px;
+  text-align: center;
+  margin-top: 96px;
+}
+.footer-note {
+  font-size: 12px;
+  color: var(--ink-subtle);
 }
 
-.start-engine-btn:hover:not(:disabled) {
-  background: var(--orange);
-  border-color: var(--orange);
-  transform: translateY(-2px);
+/* ---------- 响应式 ---------- */
+@media (max-width: 900px) {
+  .feature-grid { grid-template-columns: repeat(2, 1fr); }
+  .hero { padding: 72px 20px 0; }
+  .features { padding: 0 20px 72px; }
+  .console-section, .history-section { padding-left: 20px; padding-right: 20px; }
+  .console-card { padding: 32px 24px; }
+  .nav { padding: 14px 20px; }
 }
-
-.start-engine-btn:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.start-engine-btn:disabled {
-  background: #E5E5E5;
-  color: #999;
-  cursor: not-allowed;
-  transform: none;
-  border: 1px solid #E5E5E5;
-}
-
-/* 引导动画：微妙的边框脉冲 */
-@keyframes pulse-border {
-  0% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.2); }
-  70% { box-shadow: 0 0 0 6px rgba(0, 0, 0, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
-}
-
-/* 响应式适配 */
-@media (max-width: 1024px) {
-  .dashboard-section {
-    flex-direction: column;
-  }
-
-  .hero-section {
-    flex-direction: column;
-  }
-
-  .hero-left {
-    padding-right: 0;
-    margin-bottom: 40px;
-  }
-
-  .hero-logo {
-    max-width: 200px;
-    margin-bottom: 20px;
-  }
+@media (max-width: 560px) {
+  .feature-grid { grid-template-columns: 1fr; }
+  .tl-main { gap: 28px; }
+  .tl-branch { display: none; }
 }
 </style>
 
 <style>
-/* English locale adjustments (unscoped to target html[lang]) */
-html[lang="en"] .main-title {
-  font-size: 3.5rem;
-  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  letter-spacing: -1px;
-}
-
-html[lang="en"] .hero-desc {
-  text-align: left;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  letter-spacing: 0;
-}
-
-html[lang="en"] .slogan-text {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  letter-spacing: 0;
-}
-
-html[lang="en"] .tag-row {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-html[lang="en"] .navbar .nav-links {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* Left pane: system status + workflow */
-html[lang="en"] .status-section {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-html[lang="en"] .status-section .status-ready {
-  font-size: 1.6rem;
-}
-
-html[lang="en"] .status-section .metric-value {
-  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-size: 1.4rem;
-}
-
-html[lang="en"] .workflow-list .step-title {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-html[lang="en"] .workflow-list .step-desc {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-  font-size: 0.72rem !important;
-  line-height: 1.4 !important;
-}
-
-html[lang="en"] .workflow-list {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+/* 全局字体基线（非 scoped，作用于整站） */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'PingFang SC',
+    'Noto Sans SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 </style>

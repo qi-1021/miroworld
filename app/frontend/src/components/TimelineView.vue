@@ -30,8 +30,47 @@
       <button class="tl-play-btn" @click="togglePlay">{{ playing ? $t('timeline.pause') : $t('timeline.play') }}</button>
     </div>
 
+    <!-- 人物设定（可折叠） -->
+    <div class="tl-char-panel">
+      <button class="tl-char-toggle" @click="toggleCharacters">
+        <span class="tl-char-caret">{{ charactersOpen ? '▾' : '▸' }}</span>
+        <span>{{ $t('characters.title') }}</span>
+        <span class="tl-char-count">{{ charactersList.filter(c => c.name).length }}</span>
+      </button>
+      <div v-if="charactersOpen" class="tl-char-body">
+        <div v-if="charactersLoading" class="tl-char-loading">{{ $t('characters.loading') }}</div>
+        <template v-else>
+          <div v-for="(c, i) in charactersList" :key="i" class="tl-char-row">
+            <input v-model="c.name" class="tl-char-name" :placeholder="$t('characters.namePlaceholder')" />
+            <input v-model="c.traits" class="tl-char-traits" :placeholder="$t('characters.traitsPlaceholder')" />
+            <textarea v-model="c.description" class="tl-char-desc" rows="2" :placeholder="$t('characters.descPlaceholder')"></textarea>
+            <button class="tl-char-del" @click="removeCharacterRow(i)">×</button>
+          </div>
+          <div class="tl-char-actions">
+            <button class="tl-btn ghost" @click="addCharacterRow">{{ $t('characters.add') }}</button>
+            <button class="tl-btn primary" :disabled="charactersSaving" @click="saveCharacters">{{ charactersSaving ? $t('characters.saving') : $t('characters.save') }}</button>
+          </div>
+          <div v-if="charactersMsg" class="tl-status" :class="{ error: charactersMsgError }">{{ charactersMsg }}</div>
+        </template>
+      </div>
+    </div>
+
     <!-- 状态消息 -->
     <div v-if="statusMessage" class="tl-status" :class="{ error: statusError }">{{ statusMessage }}</div>
+
+    <!-- 抽取进度面板 -->
+    <div v-if="extractDetail" class="tl-progress-panel">
+      <div class="tl-progress-head">
+        <span class="tl-progress-title">{{ $t('progress.extract') }}</span>
+        <span class="tl-progress-stage">{{ extractStage }}</span>
+      </div>
+      <div class="tl-progress-bar"><div class="tl-progress-fill" :style="{ width: extractPercent + '%' }"></div></div>
+      <div class="tl-progress-meta">{{ $t('progress.chunks', { done: extractProgress.done, total: extractProgress.total }) }}</div>
+      <div v-if="extractSteps.length" class="tl-progress-steps">
+        <div v-for="(s, si) in extractSteps" :key="si" class="tl-progress-step">{{ s }}</div>
+      </div>
+      <div v-if="extractError" class="tl-progress-error">{{ extractError }}</div>
+    </div>
 
     <!-- 分支切换器 -->
     <div v-if="branchIds.length > 1" class="branch-switcher">
@@ -200,6 +239,13 @@
           <button class="tl-modal-close" @click="closeFork">×</button>
         </div>
         <div class="fork-desc">{{ forkEvent.summary }}</div>
+
+        <!-- 将参考的人物设定 chips -->
+        <div v-if="forkCharChips.length" class="fork-char-chips">
+          <span class="fcc-label">{{ $t('characters.referChips') }}：</span>
+          <span v-for="c in forkCharChips" :key="c.name" class="fcc-chip">{{ c.name }}</span>
+        </div>
+
         <div class="tl-edit-row">
           <span class="f-k">{{ $t('fork.forkGoalLabel') }}</span>
           <input v-model="forkGoal" type="text" class="tl-edit-med" />
@@ -212,7 +258,52 @@
           <button class="tl-btn primary" :disabled="forkRunning || !forkGoal.trim()" @click="submitFork">{{ forkRunning ? $t('fork.forkRunning') : $t('fork.forkSubmit') }}</button>
           <button class="tl-btn ghost" @click="closeFork">{{ $t('timeline.editCancel') }}</button>
         </div>
-        <div v-if="forkMsg" class="tl-status" :class="{ error: forkMsgError }">{{ forkMsg }}</div>
+
+        <!-- 运行中进度面板 -->
+        <div v-if="forkRunning" class="tl-progress-panel fork">
+          <div class="tl-progress-head">
+            <span class="tl-progress-title">{{ $t('progress.fork') }}</span>
+            <span class="tl-progress-stage">{{ forkStage }}</span>
+            <span class="tl-progress-elapsed">{{ $t('progress.waiting', { s: forkElapsed }) }}</span>
+          </div>
+          <div class="tl-progress-bar"><div class="tl-progress-fill" :style="{ width: (forkPercent || 0) + '%' }"></div></div>
+          <div v-if="forkSteps.length" class="tl-progress-steps">
+            <div v-for="(s, si) in forkSteps" :key="si" class="tl-progress-step">{{ s }}</div>
+          </div>
+          <div v-if="forkError" class="tl-progress-error">{{ forkError }}</div>
+        </div>
+
+        <!-- 运行中补充设定 -->
+        <div v-if="forkRunning && forkTaskId" class="tl-guide-box">
+          <div class="tl-guide-title">{{ $t('guidance.title') }}</div>
+          <div class="tl-guide-row">
+            <input v-model="guideInput" class="tl-edit-med" :placeholder="$t('guidance.placeholder')" :disabled="guideSubmitting" @keyup.enter="submitGuidance" />
+            <button class="tl-btn ghost" :disabled="guideSubmitting || !guideInput.trim()" @click="submitGuidance">{{ guideSubmitting ? $t('guidance.submitting') : $t('guidance.submit') }}</button>
+          </div>
+          <div v-if="guideMsg" class="tl-status" :class="{ error: guideMsgError }">{{ guideMsg }}</div>
+        </div>
+
+        <!-- 失败重试 -->
+        <div v-if="!forkRunning && forkMsgError && forkError" class="tl-progress-error">{{ forkError }}</div>
+        <div v-if="!forkRunning && forkMsgError" class="tl-edit-btns">
+          <button class="tl-btn primary" @click="retryFork">{{ $t('guidance.retry') }}</button>
+          <button class="tl-btn ghost" @click="closeFork">{{ $t('timeline.editCancel') }}</button>
+        </div>
+
+        <!-- 完成后：信息 + 继续补充设定 -->
+        <div v-if="!forkRunning && !forkMsgError && forkEventCount">
+          <div class="tl-guide-box done">
+            <div class="tl-guide-title">{{ $t('progress.forkDone', { n: forkEventCount }) }}</div>
+            <div v-if="forkMsg" class="tl-status">{{ forkMsg }}</div>
+            <div class="tl-guide-title continue">{{ $t('progress.continueTitle') }}</div>
+            <div class="tl-guide-row">
+              <input v-model="continueGoalInput" class="tl-edit-med" :placeholder="$t('progress.continuePlaceholder')" :disabled="continueSubmitting" @keyup.enter="runContinue" />
+              <button class="tl-btn primary" :disabled="continueSubmitting || !continueGoalInput.trim()" @click="runContinue">{{ continueSubmitting ? $t('progress.continuing') : $t('progress.continue') }}</button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="forkMsg && !forkMsgError" class="tl-status">{{ forkMsg }}</div>
       </div>
     </div>
 
@@ -258,7 +349,11 @@ import {
   updateTimelineEvent,
   generateTimelineFuture,
   generateTimelineFork,
-  submitTimelineObjection
+  submitTimelineObjection,
+  submitForkGuidance,
+  continueBranch,
+  getTimelineCharacters,
+  saveTimelineCharacters
 } from '../api/timeline'
 
 const props = defineProps({ projectId: { type: String, required: true } })
@@ -280,11 +375,16 @@ const editMsgError = ref(false)
 const extracting = ref(false)
 const extractTask = ref('')
 const extractProgress = ref({ done: 0, total: 0 })
+const extractStage = ref('')
+const extractSteps = ref([])
+const extractError = ref('')
+const extractDetail = ref(false)
 const statusMessage = ref('')
 const statusError = ref(false)
 const futureGoal = ref('')
 const futureRunning = ref(false)
 let extractTimer = null
+let extractTries = 0
 
 // scrubber
 const scrubT = ref(0)
@@ -300,6 +400,35 @@ const forkRunning = ref(false)
 const forkMsg = ref('')
 const forkMsgError = ref(false)
 let forkPollTimerId = null
+let forkTries = 0
+// 分叉任务进度面板
+const forkTaskId = ref('')
+const forkStage = ref('')
+const forkSteps = ref([])
+const forkElapsed = ref(0)
+const forkError = ref('')
+const forkPercent = ref(0)
+const forkEventCount = ref(0)
+const forkBranchId = ref('')
+let forkElapsedTimer = null
+// 运行中补充设定
+const guideInput = ref('')
+const guideSubmitting = ref(false)
+const guideMsg = ref('')
+const guideMsgError = ref(false)
+// 完成后继续续推
+const continueGoalInput = ref('')
+const continueSubmitting = ref(false)
+// retry fork: 记住上次 goal 以便重试
+const lastForkGoal = ref('')
+const lastForkHorizon = ref(null)
+// 人物设定
+const charactersOpen = ref(false)
+const charactersList = ref([])
+const charactersLoading = ref(false)
+const charactersSaving = ref(false)
+const charactersMsg = ref('')
+const charactersMsgError = ref(false)
 
 // 异议
 const objectionEvent = ref(null)
@@ -402,6 +531,11 @@ function spanSort() {
 }
 const scrubPct = computed(() => {
   return ((scrubT.value - minSort()) / spanSort()) * 100;
+});
+const extractPercent = computed(() => {
+  const { done = 0, total = 0 } = extractProgress.value || {};
+  if (!total) return 0;
+  return Math.min(100, Math.round((done / total) * 100));
 });
 
 function pointLeft(ev) {
@@ -534,6 +668,7 @@ async function runExtract() {
   if (extracting.value) return;
   extracting.value = true; statusMessage.value = ''; statusError.value = false;
   extractProgress.value = { done: 0, total: 0 };
+  extractStage.value = ''; extractSteps.value = []; extractError.value = ''; extractDetail.value = true; extractTries = 0;
   try {
     const res = await extractTimeline({ project_id: props.projectId, source: source.value });
     const taskId = res?.data?.task_id || res?.task_id;
@@ -545,16 +680,20 @@ function pollExtract() {
   clearInterval(extractTimer);
   extractTimer = setInterval(async () => {
     if (!extractTask.value) return;
+    extractTries++;
     try {
       const res = await getTimelineStatus(extractTask.value);
       const st = res?.data || res || {};
       extractProgress.value = { done: st.done_chunks || 0, total: st.total_chunks || 0 };
+      if (st.stage) extractStage.value = st.stage;
+      if (Array.isArray(st.steps)) extractSteps.value = st.steps.slice(-6);
       const s = String(st.status || 'running');
       if (s === 'completed') { stopExtractPoll(); await loadEvents(true); statusMessage.value = t('timeline.extractDone', { n: events.value.length }); }
       else if (s === 'partial_failed') { stopExtractPoll(); await loadEvents(true); statusMessage.value = t('timeline.extractPartial', { n: events.value.length }); }
-      else if (s === 'failed') { stopExtractPoll(); statusMessage.value = st.message || t('timeline.extractFailed'); statusError.value = true; }
+      else if (s === 'failed') { stopExtractPoll(); extractError.value = st.error || st.message || ''; statusMessage.value = st.message || t('timeline.extractFailed'); statusError.value = true; }
     } catch (e) { }
-  }, 3000);
+    if (extractTries > 300) stopExtractPoll();
+  }, 2000);
 }
 function stopExtractPoll() { clearInterval(extractTimer); extractTimer = null; extractTask.value = ''; extracting.value = false; }
 
@@ -571,47 +710,129 @@ async function runFuture() {
 }
 
 // ===== 分叉推演 =====
-function openFork(ev) { forkEvent.value = ev; forkGoal.value = ''; forkHorizon.value = null; forkMsg.value = ''; forkMsgError.value = false; }
-function closeFork() { forkEvent.value = null; clearTimeout(forkPollTimerId); forkPollTimerId = null; }
+function openFork(ev) {
+  forkEvent.value = ev; forkGoal.value = ''; forkHorizon.value = null; forkMsg.value = ''; forkMsgError.value = false;
+  resetForkProgress();
+  forkEventCount.value = 0; forkBranchId.value = ''; continueGoalInput.value = ''; guideInput.value = '';
+}
+function resetForkProgress() {
+  forkTaskId.value = ''; forkStage.value = ''; forkSteps.value = []; forkElapsed.value = 0;
+  forkError.value = ''; forkPercent.value = 0; forkRunning.value = false;
+  if (forkElapsedTimer) clearInterval(forkElapsedTimer); forkElapsedTimer = null;
+  forkMsg.value = ''; forkMsgError.value = false; guideMsg.value = ''; guideMsgError.value = false;
+}
+function closeFork() { forkEvent.value = null; clearTimeout(forkPollTimerId); forkPollTimerId = null; resetForkProgress(); }
 async function submitFork() {
   const ev = forkEvent.value; const goal = forkGoal.value.trim();
   if (forkRunning.value || !ev || !goal) return;
+  lastForkGoal.value = goal; lastForkHorizon.value = forkHorizon.value;
   forkRunning.value = true; forkMsg.value = ''; forkMsgError.value = false;
+  forkError.value = ''; forkSteps.value = []; forkElapsed.value = 0; forkEventCount.value = 0; forkBranchId.value = '';
+  if (forkElapsedTimer) clearInterval(forkElapsedTimer);
+  forkElapsedTimer = setInterval(() => { forkElapsed.value += 1; }, 1000);
   try {
     const payload = { project_id: props.projectId, event_id: ev.event_id, goal };
     if (forkHorizon.value != null) payload.horizon = forkHorizon.value;
     const res = await generateTimelineFork(payload);
     const taskId = res?.data?.task_id || res?.task_id;
     if (!taskId) throw new Error(t('fork.forkFailed'));
-    forkMsg.value = t('fork.forkStarted');
+    forkTaskId.value = taskId; forkMsg.value = t('fork.forkStarted');
     pollFork(taskId);
   } catch (e) {
-    forkRunning.value = false; forkMsg.value = e?.message || t('fork.forkFailed'); forkMsgError.value = true;
+    forkRunning.value = false;
+    if (forkElapsedTimer) clearInterval(forkElapsedTimer); forkElapsedTimer = null;
+    forkMsg.value = e?.message || t('fork.forkFailed'); forkMsgError.value = true;
   }
 }
 function pollFork(taskId) {
   clearTimeout(forkPollTimerId);
-  let tries = 0;
+  forkTries = 0;
   const poll = async () => {
-    tries++;
+    forkTries++;
     try {
       const res = await getTimelineStatus(taskId);
       const st = res?.data || res || {};
+      forkStage.value = st.stage || forkStage.value;
+      if (Array.isArray(st.steps)) forkSteps.value = st.steps.slice(-6);
+      if (st.progress != null) forkPercent.value = st.progress;
+      if (st.event_count != null) forkEventCount.value = st.event_count;
+      if (st.branch_id) forkBranchId.value = st.branch_id;
       const s = String(st.status || 'running');
       if (s === 'completed' || s === 'partial_failed') {
         forkRunning.value = false;
+        if (forkElapsedTimer) clearInterval(forkElapsedTimer); forkElapsedTimer = null;
+        forkMsg.value = composeForkDoneMsg(st);
+        forkEventCount.value = st.event_count != null ? st.event_count : parseIntMsgCount(st.message);
+        if (st.branch_id) forkBranchId.value = st.branch_id;
         await loadEvents(true);
-        forkMsg.value = t('fork.forkDone');
-        forkEvent.value = null;
+        autoSelectBranch();
         return;
       } else if (s === 'failed') {
-        forkRunning.value = false; forkMsg.value = st.message || t('fork.forkFailed'); forkMsgError.value = true; return;
+        forkRunning.value = false;
+        if (forkElapsedTimer) clearInterval(forkElapsedTimer); forkElapsedTimer = null;
+        forkError.value = st.error || st.message || '';
+        forkMsg.value = st.message || t('fork.forkFailed'); forkMsgError.value = true;
+        return;
       }
     } catch (e) { }
-    if (tries < 120) forkPollTimerId = setTimeout(poll, 3000);
-    else { forkRunning.value = false; forkMsg.value = t('fork.forkTimeout'); forkMsgError.value = true; }
+    if (forkTries < 300) forkPollTimerId = setTimeout(poll, 2000);
+    else { forkRunning.value = false; if (forkElapsedTimer) clearInterval(forkElapsedTimer); forkElapsedTimer = null; forkMsg.value = t('fork.forkTimeout'); forkMsgError.value = true; }
   };
   poll();
+}
+function parseIntMsgCount(msg) {
+  const m = String(msg || '').match(/[\uff08\u0028]?\s*(\d+)\s*[\u6761\u4e2a]?/);
+  return m ? Number(m[1]) : 0;
+}
+function composeForkDoneMsg(st) {
+  if (st.message) return st.message;
+  const n = st.event_count != null ? st.event_count : 0;
+  return t('fork.forkDoneCount', { n });
+}
+function autoSelectBranch() {
+  if (forkBranchId.value) selectBranch(forkBranchId.value);
+}
+// 重试：重新提交相同 goal
+async function retryFork() {
+  if (!lastForkGoal.value) return;
+  forkGoal.value = lastForkGoal.value; forkHorizon.value = lastForkHorizon.value;
+  await submitFork();
+}
+// 运行中补充设定
+async function submitGuidance() {
+  const g = guideInput.value.trim();
+  if (guideSubmitting.value || !forkTaskId.value || !g) return;
+  guideSubmitting.value = true; guideMsg.value = ''; guideMsgError.value = false;
+  try {
+    await submitForkGuidance(forkTaskId.value, g);
+    guideMsg.value = t('guidance.injected'); guideInput.value = '';
+  } catch (e) {
+    const backendMsg = backendErrorMessage(e);
+    guideMsg.value = backendMsg ? t('guidance.injectFailedWith', { msg: backendMsg }) : t('guidance.injectFailed');
+    guideMsgError.value = true;
+  } finally { guideSubmitting.value = false; }
+}
+// 完成后继续补充设定续推
+async function runContinue() {
+  const g = continueGoalInput.value.trim();
+  if (continueSubmitting.value || !g || !forkBranchId.value) return;
+  continueSubmitting.value = true; forkMsg.value = ''; forkMsgError.value = false;
+  try {
+    const res = await continueBranch(props.projectId, forkBranchId.value, g, forkHorizon.value);
+    const taskId = res?.data?.task_id || res?.task_id;
+    if (!taskId) throw new Error(t('fork.forkFailed'));
+    forkRunning.value = true; forkMsg.value = t('fork.forkStarted');
+    forkSteps.value = []; forkElapsed.value = 0; forkError.value = ''; forkEventCount.value = 0;
+    if (forkElapsedTimer) clearInterval(forkElapsedTimer);
+    forkElapsedTimer = setInterval(() => { forkElapsed.value += 1; }, 1000);
+    forkTaskId.value = taskId;
+    pollFork(taskId);
+  } catch (e) {
+    forkMsg.value = backendErrorMessage(e) || e?.message || t('fork.forkFailed'); forkMsgError.value = true;
+  } finally { continueSubmitting.value = false; }
+}
+function backendErrorMessage(e) {
+  return e?.response?.data?.error?.message || e?.response?.data?.error || e?.response?.data?.message || '';
 }
 
 // ===== 异议 =====
@@ -661,7 +882,39 @@ async function saveEdit() {
   finally { savingEdit.value = false; }
 }
 
-onMounted(() => { loadEvents(true); });
+// ===== 人物设定面板 =====
+async function toggleCharacters() {
+  charactersOpen.value = !charactersOpen.value;
+  if (charactersOpen.value && !charactersList.value.length) await loadCharacters();
+}
+async function loadCharacters() {
+  charactersLoading.value = true; charactersMsg.value = ''; charactersMsgError.value = false;
+  try {
+    const res = await getTimelineCharacters(props.projectId);
+    const body = res?.data || res || {};
+    charactersList.value = (body.characters || []).map(c => ({ name: c.name || '', traits: c.traits || '', description: c.description || '' }));
+    if (charactersList.value.length === 0) charactersList.value = [{ name: '', traits: '', description: '' }];
+  } catch (e) { charactersMsg.value = e?.message || t('characters.loadFailed'); charactersMsgError.value = true; }
+  finally { charactersLoading.value = false; }
+}
+function addCharacterRow() { charactersList.value.push({ name: '', traits: '', description: '' }); }
+function removeCharacterRow(i) { charactersList.value.splice(i, 1); }
+async function saveCharacters() {
+  const list = charactersList.value
+    .map(c => ({ name: (c.name || '').trim(), traits: (c.traits || '').trim(), description: (c.description || '').trim() }))
+    .filter(c => c.name);
+  if (charactersSaving.value) return;
+  charactersSaving.value = true; charactersMsg.value = ''; charactersMsgError.value = false;
+  try {
+    await saveTimelineCharacters(props.projectId, list);
+    charactersList.value = list.length ? list : [{ name: '', traits: '', description: '' }];
+    charactersMsg.value = t('characters.saved');
+  } catch (e) { charactersMsg.value = e?.message || t('characters.saveFailed'); charactersMsgError.value = true; }
+  finally { charactersSaving.value = false; }
+}
+const forkCharChips = computed(() => charactersList.value.filter(c => c.name).slice(0, 8));
+
+onMounted(() => { loadEvents(true); loadCharacters(); });
 </script>
 
 <style scoped>
@@ -799,4 +1052,116 @@ onMounted(() => { loadEvents(true); });
 .tl-edit-med { flex: 1; min-width: 120px; border: 1px solid #E0E0E0; border-radius: 4px; padding: 6px 8px; font-size: 12px; color: #000; }
 .tl-edit-btns { display: flex; gap: 8px; margin-top: 10px; }
 .fork-desc { font-size: 12px; color: #444; line-height: 1.6; margin-bottom: 10px; padding: 8px 10px; background: #F9FAFB; border-radius: 4px; }
+
+/* t24: 进度面板 */
+.tl-progress-panel {
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 8px 0;
+  background: #F9FAFB;
+}
+.tl-progress-panel.fork {
+  margin-top: 14px;
+  border-top: 1px dashed #E5E7EB;
+  background: #FFF;
+}
+.tl-progress-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.tl-progress-title { font-size: 12px; font-weight: 700; }
+.tl-progress-stage { font-size: 11px; color: #666; flex: 1; }
+.tl-progress-elapsed { font-size: 11px; color: #999; font-family: 'JetBrains Mono', monospace; }
+.tl-progress-bar {
+  height: 6px;
+  background: #E5E7EB;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.tl-progress-fill {
+  height: 100%;
+  background: #FF5722;
+  transition: width 0.4s ease;
+}
+.tl-progress-meta { font-size: 11px; color: #999; margin-bottom: 6px; }
+.tl-progress-steps {
+  max-height: 132px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tl-progress-step {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: #444;
+  line-height: 1.5;
+  padding: 2px 4px;
+  background: #FFF;
+  border-left: 2px solid #E0E0E0;
+}
+.tl-progress-step:last-child { border-left-color: #FF5722; }
+.tl-progress-error {
+  font-size: 12px;
+  color: #D32F2F;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-top: 8px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+/* t24: 人物设定面板 */
+.tl-char-panel { margin-bottom: 10px; border: 1px solid #EAEAEA; border-radius: 6px; }
+.tl-char-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #F9FAFB;
+  border: none;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  font-family: inherit;
+  color: #000;
+}
+.tl-char-caret { color: #999; }
+.tl-char-count {
+  margin-left: auto;
+  background: #EEF2FF;
+  color: #4338CA;
+  border-radius: 10px;
+  font-size: 10px;
+  padding: 1px 8px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.tl-char-body { padding: 10px 12px; border-top: 1px solid #EAEAEA; display: flex; flex-direction: column; gap: 8px; }
+.tl-char-loading { font-size: 12px; color: #999; }
+.tl-char-row { display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap; }
+.tl-char-name { width: 120px; border: 1px solid #E0E0E0; border-radius: 4px; padding: 6px; font-size: 12px; color: #000; }
+.tl-char-traits { flex: 1; min-width: 140px; border: 1px solid #E0E0E0; border-radius: 4px; padding: 6px; font-size: 12px; color: #000; }
+.tl-char-desc { width: 100%; box-sizing: border-box; border: 1px solid #E0E0E0; border-radius: 4px; padding: 6px; font-size: 12px; resize: vertical; color: #000; }
+.tl-char-del { border: none; background: none; color: #999; font-size: 16px; cursor: pointer; }
+.tl-char-del:hover { color: #D32F2F; }
+.tl-char-actions { display: flex; gap: 8px; }
+/* t24: fork 参考人物 chips */
+.fork-char-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.fcc-label { font-size: 11px; color: #999; }
+.fcc-chip { font-size: 10px; background: #F3E8FF; color: #7C3AED; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+/* t24: 补充设定 */
+.tl-guide-box { border-top: 1px dashed #E5E7EB; margin-top: 12px; padding-top: 10px; }
+.tl-guide-box.done { background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 6px; padding: 10px; margin-top: 12px; }
+.tl-guide-title { font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+.tl-guide-title.continue { margin-top: 10px; }
+.tl-guide-row { display: flex; gap: 6px; }
+
 </style>

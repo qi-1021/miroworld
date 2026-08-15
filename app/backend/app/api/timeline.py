@@ -73,27 +73,57 @@ def future():
         return jsonify({"success": False, "error": f"未来事件生成失败: {e}"}), 500
 
 
+def _as_guidance_list(raw):
+    """把 guidance（可能为字符串或数组）规范化为 List[str]。"""
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(x) for x in raw if str(x).strip()]
+    return [str(raw)] if str(raw).strip() else []
+
+
 @timeline_bp.route('/fork', methods=['POST'])
 def fork():
-    """在某个历史事件点分叉做未来推演（后台任务）；复用 /status 轮询。"""
+    """在某个历史事件点分叉做未来推演（后台任务，支持 guidance 注入）；复用 /status 轮询。"""
     try:
         data = request.get_json(silent=True) or {}
         project_id = str(data.get('project_id') or '').strip()
         event_id = str(data.get('event_id') or '').strip()
         goal = str(data.get('goal') or '').strip()
+        guidance = _as_guidance_list(data.get('guidance'))
         horizon = data.get('horizon')
         if horizon is not None:
             try:
                 horizon = int(horizon)
             except (TypeError, ValueError):
                 horizon = None
-        task_id = timeline_service.start_fork(project_id, event_id, goal, horizon)
+        task_id = timeline_service.start_fork(project_id, event_id, goal, horizon, guidance)
         return jsonify({"success": True, "data": {"task_id": task_id}})
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
         logger.error(f"发起分叉推演失败: {e}")
         return jsonify({"success": False, "error": f"分叉推演失败: {e}"}), 500
+
+
+@timeline_bp.route('/fork/guidance', methods=['POST'])
+def fork_guidance():
+    """对运行中的 fork 任务注入/追加 guidance。
+    任务不存在 → 404；非 running / guidance 非法 → 400。"""
+    try:
+        data = request.get_json(silent=True) or {}
+        task_id = str(data.get('task_id') or '').strip()
+        guidance = str(data.get('guidance') or '').strip()
+        # 先判任务是否存在，区分 404/400
+        if not timeline_service.get_status(task_id):
+            return jsonify({"success": False, "error": "任务不存在"}), 404
+        result = timeline_service.inject_fork_guidance(task_id, guidance)
+        return jsonify({"success": True, "data": result})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"注入分叉 guidance 失败: {e}")
+        return jsonify({"success": False, "error": f"注入失败: {e}"}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +160,67 @@ def get_timeline(project_id):
     except Exception as e:
         logger.error(f"读取时间线失败: {e}")
         return jsonify({"success": False, "error": f"读取失败: {e}"}), 500
+
+
+@timeline_bp.route('/<project_id>/branch/continue', methods=['POST'])
+def branch_continue(project_id):
+    """从某分支当前末尾续推后续事件（后台任务）；复用 /status 轮询。"""
+    try:
+        data = request.get_json(silent=True) or {}
+        branch_id = str(data.get('branch_id') or '').strip()
+        # guidance 必填（Str 或 List[str]），去除空项
+        guidance = _as_guidance_list(data.get('guidance'))
+        if not guidance:
+            return jsonify({"success": False, "error": "guidance 不能为空"}), 400
+        if not timeline_service.branch_exists(project_id, branch_id):
+            return jsonify({"success": False, "error": "分支不存在"}), 404
+        horizon = data.get('horizon')
+        if horizon is not None:
+            try:
+                horizon = int(horizon)
+            except (TypeError, ValueError):
+                horizon = None
+        task_id = timeline_service.start_branch_continue(project_id, branch_id, list(guidance), horizon)
+        return jsonify({"success": True, "data": {"task_id": task_id}})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"发起分支续推失败: {e}")
+        return jsonify({"success": False, "error": f"续推失败: {e}"}), 500
+
+
+@timeline_bp.route('/<project_id>/characters', methods=['GET'])
+def get_characters(project_id):
+    """获取人物设定档案；空则从事件自动种子。"""
+    try:
+        profiles = timeline_service.ensure_characters(project_id)
+        return jsonify({"success": True, "data": {"project_id": project_id, "characters": profiles}, "count": len(profiles)})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"读取人物设定失败: {e}")
+        return jsonify({"success": False, "error": f"读取失败: {e}"}), 500
+
+
+@timeline_bp.route('/<project_id>/characters', methods=['PUT'])
+def put_characters(project_id):
+    """保存人物设定档案（name 非空否则 400）。"""
+    try:
+        data = request.get_json(silent=True) or {}
+        raw = data.get('characters') or []
+        if not isinstance(raw, list):
+            return jsonify({"success": False, "error": "characters 必须是数组"}), 400
+        if not any(isinstance(it, dict) and (it.get('name') or '').strip() for it in raw):
+            return jsonify({"success": False, "error": "characters 至少需要一个非空 name"}), 400
+        saved = timeline_service.save_characters(project_id, raw)
+        if not saved:
+            return jsonify({"success": False, "error": "保存人物设定失败"}), 500
+        return jsonify({"success": True, "data": {"project_id": project_id, "characters": timeline_service.load_characters(project_id)}})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"保存人物设定失败: {e}")
+        return jsonify({"success": False, "error": f"保存失败: {e}"}), 500
 
 
 @timeline_bp.route('/<project_id>/<event_id>', methods=['PATCH'])

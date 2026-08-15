@@ -35,6 +35,8 @@ TIMELINE_ROOT = os.path.join(_APP_DATA, 'world-timeline')
 MAX_CHUNK_CHARS = 2000
 # 单块最大 LLM 调用次数（1 原始 + 1 重试）
 MAX_LLM_ATTEMPTS = 2
+# 分叉推演批 1 完成后等待运行中补充设定的窗口（秒）
+FORK_GUIDANCE_WINDOW = 15.0
 
 # project_id 白名单（与 ProjectManager.create_project 的 proj_+12hex 一致）
 _PROJECT_ID_RE = re.compile(r'^proj_[0-9a-f]{12}$')
@@ -102,6 +104,136 @@ def _save_timeline(project_id: str, events: List[Dict[str, Any]]) -> bool:
     except Exception as e:
         logger.warning(f"写入时间线失败: {e}")
         return False
+
+
+# ---------------------------------------------------------------------------
+# 人物设定档案（characters）：data/world-timeline/<pid>/characters.json
+# 存储格式：{"project_id": "...", "characters": [{"name","traits","description"}]}
+# 供 fork/future/续推 提示词注入；_character_profiles 返回形如
+# "阿米娅（罗德岛领袖；温柔坚韧）" 的注入串（合并 traits/description <=60 字）。
+# ---------------------------------------------------------------------------
+_CHAR_PROFILE_MAX = 60
+_CHAR_INJECT_LIMIT = 12
+_CHAR_SEED_LIMIT = 30
+_CHAR_TRAITS_MAX = 120
+_CHAR_DESC_MAX = 300
+
+
+def _characters_path(project_id: str) -> str:
+    return os.path.join(TIMELINE_ROOT, validate_project_id(project_id), "characters.json")
+
+
+def load_characters(project_id: str) -> List[Dict[str, Any]]:
+    """读取人物设定档案（存储格式 dict 列表）；不存在/失败返回 []。兼容旧版裸数组。"""
+    try:
+        path = _characters_path(project_id)
+        if not os.path.exists(path):
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        items = data.get("characters") if isinstance(data, dict) else data
+        if not isinstance(items, list):
+            return []
+        out = []
+        for it in items:
+            if isinstance(it, dict) and it.get("name"):
+                out.append({
+                    "name": str(it.get("name"))[:40],
+                    "traits": str(it.get("traits") or "")[:_CHAR_TRAITS_MAX],
+                    "description": str(it.get("description") or "")[:_CHAR_DESC_MAX],
+                })
+        return out
+    except Exception as e:
+        logger.warning(f"读取人物设定失败: {e}")
+        return []
+
+
+def save_characters(project_id: str, profiles: List[Dict[str, Any]]) -> bool:
+    """保存人物设定档案到 characters.json（校验 name 非空、其余字段截断）。"""
+    try:
+        path = _characters_path(project_id)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        clean = []
+        seen = set()
+        for it in profiles:
+            if not isinstance(it, dict) or not it.get("name"):
+                continue
+            name = str(it.get("name"))[:40]
+            if not name.strip() or name in seen:
+                continue
+            seen.add(name)
+            clean.append({
+                "name": name,
+                "traits": str(it.get("traits") or "")[:_CHAR_TRAITS_MAX],
+                "description": str(it.get("description") or "")[:_CHAR_DESC_MAX],
+            })
+        payload = {"project_id": project_id, "characters": clean}
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        logger.warning(f"写入人物设定失败: {e}")
+        return False
+
+
+def ensure_characters(project_id: str) -> List[Dict[str, Any]]:
+    """读取人物设定；档案为空则从事件 characters 自动种子（去重、按出现次数降序、取前30，
+    traits/description 为空串）并落盘。返回 dict 列表。"""
+    profiles = load_characters(project_id)
+    if profiles:
+        return profiles
+    data = load_timeline(project_id, None)
+    events = data.get("events", [])
+    counts = {}
+    for e in events:
+        for c in (e.get("characters") or []):
+            c = str(c).strip()
+            if c:
+                counts[c] = counts.get(c, 0) + 1
+    seeded = []
+    for name, _cnt in sorted(counts.items(), key=lambda kv: -kv[1]):
+        seeded.append({"name": name, "traits": "", "description": ""})
+        if len(seeded) >= _CHAR_SEED_LIMIT:
+            break
+    if seeded:
+        save_characters(project_id, seeded)
+    return seeded
+
+
+def _character_profiles(project_id: str, limit: int = _CHAR_INJECT_LIMIT) -> List[str]:
+    """返回提示词注入用的人物设定串列表（读取或自动种子），形如
+    "阿米娅（罗德岛领袖；温柔坚韧）"，traits/description 合并后 <=60 字；档案为空返回 []。"""
+    profiles = ensure_characters(project_id)
+    out = []
+    for p in profiles[:max(1, limit)]:
+        name = str(p.get("name") or "").strip()
+        if not name:
+            continue
+        traits = str(p.get("traits") or "").strip()
+        desc = str(p.get("description") or "").strip()
+        if traits and desc:
+            body = traits + "；" + desc
+        else:
+            body = traits or desc
+        line = f"{name}（{body}）" if body else name
+        out.append(line)
+    return out
+
+
+def _character_profiles_block(project_id: str, limit: int = _CHAR_INJECT_LIMIT) -> str:
+    """生成 "人物设定：\n- name（traits；description）" 段，供提示词注入；空返回空串。"""
+    items = _character_profiles(project_id, limit)
+    if not items:
+        return ""
+    lines = ["人物设定："]
+    for it in items:
+        lines.append(f"- {it}")
+    return "\n".join(lines)
+
+
+def _trunc_summary(text: str, limit: int = 40) -> str:
+    s = str(text or "").strip()
+    return s[:limit] if len(s) > limit else s
 
 
 # ---------------------------------------------------------------------------
@@ -362,9 +494,72 @@ def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> List[str]:
 
 # ---------------------------------------------------------------------------
 # 任务状态管理（进程内存）
+#
+# 每个任务 dict 除旧字段（status/total_chunks/done_chunks/llm_ok/heuristic/
+# message，保持前端兼容）外，新增：
+#   stage     : str   当前阶段名（中文）
+#   steps     : List[str]  最近 50 条步骤日志，形如 "[HH:MM:SS] 文本"
+#   progress  : int   0-100 进度
+#   started_at: str  ISO 时间串（任务创建时写入）
+#   elapsed   : float 秒，每次更新时刷新 = now - started_at
+#   error     : str   status=failed 时写入失败原因；正常为空
 # ---------------------------------------------------------------------------
 _tasks: Dict[str, Dict[str, Any]] = {}
 _task_lock = threading.Lock()
+_STEPS_MAX = 50
+
+
+def _new_task(prefix: str, message: str) -> str:
+    """创建后台任务 dict，返回 task_id（统一打点基准）。"""
+    task_id = f"{prefix}_{uuid.uuid4().hex[:12]}"
+    now = datetime.now()
+    with _task_lock:
+        _tasks[task_id] = {
+            "status": "running",
+            "total_chunks": 0, "done_chunks": 0, "llm_ok": 0, "heuristic": 0,
+            "message": message,
+            "stage": "任务已创建",
+            "steps": [],
+            "progress": 0,
+            "started_at": now.isoformat(timespec="seconds"),
+            "elapsed": 0.0,
+            "error": "",
+        }
+    return task_id
+
+
+def _elapsed_seconds(task: Dict[str, Any]) -> float:
+    started = task.get("started_at")
+    if not started:
+        return 0.0
+    try:
+        return max(0.0, (datetime.now() - datetime.fromisoformat(str(started))).total_seconds())
+    except Exception:
+        return 0.0
+
+
+def _update_task(task_id: str, **kw) -> None:
+    """更新任务字段并刷新 elapsed（带锁，线程安全）。"""
+    with _task_lock:
+        if task_id not in _tasks:
+            return
+        task = _tasks[task_id]
+        task.update(kw)
+        task["elapsed"] = _elapsed_seconds(task)
+
+
+def _task_log(task_id: str, text: str) -> None:
+    """追加一条步骤日志（自动带 [HH:MM:SS] 时间戳，自动截断到 50 条），并刷新 elapsed。"""
+    ts = datetime.now().strftime("%H:%M:%S")
+    with _task_lock:
+        if task_id not in _tasks:
+            return
+        task = _tasks[task_id]
+        steps = task.setdefault("steps", [])
+        steps.append(f"[{ts}] {text}")
+        if len(steps) > _STEPS_MAX:
+            del steps[:-_STEPS_MAX]
+        task["elapsed"] = _elapsed_seconds(task)
 
 
 def get_status(task_id: str) -> Optional[Dict[str, Any]]:
@@ -381,10 +576,9 @@ def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
     heuristic_count = 0
     all_events: List[Dict[str, Any]] = []
 
+    # 局部 _update：刷新 elapsed 的便捷封装
     def _update(**kw):
-        with _task_lock:
-            if task_id in _tasks:
-                _tasks[task_id].update(kw)
+        _update_task(task_id, **kw)
 
     try:
         # 读源文本
@@ -395,20 +589,23 @@ def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
 
         chunks = chunk_text(text)
         total = len(chunks)
-        _update(total_chunks=total, done_chunks=0, status="running", message="开始抽取")
+        _task_log(task_id, f"源文本已分为 {total} 块")
+        _update(total_chunks=total, done_chunks=0, status="running", message="开始抽取",
+                stage=f"准备源文本（共 {total} 块）", progress=0)
 
         llm = None
         try:
             llm = _build_llm_client()
         except Exception as e:
             logger.warning(f"构造 LLM 客户端失败，全部走启发式: {e}")
-            llm = None
+            _task_log(task_id, "LLM 客户端不可用，改用启发式抽取")
 
         seq = 0
         for i, chunk in enumerate(chunks):
             used = "heuristic"
             events = None
             if llm is not None:
+                _task_log(task_id, f"第 {i + 1}/{total} 块开始 LLM 抽取")
                 for attempt in range(MAX_LLM_ATTEMPTS):
                     try:
                         events = _llm_extract_chunk(llm, chunk)
@@ -418,8 +615,10 @@ def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
                     except Exception:
                         if attempt == 0:
                             logger.warning(f"[{task_id}] chunk {i} LLM 失败，重试 {attempt+1}")
+                            _task_log(task_id, f"第 {i + 1} 块 LLM 失败，重试")
                         else:
                             logger.warning(f"[{task_id}] chunk {i} 重试仍失败，走启发式")
+                            _task_log(task_id, f"第 {i + 1} 块重试仍失败，降级启发式")
             if events is None:
                 events = _heuristic_extract_chunk(chunk, i, source)
                 used = "heuristic"
@@ -432,27 +631,39 @@ def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
                 llm_ok_count += 1
             else:
                 heuristic_count += 1
+            pct = round((i + 1) / total * 100) if total else 0
             _update(done_chunks=i + 1, llm_ok=llm_ok_count, heuristic=heuristic_count,
-                    message=f"已处理 {i + 1}/{total} 块")
+                    progress=pct,
+                    message=f"已处理 {i + 1}/{total} 块",
+                    stage=f"正在抽取 {i + 1}/{total} 块（{'LLM' if used == 'llm' else '启发式'}）")
 
         # 排序 + 合并去重 + 写库
+        _task_log(task_id, "归一化并排序事件")
+        _update(stage="写入时间线", progress=98)
         all_events.sort(key=lambda e: (e.get("sort_lower") or 0))
         existing = load_timeline(project_id, None).get("events", [])
         existing_merged = _merge_events(existing, all_events)
         _save_timeline(project_id, existing_merged)
 
         if total == 0:
-            _update(status="completed", done_chunks=0, llm_ok=0, heuristic=0,
-                    message="源文本为空，未抽取到事件")
+            _task_log(task_id, "源文本为空，未抽取到事件")
+            _update(status="completed", done_chunks=0, llm_ok=0, heuristic=0, progress=100,
+                    stage="完成", message="源文本为空，未抽取到事件")
         elif heuristic_count > 0:
-            _update(status="partial_failed", message=f"完成，{llm_ok_count} 块 LLM 抽取、{heuristic_count} 块启发式降级")
+            _task_log(task_id, f"完成：{llm_ok_count} 块 LLM、{heuristic_count} 块启发式降级（共 {len(all_events)} 事件）")
+            _update(status="partial_failed", progress=100, stage="完成（部分降级）",
+                    message=f"完成，{llm_ok_count} 块 LLM 抽取、{heuristic_count} 块启发式降级")
         else:
-            _update(status="completed", message=f"抽取完成，共 {len(all_events)} 个事件")
+            _task_log(task_id, f"抽取完成，共 {len(all_events)} 个事件")
+            _update(status="completed", progress=100, stage="完成",
+                    message=f"抽取完成，共 {len(all_events)} 个事件")
     except ValueError as e:
-        _update(status="failed", message=str(e))
+        _task_log(task_id, f"失败：{e}")
+        _update(status="failed", error=str(e), stage="失败", message=str(e))
     except Exception as e:
         logger.error(f"[{task_id}] 抽取失败: {e}")
-        _update(status="failed", message=str(e))
+        _task_log(task_id, f"失败：{e}")
+        _update(status="failed", error=str(e), stage="失败", message=str(e))
 
 
 def _merge_events(existing: List[Dict[str, Any]], new: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -488,12 +699,7 @@ def start_extract(project_id: str, source: str) -> str:
     validate_project_id(project_id)
     if source not in ("story", "bg"):
         raise ValueError("source 必须是 story 或 bg")
-    task_id = f"tl_task_{uuid.uuid4().hex[:12]}"
-    with _task_lock:
-        _tasks[task_id] = {
-            "status": "running", "total_chunks": 0, "done_chunks": 0,
-            "llm_ok": 0, "heuristic": 0, "message": "任务已创建",
-        }
+    task_id = _new_task("tl_task", "任务已创建")
     threading.Thread(target=_extract_task_body, args=(project_id, source, task_id),
                      daemon=True).start()
     return task_id
@@ -519,15 +725,22 @@ def _future_extract_body(project_id: str, task_id: str, goal: str, horizon: Opti
     with _task_lock:
         _tasks[task_id]["status"] = "running"
     try:
+        _task_log(task_id, "构建未来推演上下文")
+        _update_task(task_id, stage="构建推演上下文", progress=20)
         llm = _build_llm_client()
         context = load_timeline(project_id, None)
         events = context.get("events", [])
-        ctx_summary = "\n".join([f"- {e.get('summary')}" for e in events[:40]]) or "（无）"
+        ctx_summary = "\n".join([f"- {_trunc_summary(e.get('summary'))}" for e in events[:40]]) or "（无）"
         horizon_n = horizon or 5
+        chars_block = _inject_characters_block(project_id)
         user = (
             f"任务目标：{goal or '无'}\n时间跨度（年）：{horizon_n}\n"
-            f"当前时间线事件：\n{ctx_summary}\n请生成 3-6 条未来事件，输出 JSON 数组。"
+            f"当前时间线事件：\n{ctx_summary}\n"
+            + (chars_block + "\n" if chars_block else "")
+            + "请生成 3-6 条未来事件，输出 JSON 数组。"
         )
+        _task_log(task_id, "调用未来模型")
+        _update_task(task_id, stage="调用推演模型", progress=50)
         resp = llm.chat(
             messages=[
                 {"role": "system", "content": _FUTURE_SYSTEM},
@@ -535,6 +748,8 @@ def _future_extract_body(project_id: str, task_id: str, goal: str, horizon: Opti
             ],
             temperature=0.6, max_tokens=4096,
         )
+        _task_log(task_id, "解析生成结果")
+        _update_task(task_id, stage="解析生成结果", progress=75)
         arr = _extract_json_array(resp)
         if not arr:
             raise ValueError("future 事件生成失败：LLM 未返回数组")
@@ -555,24 +770,22 @@ def _future_extract_body(project_id: str, task_id: str, goal: str, horizon: Opti
         for i, ev in enumerate(new_events):
             ev["sort_lower"] = past_max + 1.0 + i
             ev["sort_upper"] = ev["sort_lower"]
+        _task_log(task_id, "写入时间线")
+        _update_task(task_id, stage="写入时间线", progress=90)
         merged = _merge_events(events, new_events)
         _save_timeline(project_id, merged)
-        with _task_lock:
-            _tasks[task_id].update(status="completed", message=f"已追加 {len(new_events)} 条未来事件")
+        _task_log(task_id, f"已追加 {len(new_events)} 条未来事件")
+        _update_task(task_id, status="completed", progress=100, stage="完成",
+                     message=f"已追加 {len(new_events)} 条未来事件")
     except Exception as e:
         logger.error(f"[{task_id}] future 生成失败: {e}")
-        with _task_lock:
-            _tasks[task_id].update(status="failed", message=str(e))
+        _task_log(task_id, f"失败：{e}")
+        _update_task(task_id, status="failed", error=str(e), stage="失败", message=str(e))
 
 
 def start_future(project_id: str, goal: str, horizon: Optional[int]) -> str:
     validate_project_id(project_id)
-    task_id = f"tl_future_{uuid.uuid4().hex[:12]}"
-    with _task_lock:
-        _tasks[task_id] = {
-            "status": "running", "total_chunks": 0, "done_chunks": 0,
-            "llm_ok": 0, "heuristic": 0, "message": "生成未来事件中",
-        }
+    task_id = _new_task("tl_future", "生成未来事件中")
     threading.Thread(target=_future_extract_body,
                      args=(project_id, task_id, goal or "", horizon),
                      daemon=True).start()
@@ -580,7 +793,8 @@ def start_future(project_id: str, goal: str, horizon: Optional[int]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 时间点分叉推演（fork）：在某历史事件点生成分支未来事件
+# 时间点分叉推演（fork）：在某历史事件点生成分支未来事件（分批 + guidance 注入）
+# guidance 为 List[str]（每条补充设定），事件携带 branch_goal / 生效时的全部 guidance 列表。
 # ---------------------------------------------------------------------------
 _FORK_SYSTEM = (
     "你是一名世界推演作者。请基于给定的分叉前提与时间线上下文，生成若干条分支未来的事件。"
@@ -588,87 +802,336 @@ _FORK_SYSTEM = (
     "time_kind(枚举:year/phase/period/unspecified)、year(可推测填整数否则null)、"
     "location_text、location_name、ev_type(枚举同前)、confidence(0-1)、characters。"
 )
+_FORK_CONT_SYSTEM = (
+    "你是一名世界推演作者。请基于给定的分支前提与已生成的分支事件，续写若干条后续分支事件。"
+    "仅输出一个 JSON 数组。每事件含字段：summary(一句话)、time_text(相对时间表达)、"
+    "time_kind(枚举:year/phase/period/unspecified)、year(可推测填整数否则null)、"
+    "location_text、location_name、ev_type(枚举同前)、confidence(0-1)、characters。"
+)
+
+
+def _coerce_guidance(guidance) -> List[str]:
+    """把 guidance（str 或 List[str]）规范化为非空字符串列表。"""
+    if guidance is None:
+        return []
+    if isinstance(guidance, list):
+        return [str(g).strip() for g in guidance if str(g).strip()]
+    s = str(guidance).strip()
+    return [s] if s else []
+
+
+def _render_guidance_list(guidance_list) -> str:
+    """把补充设定列表渲染成逐条 "- " 文本；空返回空串。"""
+    items = [str(g).strip() for g in (guidance_list or []) if str(g).strip()]
+    if not items:
+        return ""
+    return "\n".join(f"- {it}" for it in items)
+
+
+def _build_branch_events(arr, project_id, branch_id, branch_point, branch_goal,
+                         guidance_list, sort_base, seq):
+    """把 LLM 数组归一化为 branch 事件（带 branch_id/branch_point/branch_goal/guidance 列表，
+    sort 从 sort_base 起递增）。返回 (事件列表, 新 seq)。"""
+    out = []
+    i = 0
+    g_list = list(guidance_list or []) if guidance_list else []
+    for raw in arr:
+        if not isinstance(raw, dict):
+            continue
+        ev = _normalize_event(raw, project_id, "branch", 0, "llm", seq)
+        ev["ev_type"] = "future" if raw.get("ev_type") in (None, "", "other") else norm.normalize_ev_type(raw.get("ev_type"))
+        ev["kind"] = "branch"
+        ev["branch_id"] = branch_id
+        ev["branch_point"] = branch_point
+        ev["branch_goal"] = branch_goal
+        ev["guidance"] = list(g_list)
+        ev["sort_lower"] = sort_base + i
+        ev["sort_upper"] = sort_base + i
+        out.append(ev)
+        seq += 1
+        i += 1
+    return out, seq
+
+
+def _fork_call(llm, system, user):
+    """单次 fork/续推 LLM 调用（允许 1 次重试），返回事件数组或 None。"""
+    for attempt in range(2):
+        try:
+            resp = llm.chat(
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                temperature=0.7, max_tokens=4096,
+            )
+            arr = _extract_json_array(resp)
+            if arr:
+                return arr
+        except Exception:
+            if attempt == 0:
+                continue
+    return None
+
+
+def _build_fork_context(events, branch_point):
+    bp_sort = float(branch_point.get("sort_lower") or 0.0)
+    after = [e for e in events if (e.get("sort_lower") or 0.0) > bp_sort]
+    ctx_lines = [f"- [分叉点] {_trunc_summary(branch_point.get('summary'))}"]
+    for e in after[:12]:
+        ctx_lines.append(f"- {_trunc_summary(e.get('summary'))}")
+    ctx = "\n".join(ctx_lines) or _trunc_summary(branch_point.get('summary', ''))
+    return bp_sort, ctx
+
+
+def _inject_characters_block(project_id):
+    """人物设定注入段（<=2600 约束的一部分）。"""
+    return _character_profiles_block(project_id, _CHAR_INJECT_LIMIT)
+
+
+def _preserve_prompt_budget(user_parts):
+    return user_parts
 
 
 def _fork_extract_body(project_id: str, event_id: str, task_id: str,
-                       goal: str, horizon: Optional[int]) -> None:
+                       goal: str, horizon: Optional[int],
+                       guidance: Optional[List[str]]) -> None:
     with _task_lock:
         _tasks[task_id]["status"] = "running"
     try:
+        _task_log(task_id, "构建分叉推演上下文")
+        _update_task(task_id, stage="构建推演上下文", progress=10)
         llm = _build_llm_client()
         data = load_timeline(project_id, None)
         events = data.get("events", [])
         branch_point = next((e for e in events if e.get("id") == event_id), None)
         if branch_point is None:
             raise ValueError(f"分叉点事件不存在: {event_id}")
-
-        bp_sort = float(branch_point.get("sort_lower") or 0.0)
-        # 分叉基准 = 分叉点之后；分支事件 sort 必须严格大于分叉点
+        bp_sort, ctx = _build_fork_context(events, branch_point)
         base = bp_sort + 1.0
-        # 上下文：分叉点事件 + 其后的事件（取前 30 条供 LLM 参考）
-        after = [e for e in events if (e.get("sort_lower") or 0.0) > bp_sort]
-        ctx_lines = [f"- [分叉点] {branch_point.get('summary')}"]
-        for e in after[:30]:
-            ctx_lines.append(f"- {e.get('summary')}")
-        ctx = "\n".join(ctx_lines) or branch_point.get('summary', '')
-
         horizon_n = horizon or 5
-        user = (
-            f"分叉前提事件：{branch_point.get('summary')}\n"
-            f"假设该事件走向不同：{goal or '（自由发散）'}\n"
-            f"时间跨度（年）：{horizon_n}\n当前时间线（分叉点及之后）：\n{ctx}"
-            f"\n请生成 3-6 条该分支的未来事件，输出 JSON 数组。"
-        )
-        resp = llm.chat(
-            messages=[
-                {"role": "system", "content": _FORK_SYSTEM},
-                {"role": "user", "content": user},
-            ],
-            temperature=0.7, max_tokens=4096,
-        )
-        arr = _extract_json_array(resp)
-        if not arr:
-            raise ValueError("分叉推演失败：LLM 未返回数组")
-
+        branch_goal = goal or "（自由发散）"
+        chars_block = _inject_characters_block(project_id)
         branch_id = f"branch_{uuid.uuid4().hex[:12]}"
         seq = len(events)
-        new_events = []
-        for i, raw in enumerate(arr):
-            if not isinstance(raw, dict):
-                continue
-            ev = _normalize_event(raw, project_id, "branch", 0, "llm", seq)
-            ev["ev_type"] = "future" if raw.get("ev_type") in (None, "", "other") else norm.normalize_ev_type(raw.get("ev_type"))
-            ev["kind"] = "branch"
-            ev["branch_id"] = branch_id
-            ev["branch_point"] = event_id
-            ev["sort_lower"] = base + i
-            ev["sort_upper"] = base + i
-            new_events.append(ev)
-            seq += 1
-        merged = _merge_events(events, new_events)
+        all_new = []
+
+        # 初始 guidance（启动时传入）
+        initial_guidance = [str(g).strip() for g in (guidance or []) if str(g).strip()]
+        g_prefix = "已有的补充设定：\n" + _render_guidance_list(initial_guidance) + "\n" if initial_guidance else ""
+
+        # ---- 批 1：前半段 2-3 条 ----
+        user1 = (
+            f"分叉前提事件：{_trunc_summary(branch_point.get('summary'))}\n"
+            f"假设该事件走向不同：{goal or '（自由发散）'}\n"
+            f"时间跨度（年）：{horizon_n}\n当前时间线（分叉点及之后）：\n{ctx}\n"
+            + g_prefix
+            + (chars_block + "\n" if chars_block else "")
+            + "请先生成前半段 2-3 条该分支的未来事件，输出 JSON 数组。"
+        )
+        _task_log(task_id, "调用推演模型（第 1/2 批）")
+        _update_task(task_id, stage="调用推演模型（第 1/2 批）", progress=40)
+        arr1 = _fork_call(llm, _FORK_SYSTEM, user1)
+        if not arr1:
+            raise ValueError("分叉推演失败：前半段 LLM 未返回数组（或无法解析 JSON）")
+        evs1, seq = _build_branch_events(arr1, project_id, branch_id, event_id,
+                                          branch_goal, initial_guidance, base, seq)
+        all_new.extend(evs1)
+        consumed = len(initial_guidance)
+        _task_log(task_id, f"前半段生成 {len(evs1)} 条")
+
+        # ---- 批 2：短暂等待窗口，允许用户运行中注入补充设定 ----
+        # 批 1 完成后等待 FORK_GUIDANCE_WINDOW 秒：期间用户可通过
+        # POST /api/timeline/fork/guidance 注入引导；一旦检测到新增即立即续写。
+        _update_task(task_id, stage="等待补充设定（约 15 秒，可在此注入）", progress=60)
+        _task_log(task_id, "前半段完成，等待补充设定（约 15 秒，可注入引导）…")
+        merged_guidance = list(initial_guidance)
+        cur = list(merged_guidance)
+        deadline = time.time() + FORK_GUIDANCE_WINDOW
+        while time.time() < deadline:
+            with _task_lock:
+                cur = list(_tasks.get(task_id, {}).get("guidance") or [])
+            if len(cur) > len(merged_guidance):
+                merged_guidance = [str(g).strip() for g in cur if str(g).strip()]
+                _task_log(task_id, "检测到补充设定，立即续写后半段")
+                break
+            time.sleep(0.5)
+        else:
+            merged_guidance = [str(g).strip() for g in cur if str(g).strip()]
+        new_items = merged_guidance[consumed:]
+        _task_log(task_id, "调用续写模型（第 2/2 批）")
+        _update_task(task_id, stage="调用推演模型（第 2/2 批）", progress=70)
+
+        ev_so_far = "\n".join([f"- {_trunc_summary(e.get('summary'))}" for e in all_new]) or "（无）"
+        g_line = "补充设定：\n" + _render_guidance_list(merged_guidance) + "\n" if merged_guidance else ""
+        g_new_line = ("补充设定（运行中新增）：\n" + _render_guidance_list(new_items) + "\n") if new_items else ""
+        user2 = (
+            f"分支前提：{_trunc_summary(branch_point.get('summary'))}\n"
+            f"分支目标：{branch_goal}\n"
+            f"已生成分支事件：\n{ev_so_far}\n"
+            + g_line
+            + g_new_line
+            + (chars_block + "\n" if chars_block else "")
+            + "请续写该分支的后半段 2-3 条未来事件，保持与前段连续，输出 JSON 数组。"
+        )
+        try:
+            arr2 = _fork_call(llm, _FORK_CONT_SYSTEM, user2)
+            if arr2:
+                evs2, seq = _build_branch_events(arr2, project_id, branch_id, event_id,
+                                                  branch_goal, merged_guidance, base + len(all_new), seq)
+                all_new.extend(evs2)
+                _task_log(task_id, f"后半段生成 {len(evs2)} 条")
+            else:
+                _task_log(task_id, "后半段结果为空或解析失败，保留前半段")
+        except Exception as e2:
+            _task_log(task_id, f"后半段失败：{e2}，保留前半段")
+
+        _task_log(task_id, "写入时间线")
+        _update_task(task_id, stage="写入时间线", progress=90)
+        merged = _merge_events(events, all_new)
         _save_timeline(project_id, merged)
-        with _task_lock:
-            _tasks[task_id].update(status="completed",
-                                   message=f"分叉推演完成，追加 {len(new_events)} 条分支事件（branch={branch_id}）")
+        _task_log(task_id, f"已追加 {len(all_new)} 条分支事件（branch={branch_id}）")
+        # 若批 2 未产出（仅前半段），标 partial 完成
+        if len(all_new) == len(evs1) and evs1:
+            _update_task(task_id, status="completed", progress=100, stage="完成（前半段）",
+                         branch_id=branch_id, event_count=len(all_new),
+                         guidance=list(merged_guidance),
+                         partial=True,
+                         message="前半段已完成，可继续补充设定续推")
+        else:
+            _update_task(task_id, status="completed", progress=100, stage="完成",
+                         branch_id=branch_id, event_count=len(all_new),
+                         guidance=list(merged_guidance),
+                         message=f"分叉推演完成，追加 {len(all_new)} 条分支事件（branch={branch_id}）")
     except Exception as e:
         logger.error(f"[{task_id}] fork 推演失败: {e}")
-        with _task_lock:
-            _tasks[task_id].update(status="failed", message=str(e))
+        _task_log(task_id, f"失败：{e}")
+        _update_task(task_id, status="failed", error=str(e), stage="失败", message=str(e))
 
 
-def start_fork(project_id: str, event_id: str, goal: str, horizon: Optional[int]) -> str:
-    """在 event_id 事件点发起分叉推演（后台任务），返回 task_id；复用 /status 轮询。"""
+def start_fork(project_id: str, event_id: str, goal: str, horizon: Optional[int],
+               guidance: Optional[List[str]] = None) -> str:
+    """在 event_id 事件点发起分叉推演（后台任务，分批+guidance 注入），返回 task_id。"""
     validate_project_id(project_id)
     if not event_id or not str(event_id).strip():
         raise ValueError("缺少 event_id")
-    task_id = f"tl_fork_{uuid.uuid4().hex[:12]}"
+    g_list = _coerce_guidance(guidance)
+    task_id = _new_task("tl_fork", "分叉推演中")
     with _task_lock:
-        _tasks[task_id] = {
-            "status": "running", "total_chunks": 0, "done_chunks": 0,
-            "llm_ok": 0, "heuristic": 0, "message": "分叉推演中",
-        }
+        _tasks[task_id]["guidance"] = list(g_list)
+        _tasks[task_id]["guidance_consumed"] = 0
     threading.Thread(target=_fork_extract_body,
-                     args=(project_id, str(event_id).strip(), task_id, goal or "", horizon),
+                     args=(project_id, str(event_id).strip(), task_id,
+                           goal or "", horizon, list(g_list)),
+                     daemon=True).start()
+    return task_id
+
+
+def inject_fork_guidance(task_id: str, guidance: str) -> Dict[str, Any]:
+    """对运行中的 fork 任务注入/追加一条 guidance（≤200 字）。"""
+    guidance = str(guidance or "").strip()
+    if not guidance:
+        raise ValueError("guidance 不能为空")
+    if len(guidance) > 200:
+        raise ValueError("guidance 过长（≤200 字）")
+    with _task_lock:
+        task = _tasks.get(task_id)
+    if not task:
+        raise ValueError("任务不存在")
+    if task.get("status") != "running" or not str(task_id).startswith("tl_fork_"):
+        raise ValueError("推演已结束，可在分支上继续补充设定续推")
+    with _task_lock:
+        cur = list(_tasks[task_id].get("guidance") or [])
+        cur.append(guidance)
+        _tasks[task_id]["guidance"] = cur
+        _tasks[task_id]["message"] = "已收到补充设定"
+        _tasks[task_id]["elapsed"] = _elapsed_seconds(_tasks[task_id])
+    _task_log(task_id, f"收到补充设定：{guidance[:40]}")
+    return {"accepted": "running", "guidance": list(cur)}
+
+
+# ---------------------------------------------------------------------------
+# 分支续推（branch continue）：从某分支当前末尾续推后续事件
+# ---------------------------------------------------------------------------
+def _fork_continue_body(project_id: str, branch_id: str, task_id: str,
+                        guidance: Optional[List[str]], horizon: Optional[int]) -> None:
+    with _task_lock:
+        _tasks[task_id]["status"] = "running"
+    try:
+        _task_log(task_id, "构建续推上下文")
+        _update_task(task_id, stage="构建续推上下文", progress=20)
+        llm = _build_llm_client()
+        data = load_timeline(project_id, None)
+        events = data.get("events", [])
+        branch_events = [e for e in events if e.get("branch_id") == branch_id]
+        if not branch_events:
+            raise ValueError(f"分支不存在: {branch_id}")
+        max_sort = max((float(e.get("sort_lower") or 0.0)) for e in branch_events)
+        base = max_sort + 1.0
+        bp = branch_events[0].get("branch_point", "")
+        branch_goal = branch_events[0].get("branch_goal", "")
+        existing_g = list(branch_events[0].get("guidance") or []) if branch_events else []
+        new_g = [str(g).strip() for g in (guidance or []) if str(g).strip()]
+        merged_g = list(dict.fromkeys(existing_g + new_g))
+        bp_summary = ""
+        bp_ev = next((e for e in events if e.get("id") == bp), None)
+        if bp_ev is not None:
+            bp_summary = _trunc_summary(bp_ev.get("summary"))
+        sorted_branch = sorted(branch_events, key=lambda x: x.get('sort_lower') or 0)
+        ev_ctx_lines = [f"- {_trunc_summary(e.get('summary'))}" for e in sorted_branch[:12]]
+        ev_ctx = "\n".join(ev_ctx_lines) if ev_ctx_lines else "（无）"
+        chars_block = _inject_characters_block(project_id)
+        horizon_n = horizon or 5
+        g_line = "补充设定：\n" + _render_guidance_list(merged_g) + "\n" if merged_g else ""
+        g_new_line = ("补充设定（新增）：\n" + _render_guidance_list(new_g) + "\n") if new_g else ""
+        user = (
+            f"分叉点：{bp_summary or '（未知）'}\n"
+            f"分支目标：{branch_goal or ''}\n已生成分支事件：\n{ev_ctx}\n"
+            f"时间跨度（年）：{horizon_n}\n"
+            + g_line
+            + g_new_line
+            + (chars_block + "\n" if chars_block else "")
+            + "请续写该分支 2-4 条后续事件，保持连续，输出 JSON 数组。"
+        )
+        _task_log(task_id, "调用续推模型")
+        _update_task(task_id, stage="调用续推模型", progress=55)
+        arr = _fork_call(llm, _FORK_CONT_SYSTEM, user)
+        if not arr:
+            raise ValueError("续推失败：LLM 未返回数组（或无法解析 JSON）")
+        seq = len(events)
+        new_events, seq = _build_branch_events(arr, project_id, branch_id, bp,
+                                                branch_goal, merged_g, base, seq)
+        _task_log(task_id, "写入时间线")
+        _update_task(task_id, stage="写入时间线", progress=90)
+        merged = _merge_events(events, new_events)
+        _save_timeline(project_id, merged)
+        _task_log(task_id, f"已续推 {len(new_events)} 条")
+        _update_task(task_id, status="completed", progress=100, stage="完成",
+                     branch_id=branch_id, event_count=len(new_events),
+                     guidance=list(merged_g),
+                     message=f"分支续推完成，追加 {len(new_events)} 条")
+    except Exception as e:
+        logger.error(f"[{task_id}] branch continue 失败: {e}")
+        _task_log(task_id, f"失败：{e}")
+        _update_task(task_id, status="failed", error=str(e), stage="失败", message=str(e))
+
+
+def branch_exists(project_id: str, branch_id: str) -> bool:
+    """判断某分支（kind='branch' 且 branch_id 匹配）是否存在事件。"""
+    try:
+        data = load_timeline(project_id, None)
+        return any(e.get("branch_id") == branch_id for e in data.get("events", []))
+    except Exception:
+        return False
+
+
+def start_branch_continue(project_id: str, branch_id: str, guidance=None,
+                          horizon: Optional[int] = None) -> str:
+    """从某分支当前末尾续推（后台任务 tl_forkcont_*），返回 task_id；复用 /status。"""
+    validate_project_id(project_id)
+    branch_id = str(branch_id or "").strip()
+    if not branch_id:
+        raise ValueError("缺少 branch_id")
+    g_list = _coerce_guidance(guidance)
+    task_id = _new_task("tl_forkcont", "分支续推中")
+    threading.Thread(target=_fork_continue_body,
+                     args=(project_id, branch_id, task_id, list(g_list), horizon),
                      daemon=True).start()
     return task_id
 
@@ -724,9 +1187,9 @@ def patch_event(project_id: str, event_id: str, patch: Dict[str, Any]) -> Option
     if isinstance(patch, dict):
         for k, v in patch.items():
             if k == "sort_lower":
-                target["sort_lower"] = float(v)
+                target["sort_lower"] = _float_or(v, target.get("sort_lower", 0.0))
             elif k == "sort_upper":
-                target["sort_upper"] = float(v)
+                target["sort_upper"] = _float_or(v, target.get("sort_upper", 0.0))
             elif k == "year":
                 target["year"] = _int_or_none(v)
                 if v is not None and v != "":
@@ -749,7 +1212,6 @@ def patch_event(project_id: str, event_id: str, patch: Dict[str, Any]) -> Option
                 target[k] = _str_list(v)
             elif k == "confidence":
                 target[k] = _float_or(v, 0.5)
-            # 其余未知字段忽略，保持向前兼容
     target["updated_at"] = datetime.now().isoformat(timespec="seconds")
     events.sort(key=lambda e: (e.get("sort_lower") or 0))
     _save_timeline(project_id, events)

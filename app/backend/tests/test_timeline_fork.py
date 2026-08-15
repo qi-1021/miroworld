@@ -21,6 +21,7 @@ def tl_service(tmp_path, monkeypatch):
     with svc._task_lock:
         svc._tasks.clear()
     monkeypatch.setattr(svc, "_build_llm_client", lambda: _OkLLM())
+    monkeypatch.setattr(svc, "FORK_GUIDANCE_WINDOW", 0.05)  # 测试加速：跳过批2等待窗口
     yield svc
 
 

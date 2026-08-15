@@ -95,3 +95,59 @@ export function submitTimelineObjection(projectId, eventId, data) {
     data
   })
 }
+
+/**
+ * 对正在运行的分叉任务补充设定（guide）
+ * @param {String} taskId
+ * @param {String} guidance
+ * @returns {Promise} { success, data: { accepted } }；已结束→400，任务不存在→404
+ */
+export function submitForkGuidance(taskId, guidance) {
+  return service({
+    url: '/api/timeline/fork/guidance',
+    method: 'post',
+    data: { task_id: taskId, guidance }
+  })
+}
+
+/**
+ * 在某个分支上继续补充设定续推（新异步任务）
+ * @param {String} projectId
+ * @param {String} branchId
+ * @param {String} guidance
+ * @param {Number} [horizon]
+ * @returns {Promise} { success, data: { task_id } }
+ */
+export function continueBranch(projectId, branchId, guidance, horizon) {
+  return service({
+    url: '/api/timeline/' + projectId + '/branch/continue',
+    method: 'post',
+    data: { branch_id: branchId, guidance, horizon: horizon != null ? horizon : undefined }
+  })
+}
+
+/**
+ * 获取项目的人物设定档案（空档案自动从事件种子）
+ * @param {String} projectId
+ * @returns {Promise} { success, data: { characters }, count }
+ */
+export function getTimelineCharacters(projectId) {
+  return service({
+    url: '/api/timeline/' + projectId + '/characters',
+    method: 'get'
+  })
+}
+
+/**
+ * 保存项目的人物设定档案（全量覆盖）
+ * @param {String} projectId
+ * @param {Array} characters - [{ name, traits, description }]
+ * @returns {Promise} { success, data: ... }
+ */
+export function saveTimelineCharacters(projectId, characters) {
+  return service({
+    url: '/api/timeline/' + projectId + '/characters',
+    method: 'put',
+    data: { characters }
+  })
+}
