@@ -388,16 +388,40 @@ def build_world_graph(project_id: str):
             proj.status = ProjectStatus.GRAPH_COMPLETED
             ProjectManager.save_project(proj)
 
+            task_result = {
+                "project_id": project_id,
+                "graph_id": graph_id,
+                "node_count": node_count,
+                "edge_count": edge_count,
+                "chunk_count": total_chunks,
+                "auto_refill_task": None,
+            }
+
+            # 建图完成后自动补边（可选）：默认开启。仅当补边队列可用且
+            # project 已有 graph_id 时才启动；任何启动失败只 warning，
+            # 绝不拖垮 build 主流程。
+            if Config.GRAPHITI_AUTO_REFILL:
+                try:
+                    from ..services.world_graph_refill import start_edge_refill
+                    auto_refill_task = start_edge_refill(
+                        project_id=project_id,
+                        graph_id=graph_id,
+                        task_manager=task_manager,
+                    )
+                    task_result["auto_refill_task"] = auto_refill_task
+                    build_logger.info(
+                        f"建图完成，已自动启动补边任务: {auto_refill_task}"
+                    )
+                except Exception as refill_err:
+                    build_logger.warning(
+                        f"自动补边启动失败（忽略，不影响建图）: {refill_err}"
+                    )
+                    task_result["auto_refill_task"] = None
+
             task_manager.update_task(
                 task_id, status=TaskStatus.COMPLETED, progress=100,
                 message=f"世界图谱构建完成（{node_count} 节点 / {edge_count} 边）",
-                result={
-                    "project_id": project_id,
-                    "graph_id": graph_id,
-                    "node_count": node_count,
-                    "edge_count": edge_count,
-                    "chunk_count": total_chunks,
-                },
+                result=task_result,
             )
             build_logger.info(
                 f"世界图谱构建完成: project={project_id}, graph={graph_id}, "

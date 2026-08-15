@@ -541,6 +541,17 @@
         </div>
         <div v-else-if="graphInfo" class="empty-note">{{ $t('world.graphEmpty') }}</div>
       </div>
+
+      <!-- 时间线 -->
+      <div v-if="stats" class="step-card">
+        <div class="card-header">
+          <div class="step-info">
+            <span class="step-num">06</span>
+            <span class="step-title">{{ $t('timeline.tab') }}</span>
+          </div>
+        </div>
+        <TimelineView :project-id="projectId" />
+      </div>
     </div>
   </div>
 </template>
@@ -569,6 +580,7 @@ import {
   refillWorldGraphEdges
 } from '../api/world'
 import { getTaskStatus } from '../api/graph'
+import TimelineView from '../components/TimelineView.vue'
 
 const route = useRoute()
 const router = useRouter()

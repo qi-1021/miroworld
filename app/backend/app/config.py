@@ -85,6 +85,12 @@ class Config:
     # 属性/摘要调用（边提取已跳过，网关压力大减）。env 可覆盖。
     GRAPHITI_MAX_CONCURRENCY = int(os.environ.get('GRAPHITI_MAX_CONCURRENCY', '1') or '1')
 
+    # 建图完成后是否自动启动补边（补边队列）重放，以补充被跳过的边。
+    # '1'/'true'/'yes' 开启；其他值（含空）关闭。默认开启。
+    GRAPHITI_AUTO_REFILL = str(
+        os.environ.get('GRAPHITI_AUTO_REFILL', '1') or ''
+    ).strip().lower() in ('1', 'true', 'yes', 'on')
+
     # Graphiti LLM 断路器配置（仅 graphiti 建图路径生效，不碰 LLMClient）
     # 连续失败达到阈值则熔断该模型，熔断窗口内换用回退链中的下一个模型。
     # 默认阈值较高，平时零感知；用 0 关闭断路器。

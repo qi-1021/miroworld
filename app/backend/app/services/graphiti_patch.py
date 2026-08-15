@@ -933,6 +933,135 @@ def _apply_entity_type_prompt_trim_patch() -> bool:
     return True
 
 
+def _apply_merged_attribute_summary_patch() -> bool:
+    """
+    把每个新节点的「属性提取 + 摘要提取」两次 LLM 调用合并为一次紧凑调用。
+
+    背景（日志实测 2026-08-15）：建图中每个新节点触发 2 次串行调用——属性提取
+    （提示词 13K+，6-30s，约半数连接错误）与摘要提取（13.8K，2.7-6.6s）。
+    N 个新节点即 2N 次调用，是建图墙钟的最大构成。合并后每节点 1 次调用，
+    且提示词压缩到 ~3K（低于网关脆弱阈值 8K），单 episode 墙钟预期降 40-50%。
+
+    鲁棒性：合并调用失败（空响应/非法 JSON/字段校验不过）自动重试 1 次，
+    仍失败则回退到原始两段式路径——行为不劣于现状。
+    """
+    try:
+        from graphiti_core.utils.maintenance import node_operations as _node_ops
+        from graphiti_core.llm_client.config import ModelSize as _ModelSize
+        from graphiti_core.prompts.models import Message as _Message
+        from graphiti_core.utils.text_utils import (
+            MAX_SUMMARY_CHARS as _MAX_SUMMARY_CHARS,
+            truncate_at_sentence as _truncate,
+        )
+    except ImportError:
+        return False
+
+    _orig_extract_attributes_from_node = _node_ops.extract_attributes_from_node
+
+    def _describe_fields(entity_type) -> str:
+        parts = []
+        for fname, finfo in getattr(entity_type, 'model_fields', {}).items():
+            desc = (getattr(finfo, 'description', None) or '').strip()
+            parts.append(f'- {fname}: {desc or fname}')
+        return chr(10).join(parts) or '(无字段定义)'
+
+    def _build_merged_messages(node, episode, previous_episodes, entity_type):
+        ep_content = (episode.content if episode is not None else '') or ''
+        prev_text = ''
+        if previous_episodes:
+            prev_text = chr(10).join(
+                (ep.content or '')[-500:] for ep in previous_episodes[-2:]
+            )
+        try:
+            existing_attrs = json.dumps(node.attributes, ensure_ascii=False)[:800]
+        except Exception:
+            existing_attrs = '{}'
+        system = ('你是实体信息提炼器。给定实体与文本片段，输出该实体的概述与属性。'
+                  '严格只输出 JSON，格式为 {"summary": "<一句话概述，不超过80字>", '
+                  '"attributes": {<字段>: <值>}}。只填写能从文本直接推断的属性；'
+                  '无法确定时 attributes 用 {}；不要编造事实，不要输出 JSON 以外的任何文字。')
+        user = (
+            f'实体名：{node.name}' + chr(10)
+            + f'实体类型：{", ".join(node.labels or [])}' + chr(10)
+            + '属性字段定义：' + chr(10) + _describe_fields(entity_type) + chr(10)
+            + f'已有属性：{existing_attrs}' + chr(10)
+            + f'已有摘要：{(node.summary or "")[:300]}' + chr(10)
+            + '前文：' + chr(10) + (prev_text or '(无)') + chr(10)
+            + '当前文本：' + chr(10) + ep_content[:1200]
+        )
+        return [
+            _Message(role='system', content=system),
+            _Message(role='user', content=user),
+        ]
+
+    @functools.wraps(_orig_extract_attributes_from_node)
+    async def patched_extract_attributes_from_node(
+        llm_client,
+        node,
+        episode=None,
+        previous_episodes=None,
+        entity_type=None,
+        should_summarize_node=None,
+    ):
+        need_attrs = bool(entity_type is not None and getattr(entity_type, 'model_fields', None))
+        need_summary = should_summarize_node is None or await should_summarize_node(node)
+        if not (need_attrs and need_summary):
+            # 只需其一：走原始路径（单次调用，行为不变）
+            return await _orig_extract_attributes_from_node(
+                llm_client, node, episode, previous_episodes,
+                entity_type, should_summarize_node,
+            )
+
+        messages = _build_merged_messages(node, episode, previous_episodes, entity_type)
+        last_err = None
+        for attempt in range(2):
+            try:
+                resp = await llm_client.generate_response(
+                    messages,
+                    response_model=None,
+                    model_size=_ModelSize.small,
+                    group_id=node.group_id,
+                    prompt_name='extract_nodes.merged_attributes_summary',
+                )
+                if not isinstance(resp, dict):
+                    raise ValueError(f'非 dict 响应: {type(resp).__name__}')
+                summary = str(resp.get('summary') or '').strip()
+                attrs = resp.get('attributes')
+                if not isinstance(attrs, dict):
+                    attrs = {}
+                if not summary and not attrs:
+                    raise ValueError('合并提取返回空结果')
+                # 只保留类型 schema 内字段；整体校验失败则丢弃非法字段
+                valid_attrs = {
+                    k: v for k, v in attrs.items()
+                    if k in getattr(entity_type, 'model_fields', {})
+                }
+                try:
+                    entity_type(**valid_attrs)
+                except Exception:
+                    valid_attrs = {}
+                node.attributes.update(valid_attrs)
+                if summary:
+                    node.summary = _truncate(summary, _MAX_SUMMARY_CHARS)
+                return node
+            except Exception as exc:
+                last_err = exc
+                if attempt == 0:
+                    await asyncio.sleep(0.3)
+        logger.warning(
+            f'合并属性+摘要提取失败（{str(last_err)[:100]}），'
+            f'回退原始两段式调用（实体: {getattr(node, "name", "?")}）'
+        )
+        return await _orig_extract_attributes_from_node(
+            llm_client, node, episode, previous_episodes,
+            entity_type, should_summarize_node,
+        )
+
+    _node_ops.extract_attributes_from_node = patched_extract_attributes_from_node
+    logger.info("Graphiti 属性+摘要合并提取 patch 应用成功（每节点 2 次调用 → 1 次）")
+    return True
+
+
 def _apply_entity_extraction_retry_patch() -> bool:
     """
     Patch extract_nodes：实体提取结果过少时自动重试一次。
@@ -1071,6 +1200,9 @@ def apply_patch() -> bool:
 
         # 实体类型描述截断（提示词瘦身，降低网关延迟）
         _apply_entity_type_prompt_trim_patch()
+
+        # 属性+摘要合并提取（每节点 2 次调用 → 1 次紧凑调用）
+        _apply_merged_attribute_summary_patch()
 
         # 边提取分块 patch：graphiti 默认 MAX_NODES=15，一次边提取要推理
         # 15 实体 × 105 对组合，OpenCode 等网关对此稳定超时/断连（实测
