@@ -67,17 +67,22 @@ def load_timeline(project_id: str, source: Optional[str] = None) -> Dict[str, An
             events = [e for e in data.get("events", []) if e.get("source") == source]
         else:
             events = data.get("events", [])
-        # 兼容旧数据：source=='future' 回填 kind；未来事件强制排在"现在"之后
+        # 兼容旧数据：source=='future'/'branch' 回填 kind；未来/分支事件强制排在"现在"之后
         if events:
             past_max = max(
                 (e.get('sort_lower') or 0.0)
-                for e in events if e.get('source') != 'future' and e.get('kind') != 'future'
+                for e in events
+                if e.get('source') not in ('future', 'branch')
+                and e.get('kind') not in ('future', 'branch')
             )
             fut = [e for e in events
-                   if e.get('source') == 'future' or e.get('kind') == 'future']
+                   if e.get('source') in ('future', 'branch')
+                   or e.get('kind') in ('future', 'branch')]
             for i, e in enumerate(fut):
                 if e.get('source') == 'future' and not e.get('kind'):
                     e['kind'] = 'future'
+                if e.get('source') == 'branch' and not e.get('kind'):
+                    e['kind'] = 'branch'
                 if (e.get('sort_lower') or 0.0) <= past_max:
                     e['sort_lower'] = past_max + 1.0 + i
                     e['sort_upper'] = e['sort_lower']
@@ -572,6 +577,138 @@ def start_future(project_id: str, goal: str, horizon: Optional[int]) -> str:
                      args=(project_id, task_id, goal or "", horizon),
                      daemon=True).start()
     return task_id
+
+
+# ---------------------------------------------------------------------------
+# 时间点分叉推演（fork）：在某历史事件点生成分支未来事件
+# ---------------------------------------------------------------------------
+_FORK_SYSTEM = (
+    "你是一名世界推演作者。请基于给定的分叉前提与时间线上下文，生成若干条分支未来的事件。"
+    "仅输出一个 JSON 数组。每事件含字段：summary(一句话)、time_text(相对时间表达)、"
+    "time_kind(枚举:year/phase/period/unspecified)、year(可推测填整数否则null)、"
+    "location_text、location_name、ev_type(枚举同前)、confidence(0-1)、characters。"
+)
+
+
+def _fork_extract_body(project_id: str, event_id: str, task_id: str,
+                       goal: str, horizon: Optional[int]) -> None:
+    with _task_lock:
+        _tasks[task_id]["status"] = "running"
+    try:
+        llm = _build_llm_client()
+        data = load_timeline(project_id, None)
+        events = data.get("events", [])
+        branch_point = next((e for e in events if e.get("id") == event_id), None)
+        if branch_point is None:
+            raise ValueError(f"分叉点事件不存在: {event_id}")
+
+        bp_sort = float(branch_point.get("sort_lower") or 0.0)
+        # 分叉基准 = 分叉点之后；分支事件 sort 必须严格大于分叉点
+        base = bp_sort + 1.0
+        # 上下文：分叉点事件 + 其后的事件（取前 30 条供 LLM 参考）
+        after = [e for e in events if (e.get("sort_lower") or 0.0) > bp_sort]
+        ctx_lines = [f"- [分叉点] {branch_point.get('summary')}"]
+        for e in after[:30]:
+            ctx_lines.append(f"- {e.get('summary')}")
+        ctx = "\n".join(ctx_lines) or branch_point.get('summary', '')
+
+        horizon_n = horizon or 5
+        user = (
+            f"分叉前提事件：{branch_point.get('summary')}\n"
+            f"假设该事件走向不同：{goal or '（自由发散）'}\n"
+            f"时间跨度（年）：{horizon_n}\n当前时间线（分叉点及之后）：\n{ctx}"
+            f"\n请生成 3-6 条该分支的未来事件，输出 JSON 数组。"
+        )
+        resp = llm.chat(
+            messages=[
+                {"role": "system", "content": _FORK_SYSTEM},
+                {"role": "user", "content": user},
+            ],
+            temperature=0.7, max_tokens=4096,
+        )
+        arr = _extract_json_array(resp)
+        if not arr:
+            raise ValueError("分叉推演失败：LLM 未返回数组")
+
+        branch_id = f"branch_{uuid.uuid4().hex[:12]}"
+        seq = len(events)
+        new_events = []
+        for i, raw in enumerate(arr):
+            if not isinstance(raw, dict):
+                continue
+            ev = _normalize_event(raw, project_id, "branch", 0, "llm", seq)
+            ev["ev_type"] = "future" if raw.get("ev_type") in (None, "", "other") else norm.normalize_ev_type(raw.get("ev_type"))
+            ev["kind"] = "branch"
+            ev["branch_id"] = branch_id
+            ev["branch_point"] = event_id
+            ev["sort_lower"] = base + i
+            ev["sort_upper"] = base + i
+            new_events.append(ev)
+            seq += 1
+        merged = _merge_events(events, new_events)
+        _save_timeline(project_id, merged)
+        with _task_lock:
+            _tasks[task_id].update(status="completed",
+                                   message=f"分叉推演完成，追加 {len(new_events)} 条分支事件（branch={branch_id}）")
+    except Exception as e:
+        logger.error(f"[{task_id}] fork 推演失败: {e}")
+        with _task_lock:
+            _tasks[task_id].update(status="failed", message=str(e))
+
+
+def start_fork(project_id: str, event_id: str, goal: str, horizon: Optional[int]) -> str:
+    """在 event_id 事件点发起分叉推演（后台任务），返回 task_id；复用 /status 轮询。"""
+    validate_project_id(project_id)
+    if not event_id or not str(event_id).strip():
+        raise ValueError("缺少 event_id")
+    task_id = f"tl_fork_{uuid.uuid4().hex[:12]}"
+    with _task_lock:
+        _tasks[task_id] = {
+            "status": "running", "total_chunks": 0, "done_chunks": 0,
+            "llm_ok": 0, "heuristic": 0, "message": "分叉推演中",
+        }
+    threading.Thread(target=_fork_extract_body,
+                     args=(project_id, str(event_id).strip(), task_id, goal or "", horizon),
+                     daemon=True).start()
+    return task_id
+
+
+# ---------------------------------------------------------------------------
+# 事件异议（objection）：直接往事件 dict 追加 objections 数组
+# ---------------------------------------------------------------------------
+# 异议分类枚举（与前端 objection.cat.* 一致）
+_OBJECTION_CATEGORIES = ("event_attr", "classification", "time", "location", "other")
+
+
+def add_objection(project_id: str, event_id: str,
+                  category: str, reason: str, suggestion: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """对一条事件提交异议；persist 后返回更新后事件（含 objections）。不存在返回 None。
+
+    校验：category 必须是 _OBJECTION_CATEGORIES 之一、reason 非空，否则抛 ValueError（路由转 400）。
+    """
+    category = str(category or "").strip()
+    reason = str(reason or "").strip()
+    if category not in _OBJECTION_CATEGORIES:
+        raise ValueError(f"异议分类必须是: {'、'.join(_OBJECTION_CATEGORIES)}")
+    if not reason:
+        raise ValueError("异议理由不能为空")
+    data = load_timeline(project_id, None)
+    events = data.get("events", [])
+    target = next((e for e in events if e.get("id") == event_id), None)
+    if target is None:
+        return None
+    if not isinstance(target.get("objections"), list):
+        target["objections"] = []
+    target["objections"].append({
+        "id": f"obj_{uuid.uuid4().hex[:12]}",
+        "category": category[:40],
+        "reason": reason[:500],
+        "suggestion": str(suggestion or "").strip()[:500] if suggestion else "",
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+    })
+    target["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    _save_timeline(project_id, events)
+    return dict(target)
 
 
 # ---------------------------------------------------------------------------

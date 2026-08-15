@@ -1004,6 +1004,49 @@
       "milestone": "里程碑",
       "farewell": "道别",
       "other": "其他"
+    },
+    "early": "早期",
+    "late": "晚期",
+    "happened": "已发生",
+    "notHappened": "未发生"
+  },
+  "fork": {
+    "forkBtn": "在此分叉推演",
+    "forkDialogTitle": "分叉推演",
+    "forkGoalLabel": "如果此时发生不同的事情",
+    "forkSubmit": "开始推演",
+    "forkBadge": "分叉",
+    "branchBase": "主时间线",
+    "branchN": "分支 {n}",
+    "horizon": "推演跨度（可选）",
+    "forkRunning": "推演中...",
+    "forkFailed": "推演失败，请重试",
+    "forkStarted": "分叉推演已启动",
+    "forkDone": "分叉推演完成",
+    "forkTimeout": "推演超时"
+  },
+  "objection": {
+    "objectionBtn": "提交异议",
+    "objectionDialogTitle": "提交异议",
+    "objectionCategory": "异议分类",
+    "objectionReason": "理由",
+    "objectionSuggestion": "建议（可选）",
+    "objectionSubmit": "提交",
+    "objectionSubmitting": "提交中...",
+    "objectionBadge": "异议",
+    "objectionList": "异议列表",
+    "objectionSubmitted": "异议已提交",
+    "objectionSubmitFailed": "提交失败",
+    "locationTrack": "地点轨道",
+    "currentLocation": "当前地点",
+    "locationHistory": "地点变迁",
+    "unknownLocation": "未知地点",
+    "cat": {
+      "event_attr": "事件归属",
+      "classification": "分类",
+      "time": "时间",
+      "location": "地点",
+      "other": "其他"
     }
   }
 }

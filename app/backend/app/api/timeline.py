@@ -73,6 +73,29 @@ def future():
         return jsonify({"success": False, "error": f"未来事件生成失败: {e}"}), 500
 
 
+@timeline_bp.route('/fork', methods=['POST'])
+def fork():
+    """在某个历史事件点分叉做未来推演（后台任务）；复用 /status 轮询。"""
+    try:
+        data = request.get_json(silent=True) or {}
+        project_id = str(data.get('project_id') or '').strip()
+        event_id = str(data.get('event_id') or '').strip()
+        goal = str(data.get('goal') or '').strip()
+        horizon = data.get('horizon')
+        if horizon is not None:
+            try:
+                horizon = int(horizon)
+            except (TypeError, ValueError):
+                horizon = None
+        task_id = timeline_service.start_fork(project_id, event_id, goal, horizon)
+        return jsonify({"success": True, "data": {"task_id": task_id}})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"发起分叉推演失败: {e}")
+        return jsonify({"success": False, "error": f"分叉推演失败: {e}"}), 500
+
+
 # ---------------------------------------------------------------------------
 # 动态路由
 # ---------------------------------------------------------------------------
@@ -90,8 +113,9 @@ def get_timeline(project_id):
         if source:
             events = [
                 e for e in all_events
-                if e.get('source') == source or e.get('kind') == 'future'
-                or e.get('source') == 'future'
+                if e.get('source') == source
+                or e.get('kind') in ('future', 'branch')
+                or e.get('source') in ('future', 'branch')
             ]
         else:
             events = all_events
@@ -122,3 +146,25 @@ def patch_event(project_id, event_id):
     except Exception as e:
         logger.error(f"更新时间线事件失败: {e}")
         return jsonify({"success": False, "error": f"更新失败: {e}"}), 500
+
+
+@timeline_bp.route('/<project_id>/<event_id>/objection', methods=['POST'])
+def submit_objection(project_id, event_id):
+    """对一条事件提交异议（归属/分类/时间/地点等）。"""
+    try:
+        body = request.get_json(silent=True) or {}
+        updated = timeline_service.add_objection(
+            project_id,
+            event_id,
+            category=str(body.get('category') or '').strip(),
+            reason=str(body.get('reason') or '').strip(),
+            suggestion=body.get('suggestion'),
+        )
+        if updated is None:
+            return jsonify({"success": False, "error": "事件不存在"}), 404
+        return jsonify({"success": True, "data": updated})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"提交事件异议失败: {e}")
+        return jsonify({"success": False, "error": f"提交异议失败: {e}"}), 500

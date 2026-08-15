@@ -67,3 +67,31 @@ export function generateTimelineFuture(data) {
     data
   })
 }
+
+/**
+ * 在某个历史事件点分叉做未来推演（异步任务）
+ * @param {Object} data - { project_id, event_id, goal, horizon? }
+ * @returns {Promise} { success, data: { task_id } }
+ */
+export function generateTimelineFork(data) {
+  return service({
+    url: '/api/timeline/fork',
+    method: 'post',
+    data
+  })
+}
+
+/**
+ * 对某个事件提交异议（事件归属/分类/时间/地点等）
+ * @param {String} projectId
+ * @param {String} eventId
+ * @param {Object} data - { category, reason, suggestion? }
+ * @returns {Promise} { success, data: 事件（含新 objections） }
+ */
+export function submitTimelineObjection(projectId, eventId, data) {
+  return service({
+    url: '/api/timeline/' + projectId + '/' + eventId + '/objection',
+    method: 'post',
+    data
+  })
+}

@@ -21,6 +21,23 @@ from .zep_factory import get_zep_client
 from .zep_adapter import ZepClientAdapter
 
 
+def strip_embedding_fields(obj):
+    """递归删除 dict 中所有键名含 'embedding' 的字段（节点向量等），
+    避免高维向量序列化进图谱接口响应，造成节点介绍冗长。
+
+    向量数据仅存在于 Neo4j 内部（检索/去重使用），前端展示不需要。
+    """
+    if isinstance(obj, dict):
+        return {
+            k: strip_embedding_fields(v)
+            for k, v in obj.items()
+            if 'embedding' not in str(k).lower()
+        }
+    if isinstance(obj, list):
+        return [strip_embedding_fields(item) for item in obj]
+    return obj
+
+
 @dataclass
 class GraphInfo:
     """图谱信息"""
@@ -494,8 +511,8 @@ class GraphBuilderService:
 
         return {
             "graph_id": graph_id,
-            "nodes": nodes_data,
-            "edges": edges_data,
+            "nodes": strip_embedding_fields(nodes_data),
+            "edges": strip_embedding_fields(edges_data),
             "node_count": len(nodes_data),
             "edge_count": len(edges_data),
         }

@@ -77,9 +77,9 @@
             <div class="detail-section" v-if="selectedItem.data.attributes && Object.keys(selectedItem.data.attributes).length > 0">
               <div class="section-title">Properties:</div>
               <div class="properties-list">
-                <div v-for="(value, key) in selectedItem.data.attributes" :key="key" class="property-item">
-                  <span class="property-key">{{ key }}:</span>
-                  <span class="property-value">{{ value || 'None' }}</span>
+                <div v-for="(item) in displayAttributes" :key="item.key" class="property-item">
+                  <span class="property-key">{{ item.key }}:</span>
+                  <span class="property-value">{{ item.value || 'None' }}</span>
                 </div>
               </div>
             </div>
@@ -251,6 +251,13 @@ const emit = defineEmits(['refresh', 'toggle-maximize'])
 const graphContainer = ref(null)
 const graphSvg = ref(null)
 const selectedItem = ref(null)
+// 节点详情展示的属性：跳过向量（embedding）字段，避免冗长
+const displayAttributes = computed(() => {
+  const attrs = selectedItem.value?.data?.attributes || {}
+  return Object.entries(attrs)
+    .filter(([k]) => !String(k).toLowerCase().includes('embedding'))
+    .map(([key, value]) => ({ key, value }))
+})
 const showEdgeLabels = ref(true) // 默认显示边标签
 const expandedSelfLoops = ref(new Set()) // 展开的自环项
 const showSimulationFinishedHint = ref(false) // 模拟结束后的提示

@@ -1004,6 +1004,49 @@
       "milestone": "Milestone",
       "farewell": "Farewell",
       "other": "Other"
+    },
+    "early": "Early",
+    "late": "Late",
+    "happened": "Happened",
+    "notHappened": "Not happened"
+  },
+  "fork": {
+    "forkBtn": "Fork here",
+    "forkDialogTitle": "Fork simulation",
+    "forkGoalLabel": "What if something different happened here",
+    "forkSubmit": "Start fork",
+    "forkBadge": "Fork",
+    "branchBase": "Main timeline",
+    "branchN": "Branch {n}",
+    "horizon": "Horizon (optional)",
+    "forkRunning": "Running...",
+    "forkFailed": "Fork failed. Please retry.",
+    "forkStarted": "Fork started",
+    "forkDone": "Fork complete",
+    "forkTimeout": "Fork timed out"
+  },
+  "objection": {
+    "objectionBtn": "Raise objection",
+    "objectionDialogTitle": "Raise objection",
+    "objectionCategory": "Category",
+    "objectionReason": "Reason",
+    "objectionSuggestion": "Suggestion (optional)",
+    "objectionSubmit": "Submit",
+    "objectionSubmitting": "Submitting...",
+    "objectionBadge": "Objection",
+    "objectionList": "Objections",
+    "objectionSubmitted": "Objection submitted",
+    "objectionSubmitFailed": "Submit failed",
+    "locationTrack": "Location track",
+    "currentLocation": "Current location",
+    "locationHistory": "Location history",
+    "unknownLocation": "Unknown location",
+    "cat": {
+      "event_attr": "Event attribution",
+      "classification": "Classification",
+      "time": "Time",
+      "location": "Location",
+      "other": "Other"
     }
   }
 }
