@@ -142,12 +142,9 @@ const toggleMaximize = (target) => {
 }
 
 const handleGoBack = () => {
-  // 返回到 process 页面
-  if (projectData.value?.project_id) {
-    router.push({ name: 'Process', params: { projectId: projectData.value.project_id } })
-  } else {
-    router.push('/')
-  }
+  // 返回首页（历史项目数据库可重新进入世界/模拟项目）；
+  // 历史：曾跳 Process 页（媒体分析流程），对世界/模拟项目是死胡同
+  router.push('/')
 }
 
 const handleNextStep = (params = {}) => {

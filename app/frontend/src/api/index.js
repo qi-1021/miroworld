@@ -5,9 +5,10 @@ import i18n from '../i18n'
 const service = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001',
   timeout: 300000, // 5分钟超时（本体生成可能需要较长时间）
-  headers: {
-    'Content-Type': 'application/json'
-  }
+  // 注意：不要在此默认设置 Content-Type：
+  // - 普通 JSON body 由 axios 自动加 application/json
+  // - FormData（文件上传）由浏览器自动加 multipart/form-data; boundary=...，
+  //   手动设置会丢失 boundary 导致后端解析不到文件（历史 bug）
 })
 
 // 请求拦截器

@@ -17,6 +17,27 @@
       </button>
     </div>
 
+    <!-- 向量模型提供方偏好：云端 / 本地 / 自动 -->
+    <div class="pref-block">
+      <div class="pref-label">{{ $t('modelSettings.embeddingPreference') }}</div>
+      <div class="pref-options">
+        <button
+          v-for="opt in prefOptions"
+          :key="opt.value"
+          type="button"
+          class="pref-option"
+          :class="{ active: preference === opt.value }"
+          :disabled="prefSaving"
+          @click="setPref(opt.value)"
+        >
+          <span class="pref-dot" :class="opt.value"></span>
+          {{ opt.label }}
+        </button>
+      </div>
+      <p class="pref-hint">{{ prefHint }}</p>
+      <p v-if="prefMsg" class="pref-msg" :class="{ error: prefMsgError }">{{ prefMsg }}</p>
+    </div>
+
     <p class="section-desc">
       {{ $t('modelSettings.localEmbeddingsDesc') }}
       <code class="path-hint">{{ root || 'app/models/embeddings/' }}</code>
@@ -83,12 +104,12 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   CircleAlert, CircleCheckBig, Database, FlaskConical, LoaderCircle, RefreshCw, Save
 } from '@lucide/vue'
-import { registerLocalModel, scanLocalModels, testLocalModel, getModelRegistry } from '../../api/models'
+import { registerLocalModel, scanLocalModels, testLocalModel, getModelRegistry, getEmbeddingPreference, setEmbeddingPreference } from '../../api/models'
 
 const props = defineProps({
   revision: { type: Number, required: true }
@@ -103,6 +124,46 @@ const testing = ref('')
 const registering = ref('')
 const error = ref('')
 const results = ref({})
+
+// ---- 向量模型提供方偏好 ----
+const preference = ref('auto')
+const prefSaving = ref(false)
+const prefMsg = ref('')
+const prefMsgError = ref(false)
+const prefOptions = [
+  { value: 'auto', label: t('modelSettings.prefAuto') },
+  { value: 'cloud', label: t('modelSettings.prefCloud') },
+  { value: 'local', label: t('modelSettings.prefLocal') }
+]
+const prefHint = computed(() => ({
+  auto: t('modelSettings.prefAutoHint'),
+  cloud: t('modelSettings.prefCloudHint'),
+  local: t('modelSettings.prefLocalHint')
+}[preference.value] || ''))
+const loadPreference = async () => {
+  try {
+    const res = await getEmbeddingPreference()
+    preference.value = res.data?.preference || 'auto'
+  } catch {
+    preference.value = 'auto'
+  }
+}
+const setPref = async (value) => {
+  if (prefSaving.value || value === preference.value) return
+  prefSaving.value = true
+  prefMsg.value = ''
+  prefMsgError.value = false
+  try {
+    const res = await setEmbeddingPreference(value)
+    preference.value = res.data?.preference || value
+    prefMsg.value = t('modelSettings.prefSaved')
+  } catch (err) {
+    prefMsg.value = err.message || t('modelSettings.prefSaveFailed')
+    prefMsgError.value = true
+  } finally {
+    prefSaving.value = false
+  }
+}
 
 const load = async () => {
   scanning.value = true
@@ -146,7 +207,7 @@ const register = async (model) => {
   }
 }
 
-onMounted(load)
+onMounted(() => { load(); loadPreference() })
 </script>
 
 <style scoped>
@@ -155,6 +216,19 @@ onMounted(load)
 .panel-heading .eyebrow { color: #f25c21; font-size: 9px; font-weight: 800; }
 .panel-heading h3 { margin-top: 4px; font-size: 15px; }
 .section-desc { margin-top: 6px; color: #666; font-size: 11px; line-height: 1.6; }
+.pref-block { margin-top: 14px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; background: #fafaf8; }
+.pref-label { font-size: 11px; font-weight: 800; color: #333; }
+.pref-options { display: flex; gap: 8px; margin-top: 8px; }
+.pref-option { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #ccc; border-radius: 980px; background: #fff; font-size: 11px; cursor: pointer; }
+.pref-option.active { border-color: #a1c50a; color: #5f7008; font-weight: 800; background: #f3f7e6; }
+.pref-option:disabled { opacity: 0.5; cursor: not-allowed; }
+.pref-dot { width: 8px; height: 8px; border-radius: 50%; background: #bbb; }
+.pref-dot.cloud { background: #a1c50a; }
+.pref-dot.local { background: #1d1d1f; }
+.pref-dot.auto { background: #8e8e93; }
+.pref-hint { margin-top: 8px; color: #777; font-size: 10px; line-height: 1.5; }
+.pref-msg { margin-top: 6px; color: #1c7a2e; font-size: 10px; }
+.pref-msg.error { color: #d9534f; }
 .path-hint { display: inline-block; margin-top: 4px; padding: 2px 6px; background: #f2f2f0; font-size: 10px; }
 .empty-state { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 18px; border: 1px dashed #ccc; color: #888; font-size: 11px; }
 .local-model-card { margin-top: 10px; padding: 12px; border: 1px solid #ddd; background: #fafaf8; }

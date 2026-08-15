@@ -941,7 +941,9 @@ function formatTime(iso) {
 }
 
 function goBack() {
-  router.push(`/process/${projectId}`)
+  // 返回首页（历史项目数据库可重新进入世界项目）；
+  // 历史：曾跳 /process/<pid>（媒体分析流程页），对世界项目是死胡同
+  router.push('/')
 }
 
 // ---------------- 文件选择与拖拽 ----------------

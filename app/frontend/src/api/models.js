@@ -2,6 +2,12 @@ import service from './index'
 
 export const getModelRegistry = () => service.get('/api/models/registry')
 
+export const getEmbeddingPreference = () => service.get('/api/models/embedding-preference')
+
+export const setEmbeddingPreference = (preference) => (
+  service.put('/api/models/embedding-preference', { preference })
+)
+
 export const detectModelConnection = (draft) => (
   service.post('/api/models/connections/detect', draft)
 )

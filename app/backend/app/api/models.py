@@ -115,6 +115,25 @@ def _handle_exception(exc: Exception):
     return _error("INTERNAL_ERROR", "模型配置操作失败", 500)
 
 
+@models_bp.route("/embedding-preference", methods=["GET"])
+def get_embedding_preference_route():
+    """读取向量模型偏好（cloud/local/auto）。"""
+    from ..services.embedding_resolver import get_embedding_preference
+    return _success({"preference": get_embedding_preference()})
+
+
+@models_bp.route("/embedding-preference", methods=["PUT"])
+def put_embedding_preference_route():
+    """写入向量模型偏好（cloud/local/auto）。"""
+    from ..services.embedding_resolver import set_embedding_preference
+    data = request.get_json(silent=True) or {}
+    try:
+        pref = set_embedding_preference(str(data.get("preference") or ""))
+        return _success({"preference": pref})
+    except ValueError as exc:
+        return _error("VALIDATION_ERROR", str(exc), 400)
+
+
 @models_bp.route("/registry", methods=["GET"])
 def get_registry():
     return _success(registry_service.get_redacted_registry())

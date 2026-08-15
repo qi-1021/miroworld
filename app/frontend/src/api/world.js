@@ -23,7 +23,8 @@ export function saveWorldInputMultipart(projectId, formData) {
     url: `/api/world/${projectId}/input`,
     method: 'post',
     data: formData,
-    headers: { 'Content-Type': 'multipart/form-data' },
+    // 注意：不要手动设置 Content-Type，让浏览器自动生成带 boundary 的 multipart 头，
+    // 否则后端无法解析上传的文件（历史 bug：首页上传的文件到世界设定页消失）
     timeout: 600000 // 大文件解析可能较慢
   })
 }

@@ -393,13 +393,26 @@ class GraphitiClient(ZepClientAdapter):
         如果模型库中注册了已验证的本地向量模型（app/models/embeddings/ 下的
         Sentence Transformers 目录），优先使用本地模型，注册即生效。
         """
-        # 云端向量模型（注册表，如 SiliconFlow）优先 → 本地 → 环境变量回退
-        cloud_embedder = self._try_build_registry_cloud_embedder()
-        if cloud_embedder is not None:
-            return cloud_embedder
-        local_embedder = self._try_build_local_embedder()
-        if local_embedder is not None:
-            return local_embedder
+        # 向量模型提供方偏好（cloud / local / auto）
+        try:
+            from .embedding_resolver import get_embedding_preference
+            preference = get_embedding_preference()
+        except Exception:
+            preference = "auto"
+
+        # cloud 偏好：只用云端；auto：云端优先 → 本地；local：只用本地
+        if preference != "local":
+            cloud_embedder = self._try_build_registry_cloud_embedder()
+            if cloud_embedder is not None:
+                return cloud_embedder
+            if preference == "cloud":
+                logger.warning("向量模型偏好为 cloud 但云端不可用，无本地回退")
+                return None
+
+        if preference != "cloud":
+            local_embedder = self._try_build_local_embedder()
+            if local_embedder is not None:
+                return local_embedder
 
         from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
 

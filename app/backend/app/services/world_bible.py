@@ -163,13 +163,21 @@ class WorldBibleService:
                 return cls._embedder_cache
             cls._embedder_attempted = True
             try:
-                # 1) 云端向量模型（注册表 verified embedding、无 local_path）
-                embedder = cls._try_cloud_embedder()
+                from .embedding_resolver import get_embedding_preference
+                preference = get_embedding_preference()  # cloud / local / auto
+
+                # 1) 云端向量模型（偏好 cloud/auto 时尝试注册表 verified embedding、无 local_path）
+                embedder = cls._try_cloud_embedder() if preference != "local" else None
                 if embedder is not None:
                     cls._embedder_cache = embedder
                     return cls._embedder_cache
+                if preference == "cloud":
+                    # 云端模式：云端不可用直接降级关键词，不落回本地
+                    logger.warning("向量模型偏好为 cloud 但云端不可用，降级为关键词检索")
+                    cls._embedder_cache = None
+                    return None
 
-                # 2) 本地向量模型：优先 bge-m3（名字含 bge + m3），其次是已就绪模型
+                # 2) 本地向量模型（偏好 local/auto）：优先 bge-m3（名字含 bge + m3），其次是已就绪模型
                 from .local_embedding import (
                     scan_local_models,
                     LocalSentenceTransformerEmbedder,
@@ -204,31 +212,11 @@ class WorldBibleService:
     def _try_cloud_embedder(cls) -> Optional[Any]:
         """从模型注册表解析已验证的云端向量模型（无 local_path，如 SiliconFlow）。"""
         try:
-            from .cloud_embedding import CloudOpenAIEmbedder
-            from .model_registry import ModelRegistryService
-
-            registry = ModelRegistryService()
-            for entry in registry.get_redacted_registry().get("models", []):
-                if not entry.get("verified"):
-                    continue
-                if "embedding" not in entry.get("capabilities", []):
-                    continue
-                if entry.get("local_path"):
-                    continue
-                connection_id = entry.get("connection_id")
-                if not connection_id:
-                    continue
-                api_key = registry.resolve_connection_secret(connection_id)
-                connection = registry.get_connection(connection_id)
-                endpoint = (connection or {}).get("endpoint") or ""
-                model_id = entry.get("model_id")
-                if not api_key or not endpoint or not model_id:
-                    continue
-                dimension = entry.get("metadata", {}).get("dimension")
-                logger.info("设定库启用云端向量模型: %s (%s, dim=%s)", model_id, endpoint, dimension)
-                return CloudOpenAIEmbedder(
-                    endpoint=endpoint, api_key=api_key, model=model_id, dimension=dimension,
-                )
+            from .embedding_resolver import resolve_registry_cloud_embedder
+            embedder = resolve_registry_cloud_embedder()
+            if embedder is not None:
+                logger.info("设定库启用云端向量模型: %s (%s)", embedder.model, embedder.endpoint)
+            return embedder
         except Exception as exc:
             logger.warning("云端向量模型解析失败: %s", exc)
         return None

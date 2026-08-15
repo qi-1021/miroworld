@@ -127,7 +127,16 @@
     "confirmDeleteConnection": "Delete connection {name}? Its models and API key will also be removed.",
     "confirmDeleteModel": "Delete model {name}?",
     "deleteFailed": "Delete failed",
-    "deletedWithCleanup": "Deleted {name} and automatically cleaned up {count} references"
+    "deletedWithCleanup": "Deleted {name} and automatically cleaned up {count} references",
+    "embeddingPreference": "Embedding provider",
+    "prefAuto": "Auto (cloud first)",
+    "prefCloud": "Cloud only",
+    "prefLocal": "Local only",
+    "prefAutoHint": "Auto: prefer cloud embedding (e.g. SiliconFlow), fall back to local models.",
+    "prefCloudHint": "Cloud only: use a verified cloud embedding model from the registry; falls back to keyword search if unavailable.",
+    "prefLocalHint": "Local only: use ready local models under app/models/embeddings/ (download models first).",
+    "prefSaved": "Embedding preference saved",
+    "prefSaveFailed": "Failed to save"
   },
   "meta": {
     "title": "MiroFish - Predict Everything",

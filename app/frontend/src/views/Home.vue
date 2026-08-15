@@ -1,6 +1,6 @@
 <!--
   首页（Apple 极简白 + 柑橘橙主题）
-  设计 tokens：背景 #fff/#f5f5f7，文字 #1d1d1f/#6e6e73，强调色 citrus orange #FF9500
+  设计 tokens：背景 #fff/#f5f5f7，文字 #1d1d1f/#6e6e73，强调色柑橘色 #a1c50a（用户指定）
   禁用：蓝紫色系、渐变、玻璃拟态、粗阴影（见 apple-minimal skill 规范）
   品牌名来自 src/config/brand.js（改名只改一处）
 -->
@@ -500,9 +500,9 @@ const startSimulation = async () => {
   --ink-muted: #6e6e73;
   --ink-subtle: #86868b;
   --hairline: #d2d2d7;
-  --accent: #ff9500;        /* 柑橘橙 */
-  --accent-hover: #ff7a00;
-  --accent-soft: #fff4e5;
+  --accent: #a1c50a;        /* 柑橘色（用户指定） */
+  --accent-hover: #8fae09;
+  --accent-soft: #f3f7e6;
   --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
   --radius: 16px;
   background: var(--canvas);
@@ -643,7 +643,7 @@ const startSimulation = async () => {
   width: 18px;
   height: 18px;
   background: var(--accent);
-  box-shadow: 0 0 0 6px rgba(255, 149, 0, 0.18);
+  box-shadow: 0 0 0 6px rgba(161, 197, 10, 0.18);
 }
 .dot.future {
   background: transparent;
@@ -873,7 +873,7 @@ const startSimulation = async () => {
 .field-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(255, 149, 0, 0.15);
+  box-shadow: 0 0 0 3px rgba(161, 197, 10, 0.15);
 }
 .field-input::placeholder { color: var(--ink-subtle); }
 .form-actions {
@@ -888,11 +888,11 @@ const startSimulation = async () => {
   align-items: center;
   gap: 12px;
   background: var(--accent-soft);
-  border: 1px solid rgba(255, 149, 0, 0.35);
+  border: 1px solid rgba(161, 197, 10, 0.35);
   border-radius: 12px;
   padding: 10px 16px;
   font-size: 13px;
-  color: #b25000;
+  color: #5f7008;
   max-width: 100%;
 }
 .mc-link {
