@@ -196,9 +196,23 @@ const register = async (model) => {
   registering.value = model.name
   error.value = ''
   try {
-    // 注册前取最新 revision，避免配置版本过期导致 409
-    const latest = await getModelRegistry()
-    await registerLocalModel(model.name, { revision: latest.data.revision })
+    // 注册前取最新 revision；若中途 registry 被改动（409），刷新后自动重试一次
+    const isRevisionConflict = (err) => (
+      err?.response?.status === 409 || /revision|conflict|版本/i.test(err?.message || '')
+    )
+    for (let attempt = 0; attempt <= 1; attempt++) {
+      try {
+        const latest = await getModelRegistry()
+        await registerLocalModel(model.name, { revision: latest.data.revision })
+        break
+      } catch (err) {
+        if (attempt === 0 && isRevisionConflict(err)) {
+          await load()
+          continue
+        }
+        throw err
+      }
+    }
     emit('registered')
   } catch (err) {
     error.value = err.message || t('modelSettings.registerFailed')

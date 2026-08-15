@@ -17,7 +17,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import ModelSettingsDrawer from './components/model-settings/ModelSettingsDrawer.vue'
@@ -102,12 +102,19 @@ const refreshModelSummary = async () => {
 
 watch(() => route.fullPath, resolveProjectContext, { immediate: true })
 watch(() => route.fullPath, refreshModelSummary, { immediate: true })
+
+function handleOpenModelSettings() {
+  modelSettingsOpen.value = true
+}
+
 onMounted(() => {
   refreshModelSummary()
   // 供其他页面通过 window 事件一键打开模型设置
-  window.addEventListener('open-model-settings', () => {
-    modelSettingsOpen.value = true
-  })
+  window.addEventListener('open-model-settings', handleOpenModelSettings)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('open-model-settings', handleOpenModelSettings)
 })
 </script>
 

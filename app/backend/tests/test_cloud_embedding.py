@@ -15,6 +15,18 @@ from app.services import cloud_embedding
 from app.services.cloud_embedding import CloudOpenAIEmbedder, CloudEmbeddingError
 
 
+@pytest.fixture(autouse=True)
+def _isolate_embedding_preference(tmp_path, monkeypatch):
+    """隔离向量模型偏好，避免真实数据目录里被用户改成的 cloud/local 影响测试。"""
+    from app.services import embedding_resolver
+    from app.services.world_bible import WorldBibleService
+
+    monkeypatch.setattr(embedding_resolver, "_PREF_PATH", tmp_path / "embedding_preference.json")
+    monkeypatch.delenv("EMBEDDING_PREFERENCE", raising=False)
+    yield
+    WorldBibleService._reset_embedder_cache()
+
+
 def _resp_body(n, dim=1024):
     return {
         "object": "list",

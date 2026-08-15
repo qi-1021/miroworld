@@ -573,7 +573,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
@@ -640,6 +640,7 @@ const simEvents = ref([])
 const simHistory = ref([])
 let simPollTimer = null
 let simPollingId = ''
+let whatIfPollTimer = null
 
 // 世界图谱状态
 const GV_W = 780
@@ -1366,19 +1367,22 @@ async function confirmWhatIf() {
 }
 
 function pollWhatIf(simulationId, question) {
+  if (whatIfPollTimer) clearInterval(whatIfPollTimer)
   let tries = 0
-  const timer = setInterval(async () => {
+  whatIfPollTimer = setInterval(async () => {
     tries++
     try {
       const r = await getWorldSimulation(projectId, simulationId)
       const sim = r.simulation
       if (sim.status === 'completed') {
-        clearInterval(timer)
+        clearInterval(whatIfPollTimer)
+        whatIfPollTimer = null
         whatIfEvents.value = (sim.result || {}).events || []
         whatIfMsg.value = t('world.msgWhatifDone', { count: (sim.result || {}).event_count || 0 })
         whatIfMsgError.value = false
       } else if (sim.status === 'failed' || tries > 120) {
-        clearInterval(timer)
+        clearInterval(whatIfPollTimer)
+        whatIfPollTimer = null
         whatIfMsg.value = sim.status === 'failed' ? t('world.msgWhatifFailed', { err: sim.error || t('world.msgUnknownError') }) : t('world.msgWhatifTimeout')
         whatIfMsgError.value = true
       }
@@ -1391,6 +1395,14 @@ function pollWhatIf(simulationId, question) {
 onMounted(() => {
   loadAll()
   loadSimHistory()
+})
+
+onUnmounted(() => {
+  // 离开页面立即停止所有轮询，避免计时器泄漏与后台请求堆积
+  if (graphPollTimer) { clearInterval(graphPollTimer); graphPollTimer = null }
+  if (refillPollTimerId) { clearInterval(refillPollTimerId); refillPollTimerId = null }
+  if (simPollTimer) { clearInterval(simPollTimer); simPollTimer = null }
+  if (whatIfPollTimer) { clearInterval(whatIfPollTimer); whatIfPollTimer = null }
 })
 </script>
 

@@ -27,6 +27,7 @@ from typing import Dict, Any, List, Optional
 
 from ..utils.logger import get_logger
 from ..utils.llm_client import LLMClient
+from ..utils.atomic_json import atomic_write_json
 from .world_bible import WORLD_DATA_ROOT
 
 logger = get_logger('mirofish.conflict')
@@ -378,12 +379,11 @@ class ConflictDetector:
 # ---------------------------------------------------------------- 存储
 
 def save_conflict_report(project_id: str, report: ConflictReport) -> None:
-    """保存冲突检测报告"""
+    """保存冲突检测报告（原子写）"""
     d = os.path.join(WORLD_DATA_ROOT, project_id)
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, 'conflicts.json')
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(report.to_dict(), f, ensure_ascii=False, indent=2)
+    atomic_write_json(path, report.to_dict())
 
 
 def load_conflict_report(project_id: str) -> Optional[ConflictReport]:

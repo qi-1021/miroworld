@@ -192,10 +192,19 @@ start_app() {
     if [ ! -d "backend/.venv-simulation" ]; then
         log_info "创建模拟环境..."
         cd "$APP_DIR/backend"
-        uv venv .venv-simulation --python 3.11 2>/dev/null || true
-        source .venv-simulation/bin/activate 2>/dev/null || true
-        uv pip install camel-oasis==0.2.5 openai python-dotenv 2>/dev/null || true
-        deactivate 2>/dev/null || true
+        if ! uv venv .venv-simulation --python 3.11; then
+            log_error "创建模拟 Python 环境失败，请检查 uv/网络"
+            exit 1
+        fi
+        if ! source .venv-simulation/bin/activate; then
+            log_error "激活模拟 Python 环境失败"
+            exit 1
+        fi
+        if ! uv pip install camel-oasis==0.2.5 openai python-dotenv; then
+            log_error "安装模拟环境依赖失败（camel-oasis 等），请检查网络/版本"
+            exit 1
+        fi
+        deactivate
         cd "$APP_DIR"
     fi
     
@@ -255,6 +264,22 @@ cleanup_previous() {
     if [ -z "$found" ]; then
         log_info "✓ 无残留进程"
     fi
+
+    # 同时清理上次遗留的模拟子进程（它们通常不监听 3000/5001，
+    # 但会继续占内存/CPU；按工作目录识别本项目进程）
+    for pat in "run_world_simulation.py" "run_parallel_simulation.py" \
+               "run_reddit_simulation.py" "run_twitter_simulation.py"; do
+        for pid in $(pgrep -f "$pat" 2>/dev/null || true); do
+            cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | grep '^n' | head -1 | cut -c2-)
+            case "$cwd" in
+                "$PROJECT_ROOT"*)
+                    log_warn "停止遗留模拟子进程 pid=$pid（$(ps -p $pid -o command= | tail -1 | cut -c1-60)）"
+                    kill "$pid" 2>/dev/null || true
+                    ;;
+            esac
+        done
+    done
+
     # 等待端口释放（最多 10 秒）
     local i
     for i in $(seq 1 10); do

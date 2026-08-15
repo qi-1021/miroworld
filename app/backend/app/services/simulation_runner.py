@@ -20,6 +20,7 @@ from queue import Queue
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.atomic_json import atomic_write_json
 from .zep_graph_memory_updater import ZepGraphMemoryManager
 from .simulation_ipc import SimulationIPCClient, CommandType, IPCResponse
 
@@ -326,15 +327,14 @@ class SimulationRunner:
 
     @classmethod
     def _save_run_state(cls, state: SimulationRunState):
-        """保存运行状态到文件"""
+        """保存运行状态到文件（原子写）"""
         sim_dir = os.path.join(cls.RUN_STATE_DIR, state.simulation_id)
         os.makedirs(sim_dir, exist_ok=True)
         state_file = os.path.join(sim_dir, "run_state.json")
 
         data = state.to_detail_dict()
 
-        with open(state_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(state_file, data)
 
         cls._run_states[state.simulation_id] = state
 
@@ -483,17 +483,25 @@ class SimulationRunner:
 
             # 设置工作目录为模拟目录（数据库等文件会生成在此）
             # 使用 start_new_session=True 创建新的进程组，确保可以通过 os.killpg 终止所有子进程
-            process = subprocess.Popen(
-                cmd,
-                cwd=sim_dir,
-                stdout=main_log_file,
-                stderr=subprocess.STDOUT,  # stderr 也写入同一个文件
-                text=True,
-                encoding='utf-8',  # 显式指定编码
-                bufsize=1,
-                env=env,  # 传递带有 UTF-8 设置的环境变量
-                start_new_session=True,  # 创建新进程组，确保服务器关闭时能终止所有相关进程
-            )
+            try:
+                process = subprocess.Popen(
+                    cmd,
+                    cwd=sim_dir,
+                    stdout=main_log_file,
+                    stderr=subprocess.STDOUT,  # stderr 也写入同一个文件
+                    text=True,
+                    encoding='utf-8',  # 显式指定编码
+                    bufsize=1,
+                    env=env,  # 传递带有 UTF-8 设置的环境变量
+                    start_new_session=True,  # 创建新进程组，确保服务器关闭时能终止所有相关进程
+                )
+            except Exception:
+                # 启动失败时关闭日志句柄，避免泄漏
+                try:
+                    main_log_file.close()
+                except Exception:
+                    pass
+                raise
 
             # 保存文件句柄以便后续关闭
             cls._stdout_files[simulation_id] = main_log_file
@@ -1284,7 +1292,7 @@ class SimulationRunner:
                         state.error = "服务器关闭，模拟被终止"
                         cls._save_run_state(state)
 
-                    # 同时更新 state.json，将状态设为 stopped
+                    # 同时更新 state.json，将状态设为 stopped（原子写）
                     try:
                         sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
                         state_file = os.path.join(sim_dir, "state.json")
@@ -1294,8 +1302,7 @@ class SimulationRunner:
                                 state_data = json.load(f)
                             state_data['status'] = 'stopped'
                             state_data['updated_at'] = datetime.now().isoformat()
-                            with open(state_file, 'w', encoding='utf-8') as f:
-                                json.dump(state_data, f, indent=2, ensure_ascii=False)
+                            atomic_write_json(state_file, state_data)
                             logger.info(f"已更新 state.json 状态为 stopped: {simulation_id}")
                         else:
                             logger.warning(f"state.json 不存在: {state_file}")

@@ -29,6 +29,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from ..utils.logger import get_logger
+from ..utils.atomic_json import atomic_write_json, atomic_write_text
 
 logger = get_logger('mirofish.world_report')
 
@@ -224,13 +225,11 @@ class WorldReportService:
 
         report = {"text": text, "sections": filled}
 
-        # 4. 落盘 report.md 与 report.json
+        # 4. 落盘 report.md 与 report.json（原子写，避免半个文件）
         sim_dir = cls._sim_dir(project_id, simulation_id)
         os.makedirs(sim_dir, exist_ok=True)
-        with open(cls._report_md_path(project_id, simulation_id), 'w', encoding='utf-8') as f:
-            f.write(text)
-        with open(cls._report_json_path(project_id, simulation_id), 'w', encoding='utf-8') as f:
-            json.dump(report, f, ensure_ascii=False, indent=2)
+        atomic_write_text(cls._report_md_path(project_id, simulation_id), text)
+        atomic_write_json(cls._report_json_path(project_id, simulation_id), report)
 
         logger.info(f"世界报告已生成: project={project_id}, sim={simulation_id}, sections={len(filled)}")
         return report

@@ -370,6 +370,12 @@
             <div class="empty-pulse"></div>
             <span>Waiting for agent activity...</span>
           </div>
+
+          <!-- Poll failure / agent error -->
+          <div v-if="pollErrorMsg" class="poll-error-banner">
+            <span>⚠ {{ $t('report.pollFailed') }}: {{ pollErrorMsg }}</span>
+            <button class="action-btn" @click="retryPolling">{{ $t('report.retry') }}</button>
+          </div>
         </div>
       </div>
     </div>
@@ -427,6 +433,10 @@ const collapsedSections = ref(new Set())
 const isComplete = ref(false)
 const startTime = ref(null)
 const leftPanel = ref(null)
+// 轮询稳定性：连续失败计数 + 错误提示，失败后停止轮询避免永久 loading
+const pollFailCount = ref(0)
+const pollErrorMsg = ref('')
+const MAX_POLL_FAILURES = 8
 const rightPanel = ref(null)
 const logContent = ref(null)
 const showRawResult = reactive({})
@@ -2028,6 +2038,7 @@ const fetchAgentLog = async () => {
     const res = await getAgentLog(props.reportId, agentLogLine.value)
 
     if (res.success && res.data) {
+      pollFailCount.value = 0
       const newLogs = res.data.logs || []
 
       if (newLogs.length > 0) {
@@ -2060,6 +2071,13 @@ const fetchAgentLog = async () => {
             // 滚动逻辑统一在循环结束后的 nextTick 中处理
           }
 
+          // 后端已标记报告失败 → 停止轮询并给用户明确提示
+          if (log.action === 'error') {
+            pollErrorMsg.value = log.details?.error || log.message || 'Report generation failed'
+            stopPolling()
+            emit('update-status', 'error')
+          }
+
           if (log.action === 'report_start') {
             startTime.value = new Date(log.timestamp)
           }
@@ -2078,9 +2096,22 @@ const fetchAgentLog = async () => {
           }
         })
       }
+    } else {
+      pollFailCount.value += 1
+      if (pollFailCount.value >= MAX_POLL_FAILURES) {
+        pollErrorMsg.value = res.error || 'Agent log unavailable'
+        stopPolling()
+        emit('update-status', 'error')
+      }
     }
   } catch (err) {
+    pollFailCount.value += 1
     console.warn('Failed to fetch agent log:', err)
+    if (pollFailCount.value >= MAX_POLL_FAILURES) {
+      pollErrorMsg.value = 'Agent log unavailable'
+      stopPolling()
+      emit('update-status', 'error')
+    }
   }
 }
 
@@ -2173,6 +2204,12 @@ const stopPolling = () => {
     clearInterval(consoleLogTimer)
     consoleLogTimer = null
   }
+}
+
+const retryPolling = () => {
+  pollErrorMsg.value = ''
+  pollFailCount.value = 0
+  startPolling()
 }
 
 // Lifecycle
@@ -3441,6 +3478,30 @@ watch(() => props.reportId, (newId) => {
   padding: 60px 20px;
   color: #9CA3AF;
   font-size: 13px;
+}
+.poll-error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 18px;
+  padding: 10px 12px;
+  border-left: 3px solid #EF5350;
+  background: #FFF0EF;
+  color: #8C211C;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.poll-error-banner .action-btn {
+  flex-shrink: 0;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid #8C211C;
+  background: #fff;
+  color: #8C211C;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .empty-pulse {

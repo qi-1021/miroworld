@@ -25,6 +25,7 @@ import re
 from typing import Dict, List, Optional
 
 from ..utils.logger import get_logger
+from ..utils.atomic_json import atomic_write_json
 from ..services.zep_factory import get_zep_client
 
 logger = get_logger('mirofish.api.world')
@@ -64,8 +65,7 @@ def save_episodes_cache(project_id: str, texts: List[str]) -> bool:
     try:
         path = episodes_cache_path(project_id)
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump([t for t in texts], f, ensure_ascii=False, indent=2)
+        atomic_write_json(path, [t for t in texts])
         return True
     except Exception as e:
         logger.warning(f"缓存世界图谱 episodes 失败（忽略）：{e}")

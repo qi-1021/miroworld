@@ -680,7 +680,8 @@
     "getReportInfoFailed": "Failed to get report info: {error}",
     "enterStep": "Entering Step {step}: {name}",
     "returnToStep": "Returning to Step {step}: {name}",
-    "customSimRounds": "Custom simulation rounds: {rounds} rounds"
+    "customSimRounds": "Custom simulation rounds: {rounds} rounds",
+    "simFailed": "Simulation failed: {error}"
   },
   "report": {
     "taskStarted": "Report generation task started",
@@ -724,7 +725,9 @@
     "reportSaved": "Report saved: {reportId}",
     "reportFolderDeleted": "Report folder deleted: {reportId}",
     "redirectToQuickSearch": "search_graph redirected to quick_search",
-    "redirectToInsightForge": "get_simulation_context redirected to insight_forge"
+    "redirectToInsightForge": "get_simulation_context redirected to insight_forge",
+    "pollFailed": "Report generation failed or log unavailable",
+    "retry": "Retry"
   },
   "console": {
     "zepToolsInitialized": "ZepToolsService initialized",

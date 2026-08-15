@@ -51,9 +51,11 @@ echo "== 停止前端 + 后端 =="
 stop_port 3000
 stop_port 5001
 
-# 兜底：清理未绑定端口的残留子进程（concurrently/npm 壳进程）
+# 兜底：清理未绑定端口的残留子进程（concurrently/npm 壳进程 + 模拟子进程）
 echo "== 兜底清理残留壳进程 =="
-for pat in "run.py" "vite" "concurrently" "npm run dev"; do
+for pat in "run.py" "vite" "concurrently" "npm run dev" \
+    "run_world_simulation.py" "run_parallel_simulation.py" \
+    "run_reddit_simulation.py" "run_twitter_simulation.py"; do
     # 用 pgrep 全盘匹配 + 工作目录校验属于本项目（避免误杀）
     for pid in $(pgrep -f "$pat" 2>/dev/null || true); do
         cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | grep '^n' | head -1 | cut -c2-)

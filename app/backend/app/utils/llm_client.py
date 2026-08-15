@@ -5,10 +5,13 @@ LLM客户端封装
 
 import json
 import time
+import logging
 from typing import Optional, Dict, Any, List
-from openai import OpenAI, BadRequestError
+from openai import OpenAI, BadRequestError, APIConnectionError, APITimeoutError
 
 from ..config import Config
+
+logger = logging.getLogger('mirofish.llm')
 
 
 class LLMClient:
@@ -20,7 +23,8 @@ class LLMClient:
         base_url: Optional[str] = None,
         model: Optional[str] = None,
         max_empty_retries: int = 2,
-        disable_thinking: bool = True
+        disable_thinking: bool = True,
+        connection_retries: int = 1
     ):
         self.api_key = api_key or Config.LLM_API_KEY
         self.base_url = base_url or Config.LLM_BASE_URL
@@ -29,6 +33,8 @@ class LLMClient:
         # 默认关闭推理模型的思考：思考会耗尽 max_tokens 导致空响应，
         # 且大幅拖慢响应。网关不支持该参数时自动降级。
         self.disable_thinking = disable_thinking
+        # 网络类错误（连接失败/超时）自动重试次数，指数退避，降低偶发抖动把任务打挂的概率
+        self.connection_retries = connection_retries
 
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
@@ -84,10 +90,12 @@ class LLMClient:
 
         # 兼容代理（如 OpenCode 网关）在长提示下偶发返回空内容，
         # 这里自动重试，避免把偶发问题变成硬失败。
+        # 连接类错误（断网/超时）再做一次指数退避重试。
         last_content: Optional[str] = None
-        for attempt in range(self.max_empty_retries + 1):
+        for conn_attempt in range(self.connection_retries + 1):
             try:
                 response = self.client.chat.completions.create(**kwargs)
+                break
             except BadRequestError:
                 if not extra_body:
                     raise
@@ -95,6 +103,24 @@ class LLMClient:
                 extra_body = None
                 kwargs.pop("extra_body", None)
                 response = self.client.chat.completions.create(**kwargs)
+                break
+            except (APIConnectionError, APITimeoutError) as exc:
+                if conn_attempt < self.connection_retries:
+                    wait = 1.5 * (conn_attempt + 1)
+                    logger.warning(
+                        "LLM 连接错误（第 %s 次），%.1fs 后重试: model=%s err=%s",
+                        conn_attempt + 1, wait, self.model, exc,
+                    )
+                    time.sleep(wait)
+                    continue
+                raise
+        else:
+            # 所有连接重试耗尽仍失败（正常由上面的 raise 抛出，这里兜底）
+            raise RuntimeError(f"LLM 连接重试耗尽: model={self.model}")
+
+        for attempt in range(self.max_empty_retries + 1):
+            if attempt > 0:
+                time.sleep(1.0 + attempt)
             if response.choices:
                 last_content = response.choices[0].message.content
             else:
@@ -102,7 +128,23 @@ class LLMClient:
             if last_content and last_content.strip():
                 return last_content
             if attempt < self.max_empty_retries:
-                time.sleep(1.0 + attempt)
+                logger.warning(
+                    "LLM 返回空响应，准备重试（%s/%s）: model=%s",
+                    attempt + 1, self.max_empty_retries, self.model,
+                )
+                try:
+                    response = self.client.chat.completions.create(**kwargs)
+                except (APIConnectionError, APITimeoutError):
+                    # 空响应重试阶段遇到连接错误不再叠加重试，由下一次循环尝试
+                    if attempt < self.max_empty_retries:
+                        time.sleep(1.0 + attempt)
+                        response = self.client.chat.completions.create(**kwargs)
+                    else:
+                        raise
+        logger.warning(
+            "LLM 多次返回空响应，降级为空字符串（调用方按失败处理）: model=%s",
+            self.model,
+        )
         return last_content or ""
 
     def chat_json(

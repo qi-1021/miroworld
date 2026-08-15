@@ -33,6 +33,7 @@ from typing import Dict, Any, List, Optional
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.atomic_json import atomic_write_json, atomic_write_bytes
 from ..utils.file_parser import split_text_into_chunks
 
 logger = get_logger('mirofish.world_bible')
@@ -352,8 +353,8 @@ class WorldBibleService:
         else:
             bible.metadata["embedding_model"] = None
 
-        with open(cls._bible_path(project_id), 'w', encoding='utf-8') as f:
-            json.dump(bible.to_dict(), f, ensure_ascii=False, indent=2)
+        # 原子写：避免写一半崩溃留下损坏 bible.json，导致设定库无法加载
+        atomic_write_json(cls._bible_path(project_id), bible.to_dict())
 
         logger.info(f"世界设定库已保存: project={project_id}, chunks={len(chunks)}")
         return bible
@@ -389,11 +390,14 @@ class WorldBibleService:
                 "chunk_ids": [c.chunk_id for c in chunks],
             }
             import numpy as np
+            import io
 
             arr = np.asarray(vectors, dtype=np.float32)
-            np.save(cls._embeddings_path(project_id), arr)
-            with open(cls._embeddings_meta_path(project_id), 'w', encoding='utf-8') as f:
-                json.dump(meta, f, ensure_ascii=False, indent=2)
+            # 原子写 npy：避免中途崩溃留下损坏的向量矩阵
+            buf = io.BytesIO()
+            np.save(buf, arr)
+            atomic_write_bytes(cls._embeddings_path(project_id), buf.getvalue())
+            atomic_write_json(cls._embeddings_meta_path(project_id), meta)
             # 内存中回填向量，方便调用方直接使用
             for chunk, vec in zip(chunks, vectors):
                 chunk.embedding = vec

@@ -48,6 +48,17 @@ def create_app(config_class=Config):
     if should_log_startup:
         logger.info("已注册模拟进程清理函数")
 
+    # 启动恢复：重启前中断的图谱构建任务（进程内 TaskManager 已丢）标记为失败，
+    # 避免项目永久卡在 graph_building 无法重建。测试环境跳过（避免动真实数据目录）。
+    if should_log_startup and not app.config.get("TESTING"):
+        try:
+            from .models.project import ProjectManager
+            recovered = ProjectManager.recover_interrupted_projects()
+            if recovered:
+                logger.info(f"启动恢复：已重置 {recovered} 个中断的图谱构建项目")
+        except Exception as e:
+            logger.warning(f"启动恢复扫描失败（忽略）: {e}")
+
     # 请求日志中间件
     @app.before_request
     def log_request():

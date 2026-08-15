@@ -14,6 +14,7 @@ from enum import Enum
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.atomic_json import atomic_write_json, atomic_write_text
 from .zep_entity_reader import ZepEntityReader, FilteredEntities
 from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
 from .simulation_config_generator import SimulationConfigGenerator, SimulationParameters
@@ -148,8 +149,7 @@ class SimulationManager:
 
         state.updated_at = datetime.now().isoformat()
 
-        with open(state_file, 'w', encoding='utf-8') as f:
-            json.dump(state.to_dict(), f, ensure_ascii=False, indent=2)
+        atomic_write_json(state_file, state.to_dict())
 
         self._simulations[state.simulation_id] = state
 
@@ -433,10 +433,9 @@ class SimulationManager:
                     total=3
                 )
 
-            # 保存配置文件
+            # 保存配置文件（原子写）
             config_path = os.path.join(sim_dir, "simulation_config.json")
-            with open(config_path, 'w', encoding='utf-8') as f:
-                f.write(sim_params.to_json())
+            atomic_write_text(config_path, sim_params.to_json())
 
             state.config_generated = True
             state.config_reasoning = sim_params.generation_reasoning

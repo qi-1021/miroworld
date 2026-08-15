@@ -309,6 +309,8 @@ const startBuildGraph = async () => {
 }
 
 const startGraphPolling = () => {
+  // 防重复：已在轮询则复用，避免叠加多个 10s 定时器
+  if (graphPollTimer) return
   addLog('Started polling for graph data...')
   fetchGraphData()
   graphPollTimer = setInterval(fetchGraphData, 10000)
@@ -333,6 +335,8 @@ const fetchGraphData = async () => {
 }
 
 const startPollingTask = (taskId) => {
+  // 换任务前先停旧轮询，避免旧 taskId 的定时器继续运行
+  if (pollTimer) clearInterval(pollTimer)
   pollTaskStatus(taskId)
   pollTimer = setInterval(() => pollTaskStatus(taskId), 2000)
 }
@@ -364,6 +368,7 @@ const pollTaskStatus = async (taskId) => {
         }
       } else if (task.status === 'failed') {
         stopPolling()
+        stopGraphPolling() // 构建失败后同时停止 10s 图谱轮询，避免空转
         error.value = task.error
         addLog(`Graph build task failed: ${task.error}`)
       }

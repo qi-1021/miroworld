@@ -426,13 +426,16 @@ const createWorldProject = async () => {
     return
   }
 
-  // 模型前置校验：无已验证模型时阻止创建并引导配置
-  worldError.value = ''
-  if (!(await ensureModelConfigured())) return
-
+  // 提前占位，封住 ensureModelConfigured 8 秒校验窗口内的重复点击
   loading.value = true
   worldError.value = ''
   try {
+    // 模型前置校验：无已验证模型时阻止创建并引导配置
+    if (!(await ensureModelConfigured())) {
+      loading.value = false
+      return
+    }
+
     const created = await createProject({ project_name: '世界模拟' })
     const pid = created?.data?.project_id
     if (!pid) throw new Error('项目创建失败')

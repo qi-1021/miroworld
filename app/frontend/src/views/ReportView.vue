@@ -212,8 +212,8 @@ watch(() => route.params.reportId, (newId) => {
 }, { immediate: true })
 
 onMounted(() => {
+  // loadReportData 已由上方 watch(immediate) 触发，这里只写启动日志，避免重复请求
   addLog(t('log.reportViewInit'))
-  loadReportData()
 })
 </script>
 

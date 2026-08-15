@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.atomic_json import atomic_write_json
 from . import timeline_normalizer as norm
 
 logger = get_logger('mirofish.timeline')
@@ -98,8 +99,7 @@ def _save_timeline(project_id: str, events: List[Dict[str, Any]]) -> bool:
     try:
         path = _timeline_path(project_id)
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump({"project_id": project_id, "events": events}, f, ensure_ascii=False, indent=2)
+        atomic_write_json(path, {"project_id": project_id, "events": events})
         return True
     except Exception as e:
         logger.warning(f"写入时间线失败: {e}")
@@ -168,8 +168,7 @@ def save_characters(project_id: str, profiles: List[Dict[str, Any]]) -> bool:
                 "description": str(it.get("description") or "")[:_CHAR_DESC_MAX],
             })
         payload = {"project_id": project_id, "characters": clean}
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+        atomic_write_json(path, payload)
         return True
     except Exception as e:
         logger.warning(f"写入人物设定失败: {e}")
@@ -516,6 +515,16 @@ _task_lock = threading.Lock()
 _STEPS_MAX = 50
 _tasks_loaded = False
 
+# 时间线写锁：防止同一项目上「读→改→写」的并发操作互相覆盖丢事件。
+# 锁粒度到项目（RLock），LLM 调用期间不持锁，只在最终读改写临界区持锁。
+_timeline_locks_guard = threading.Lock()
+_timeline_locks: Dict[str, threading.RLock] = {}
+
+
+def _timeline_lock_for(project_id: str) -> threading.RLock:
+    with _timeline_locks_guard:
+        return _timeline_locks.setdefault(project_id, threading.RLock())
+
 _TASKS_DIR = os.path.join(TIMELINE_ROOT, "tasks")
 
 
@@ -524,18 +533,16 @@ def _task_file_path(task_id: str) -> str:
 
 
 def _persist_task(task_id: str) -> None:
-    """在带锁取副本、锁外写文件。写失败仅警告（不阻断任务主流程）。"""
+    """在带锁取副本、锁外原子写文件。写失败仅警告（不阻断任务主流程）。"""
     if not task_id:
         return
     with _task_lock:
         if task_id not in _tasks:
             return
-        snap = json.dumps(_tasks[task_id], ensure_ascii=False)
+        snap = _tasks[task_id]
     try:
         os.makedirs(_TASKS_DIR, exist_ok=True)
-        path = _task_file_path(task_id)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(snap)
+        atomic_write_json(_task_file_path(task_id), snap)
     except Exception as e:
         logger.warning(f"持久化任务状态失败: {e}")
 
@@ -724,13 +731,14 @@ def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
                     message=f"已处理 {i + 1}/{total} 块",
                     stage=f"正在抽取 {i + 1}/{total} 块（{'LLM' if used == 'llm' else '启发式'}）")
 
-        # 排序 + 合并去重 + 写库
+        # 排序 + 合并去重 + 写库（项目级锁内重读最新时间线，避免与并行任务互相覆盖）
         _task_log(task_id, "归一化并排序事件")
         _update(stage="写入时间线", progress=98)
         all_events.sort(key=lambda e: (e.get("sort_lower") or 0))
-        existing = load_timeline(project_id, None).get("events", [])
-        existing_merged = _merge_events(existing, all_events)
-        _save_timeline(project_id, existing_merged)
+        with _timeline_lock_for(project_id):
+            existing = load_timeline(project_id, None).get("events", [])
+            existing_merged = _merge_events(existing, all_events)
+            _save_timeline(project_id, existing_merged)
 
         if total == 0:
             _task_log(task_id, "源文本为空，未抽取到事件")
@@ -859,8 +867,10 @@ def _future_extract_body(project_id: str, task_id: str, goal: str, horizon: Opti
             ev["sort_upper"] = ev["sort_lower"]
         _task_log(task_id, "写入时间线")
         _update_task(task_id, stage="写入时间线", progress=90)
-        merged = _merge_events(events, new_events)
-        _save_timeline(project_id, merged)
+        with _timeline_lock_for(project_id):
+            latest = load_timeline(project_id, None).get("events", [])
+            merged = _merge_events(latest, new_events)
+            _save_timeline(project_id, merged)
         _task_log(task_id, f"已追加 {len(new_events)} 条未来事件")
         _update_task(task_id, status="completed", progress=100, stage="完成",
                      message=f"已追加 {len(new_events)} 条未来事件")
@@ -1071,8 +1081,10 @@ def _fork_extract_body(project_id: str, event_id: str, task_id: str,
 
         _task_log(task_id, "写入时间线")
         _update_task(task_id, stage="写入时间线", progress=90)
-        merged = _merge_events(events, all_new)
-        _save_timeline(project_id, merged)
+        with _timeline_lock_for(project_id):
+            latest = load_timeline(project_id, None).get("events", [])
+            merged = _merge_events(latest, all_new)
+            _save_timeline(project_id, merged)
         _task_log(task_id, f"已追加 {len(all_new)} 条分支事件（branch={branch_id}）")
         # 若批 2 未产出（仅前半段），标 partial 完成
         if len(all_new) == len(evs1) and evs1:
@@ -1186,8 +1198,10 @@ def _fork_continue_body(project_id: str, branch_id: str, task_id: str,
                                                 branch_goal, merged_g, base, seq)
         _task_log(task_id, "写入时间线")
         _update_task(task_id, stage="写入时间线", progress=90)
-        merged = _merge_events(events, new_events)
-        _save_timeline(project_id, merged)
+        with _timeline_lock_for(project_id):
+            latest = load_timeline(project_id, None).get("events", [])
+            merged = _merge_events(latest, new_events)
+            _save_timeline(project_id, merged)
         _task_log(task_id, f"已续推 {len(new_events)} 条")
         _update_task(task_id, status="completed", progress=100, stage="完成",
                      branch_id=branch_id, event_count=len(new_events),
@@ -1304,23 +1318,24 @@ def add_objection(project_id: str, event_id: str,
         raise ValueError(f"异议分类必须是: {'、'.join(_OBJECTION_CATEGORIES)}")
     if not reason:
         raise ValueError("异议理由不能为空")
-    data = load_timeline(project_id, None)
-    events = data.get("events", [])
-    target = next((e for e in events if e.get("id") == event_id), None)
-    if target is None:
-        return None
-    if not isinstance(target.get("objections"), list):
-        target["objections"] = []
-    target["objections"].append({
-        "id": f"obj_{uuid.uuid4().hex[:12]}",
-        "category": category[:40],
-        "reason": reason[:500],
-        "suggestion": str(suggestion or "").strip()[:500] if suggestion else "",
-        "created_at": datetime.now().isoformat(timespec="seconds"),
-    })
-    target["updated_at"] = datetime.now().isoformat(timespec="seconds")
-    _save_timeline(project_id, events)
-    return dict(target)
+    with _timeline_lock_for(project_id):
+        data = load_timeline(project_id, None)
+        events = data.get("events", [])
+        target = next((e for e in events if e.get("id") == event_id), None)
+        if target is None:
+            return None
+        if not isinstance(target.get("objections"), list):
+            target["objections"] = []
+        target["objections"].append({
+            "id": f"obj_{uuid.uuid4().hex[:12]}",
+            "category": category[:40],
+            "reason": reason[:500],
+            "suggestion": str(suggestion or "").strip()[:500] if suggestion else "",
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+        })
+        target["updated_at"] = datetime.now().isoformat(timespec="seconds")
+        _save_timeline(project_id, events)
+        return dict(target)
 
 
 # ---------------------------------------------------------------------------
@@ -1328,60 +1343,68 @@ def add_objection(project_id: str, event_id: str,
 # ---------------------------------------------------------------------------
 def patch_event(project_id: str, event_id: str, patch: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """按 event_id 更新某项目时间线中的事件，持久化。返回更新后事件；不存在返回 None。"""
-    data = load_timeline(project_id, None)
-    events = data.get("events", [])
-    target = next((e for e in events if e.get("id") == event_id), None)
-    if target is None:
-        return None
-    if isinstance(patch, dict):
-        for k, v in patch.items():
-            if k == "sort_lower":
-                target["sort_lower"] = _float_or(v, target.get("sort_lower", 0.0))
-            elif k == "sort_upper":
-                target["sort_upper"] = _float_or(v, target.get("sort_upper", 0.0))
-            elif k == "year":
-                target["year"] = _int_or_none(v)
-                if v is not None and v != "":
-                    target["sort_lower"] = float(v) * 10.0
-                    target["sort_upper"] = float(v) * 10.0
-            elif k == "age":
-                target["age"] = _int_or_none(v)
-                if v is not None and v != "":
-                    target["sort_lower"] = float(v)
-                    target["sort_upper"] = float(v)
-            elif k in ("summary", "time_kind", "time_text", "location_text", "location_name",
-                       "location_kind", "ev_type", "raw_source", "source", "extract_method"):
-                if k == "time_kind":
-                    target[k] = norm.normalize_time_kind(v)
-                elif k == "ev_type":
-                    target[k] = norm.normalize_ev_type(v)
-                else:
-                    target[k] = str(v) if v is not None else ""
-            elif k == "characters":
-                target[k] = _str_list(v)
-            elif k == "confidence":
-                target[k] = _float_or(v, 0.5)
-    target["updated_at"] = datetime.now().isoformat(timespec="seconds")
-    events.sort(key=lambda e: (e.get("sort_lower") or 0))
-    _save_timeline(project_id, events)
-    return dict(target)
+    with _timeline_lock_for(project_id):
+        data = load_timeline(project_id, None)
+        events = data.get("events", [])
+        target = next((e for e in events if e.get("id") == event_id), None)
+        if target is None:
+            return None
+        if isinstance(patch, dict):
+            for k, v in patch.items():
+                if k == "sort_lower":
+                    target["sort_lower"] = _float_or(v, target.get("sort_lower", 0.0))
+                elif k == "sort_upper":
+                    target["sort_upper"] = _float_or(v, target.get("sort_upper", 0.0))
+                elif k == "year":
+                    target["year"] = _int_or_none(v)
+                    if v is not None and v != "":
+                        target["sort_lower"] = float(v) * 10.0
+                        target["sort_upper"] = float(v) * 10.0
+                elif k == "age":
+                    target["age"] = _int_or_none(v)
+                    if v is not None and v != "":
+                        target["sort_lower"] = float(v)
+                        target["sort_upper"] = float(v)
+                elif k in ("summary", "time_kind", "time_text", "location_text", "location_name",
+                           "location_kind", "ev_type", "raw_source", "source", "extract_method"):
+                    if k == "time_kind":
+                        target[k] = norm.normalize_time_kind(v)
+                    elif k == "ev_type":
+                        target[k] = norm.normalize_ev_type(v)
+                    else:
+                        target[k] = str(v) if v is not None else ""
+                elif k == "characters":
+                    target[k] = _str_list(v)
+                elif k == "confidence":
+                    target[k] = _float_or(v, 0.5)
+        target["updated_at"] = datetime.now().isoformat(timespec="seconds")
+        events.sort(key=lambda e: (e.get("sort_lower") or 0))
+        _save_timeline(project_id, events)
+        return dict(target)
 # ---------------------------------------------------------------------------
 # 事件删除（delete）与合并（merge）
 # ---------------------------------------------------------------------------
 def delete_event(project_id: str, event_id: str) -> bool:
     """删除指定事件并持久化（仅删该事件，不级联删分支）。存在返回 True，不存在返回 False。"""
-    data = load_timeline(project_id, None)
-    events = data.get("events", [])
-    before = len(events)
-    events = [e for e in events if e.get("id") != event_id]
-    if len(events) == before:
-        return False
-    events.sort(key=lambda e: e.get("sort_lower") or 0)
-    _save_timeline(project_id, events)
-    return True
+    with _timeline_lock_for(project_id):
+        data = load_timeline(project_id, None)
+        events = data.get("events", [])
+        before = len(events)
+        events = [e for e in events if e.get("id") != event_id]
+        if len(events) == before:
+            return False
+        events.sort(key=lambda e: e.get("sort_lower") or 0)
+        _save_timeline(project_id, events)
+        return True
 
 
 def merge_events(project_id: str, target_id: str, source_ids: List[str]) -> Optional[Dict[str, Any]]:
+    """项目级锁内合并事件，避免与并行抽取/推演写互相覆盖。"""
+    with _timeline_lock_for(project_id):
+        return _merge_events_impl(project_id, target_id, source_ids)
+
+
+def _merge_events_impl(project_id: str, target_id: str, source_ids: List[str]) -> Optional[Dict[str, Any]]:
     """把若干 source 事件合并进 target 事件，删除 source，持久化，返回合并后 target。
 
     - characters/entities 去重合并（target 在前）

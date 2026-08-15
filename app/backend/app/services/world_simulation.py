@@ -25,6 +25,7 @@ from typing import Dict, Any, List, Optional
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.llm_client import LLMClient
+from ..utils.atomic_json import atomic_write_json
 from .world_bible import WorldBibleService
 
 logger = get_logger('mirofish.world_sim')
@@ -125,8 +126,19 @@ class WorldSimulationService:
     @classmethod
     def _save_state(cls, state: WorldSimulationState):
         os.makedirs(os.path.dirname(cls._state_path(state.project_id, state.simulation_id)), exist_ok=True)
-        with open(cls._state_path(state.project_id, state.simulation_id), 'w', encoding='utf-8') as f:
-            json.dump(state.to_dict(), f, ensure_ascii=False, indent=2)
+        atomic_write_json(cls._state_path(state.project_id, state.simulation_id), state.to_dict())
+        with cls._lock:
+            cls._states[state.simulation_id] = state
+
+    @classmethod
+    def _load_state_file(cls, path: str) -> Optional[WorldSimulationState]:
+        """读取 state.json；损坏/缺字段时降级返回 None（不让单个坏文件拖垮列表/查询）。"""
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return WorldSimulationState(**json.load(f))
+        except Exception as e:
+            logger.warning(f"读取世界模拟状态失败（跳过）: {path}, {e}")
+            return None
 
     @classmethod
     def get_state(cls, simulation_id: str) -> Optional[WorldSimulationState]:
@@ -139,8 +151,11 @@ class WorldSimulationService:
             for proj_name in os.listdir(WORLD_SIM_ROOT):
                 path = cls._state_path(proj_name, simulation_id)
                 if os.path.exists(path):
-                    with open(path, 'r', encoding='utf-8') as f:
-                        return WorldSimulationState(**json.load(f))
+                    state = cls._load_state_file(path)
+                    if state is not None:
+                        with cls._lock:
+                            cls._states[simulation_id] = state
+                    return state
         return None
 
     @classmethod
@@ -156,9 +171,8 @@ class WorldSimulationService:
                 continue
             state_path = os.path.join(sim_dir, 'state.json')
             if os.path.exists(state_path):
-                with open(state_path, 'r', encoding='utf-8') as f:
-                    state = WorldSimulationState(**json.load(f))
-                if state.project_id == project_id:
+                state = cls._load_state_file(state_path)
+                if state and state.project_id == project_id:
                     results.append(state.to_dict())
                     if len(results) >= limit:
                         break
@@ -758,8 +772,18 @@ class WorldSimulationService:
             stderr=subprocess.STDOUT,
             text=True,
         )
-        output, _ = proc.communicate(timeout=3600)
-        return output
+        try:
+            output, _ = proc.communicate(timeout=3600)
+            return output
+        except subprocess.TimeoutExpired:
+            # communicate 超时不会自动杀进程，必须显式终止，否则孤儿进程一直烧内存
+            try:
+                proc.kill()
+                proc.wait(timeout=10)
+            except Exception as e:
+                logger.warning(f"终止超时世界模拟子进程失败: {e}")
+            logger.error("世界模拟子进程超时（1 小时），已终止进程 %s", proc.pid)
+            raise
 
     @staticmethod
     def _get_simulation_python() -> str:

@@ -163,6 +163,25 @@ const handleConnectionSaved = async () => {
   activeTab.value = 'library'
 }
 
+// 409/revision 冲突检测：自动刷新 registry 并用最新 revision 重试一次
+const isRevisionConflict = (err) => (
+  err?.response?.status === 409 || /revision|conflict|版本/i.test(err?.message || '')
+)
+const runWithRevisionRetry = async (operation, maxRetries = 1) => {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const latest = await getModelRegistry()
+      return await operation(latest.data.revision)
+    } catch (err) {
+      if (attempt < maxRetries && isRevisionConflict(err)) {
+        await loadRegistry()
+        continue
+      }
+      throw err
+    }
+  }
+}
+
 const handleDeleteConnection = async (connectionId) => {
   const connection = registry.value.connections.find(item => item.id === connectionId)
   const name = connection ? connection.name : connectionId
@@ -170,9 +189,9 @@ const handleDeleteConnection = async (connectionId) => {
   error.value = ''
   success.value = ''
   try {
-    // 操作前取最新 revision，避免配置版本过期导致 409
-    const latest = await getModelRegistry()
-    const response = await deleteModelConnection(connectionId, latest.data.revision)
+    const response = await runWithRevisionRetry(
+      (revision) => deleteModelConnection(connectionId, revision)
+    )
     const cleaned = response.data.cleaned_bindings + response.data.cleaned_presets
     await loadRegistry()
     if (cleaned > 0) {
@@ -190,8 +209,9 @@ const handleDeleteModel = async (modelId) => {
   error.value = ''
   success.value = ''
   try {
-    const latest = await getModelRegistry()
-    const response = await deleteModelEntry(modelId, latest.data.revision)
+    const response = await runWithRevisionRetry(
+      (revision) => deleteModelEntry(modelId, revision)
+    )
     const cleaned = response.data.cleaned_bindings + response.data.cleaned_presets
     await loadRegistry()
     if (cleaned > 0) {

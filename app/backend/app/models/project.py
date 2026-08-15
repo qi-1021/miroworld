@@ -7,11 +7,15 @@ import os
 import json
 import uuid
 import shutil
+import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from enum import Enum
 from dataclasses import dataclass, field, asdict
 from ..config import Config
+from ..utils.atomic_json import atomic_write_json
+
+logger = logging.getLogger('mirofish.project')
 
 
 class ProjectStatus(str, Enum):
@@ -190,12 +194,12 @@ class ProjectManager:
 
     @classmethod
     def save_project(cls, project: Project) -> None:
-        """保存项目元数据"""
+        """保存项目元数据（原子写，避免写一半崩溃损坏 project.json）。"""
         project.updated_at = datetime.now().isoformat()
         meta_path = cls._get_project_meta_path(project.project_id)
-
-        with open(meta_path, 'w', encoding='utf-8') as f:
-            json.dump(project.to_dict(), f, ensure_ascii=False, indent=2)
+        cls._ensure_projects_dir()
+        os.makedirs(os.path.dirname(meta_path), exist_ok=True)
+        atomic_write_json(meta_path, project.to_dict())
 
     @classmethod
     def get_project(cls, project_id: str) -> Optional[Project]:
@@ -213,10 +217,13 @@ class ProjectManager:
         if not os.path.exists(meta_path):
             return None
 
-        with open(meta_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-
-        return Project.from_dict(data)
+        try:
+            with open(meta_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return Project.from_dict(data)
+        except Exception as e:
+            logger.warning(f"读取项目元数据失败（按不存在处理）: {project_id}, {e}")
+            return None
 
     @classmethod
     def list_projects(cls, limit: int = 50) -> List[Project]:
@@ -232,7 +239,9 @@ class ProjectManager:
         cls._ensure_projects_dir()
 
         projects = []
-        for project_id in os.listdir(cls.PROJECTS_DIR):
+        for project_id in sorted(os.listdir(cls.PROJECTS_DIR)):
+            if not os.path.isdir(os.path.join(cls.PROJECTS_DIR, project_id)):
+                continue
             project = cls.get_project(project_id)
             if project:
                 projects.append(project)
@@ -241,6 +250,36 @@ class ProjectManager:
         projects.sort(key=lambda p: p.created_at, reverse=True)
 
         return projects[:limit]
+
+    @classmethod
+    def recover_interrupted_projects(cls) -> int:
+        """启动时恢复：把重启前处于 GRAPH_BUILDING 的项目标记为 FAILED。
+
+        图谱构建任务保存在进程内 TaskManager（重启即丢），进程重启后若项目
+        仍停在 graph_building，会永远无法重新构建。这里一次性恢复为失败态，
+        前端即可重新发起（/build 支持 force，失败态也允许直接重建）。
+        """
+        recovered = 0
+        if not os.path.isdir(cls.PROJECTS_DIR):
+            return recovered
+        for project_id in sorted(os.listdir(cls.PROJECTS_DIR)):
+            project_dir = os.path.join(cls.PROJECTS_DIR, project_id)
+            if not os.path.isdir(project_dir):
+                continue
+            project = cls.get_project(project_id)
+            if not project:
+                continue
+            if project.status == ProjectStatus.GRAPH_BUILDING:
+                project.status = ProjectStatus.FAILED
+                project.error = "服务重启，图谱构建中断；请重新发起构建"
+                project.graph_build_task_id = None
+                cls.save_project(project)
+                recovered += 1
+                logger.info(
+                    "启动恢复：项目 %s 的图谱构建中断，已标记为 failed",
+                    project_id,
+                )
+        return recovered
 
     @classmethod
     def delete_project(cls, project_id: str) -> bool:
