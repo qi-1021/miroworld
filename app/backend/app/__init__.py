@@ -96,6 +96,62 @@ def create_app(config_class=Config):
     def health():
         return {'status': 'ok', 'service': 'MiroFish Backend'}
 
+    @app.route('/api/health/detailed')
+    def detailed_health():
+        """详细健康检查：Neo4j 端口、模型注册表、数据目录可写性。
+
+        任何单项失败都不会让端点 500，而是把该项标记为 unavailable/error，
+        便于运维和 smoke 脚本快速定位。
+        """
+        import socket
+        from datetime import datetime
+
+        checks = {
+            "status": "ok",
+            "service": "MiroFish Backend",
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+        }
+
+        # 1) Neo4j Bolt 端口连通性（127.0.0.1:7687）
+        try:
+            sock = socket.create_connection(("127.0.0.1", 7687), timeout=1)
+            sock.close()
+            checks["neo4j"] = "ok"
+        except Exception:
+            checks["neo4j"] = "unavailable"
+
+        # 2) 模型注册表
+        try:
+            from .services.model_registry import ModelRegistryService
+            registry = ModelRegistryService().get_redacted_registry()
+            checks["models"] = {
+                "verified": sum(
+                    1 for m in registry.get("models", []) if m.get("verified")
+                ),
+                "connections": len(registry.get("connections", [])),
+            }
+        except Exception as e:
+            checks["models"] = {"error": str(e)}
+
+        # 3) 数据目录可写性（临时探测文件）
+        try:
+            data_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
+            )
+            os.makedirs(data_dir, exist_ok=True)
+            probe = os.path.join(data_dir, ".health-write-probe")
+            with open(probe, "w", encoding="utf-8") as f:
+                f.write("ok")
+            os.remove(probe)
+            checks["data_writable"] = True
+        except Exception as e:
+            checks["data_writable"] = False
+            checks["data_writable_error"] = str(e)
+
+        if checks["neo4j"] != "ok":
+            checks["status"] = "degraded"
+        return checks
+
     if should_log_startup:
         logger.info("MiroFish Backend 启动完成")
 

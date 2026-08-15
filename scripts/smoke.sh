@@ -49,3 +49,5 @@ echo "SMOKE OK: backend /health 通过"
 echo "SMOKE OK: frontend http://127.0.0.1:3000 返回 200"
 neo4j_count=$(lsof -iTCP:7687 -sTCP:LISTEN -t 2>/dev/null | wc -l | tr -d ' ')
 echo "SMOKE OK: Neo4j 7687 监听数=$neo4j_count"
+echo "== 详细健康检查 =="
+curl -s -m 5 http://127.0.0.1:5001/api/health/detailed | python3 -m json.tool 2>/dev/null || echo "详细健康检查不可用"
