@@ -59,6 +59,15 @@ def create_app(config_class=Config):
         except Exception as e:
             logger.warning(f"启动恢复扫描失败（忽略）: {e}")
 
+        # 启动时顺带清理过旧的时间线任务状态文件，防止长期运行无限增长
+        try:
+            from .services.timeline_service import prune_old_task_files
+            removed = prune_old_task_files()
+            if removed:
+                logger.info(f"启动清理：已删除 {removed} 个过期时间线任务状态文件")
+        except Exception as e:
+            logger.warning(f"启动任务文件清理失败（忽略）: {e}")
+
     # 请求日志中间件
     @app.before_request
     def log_request():

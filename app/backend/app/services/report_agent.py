@@ -59,6 +59,35 @@ class ReportLogger:
         log_dir = os.path.dirname(self.log_file_path)
         os.makedirs(log_dir, exist_ok=True)
 
+    # agent_log.jsonl 单文件上限（超过后截断保留最近 N 行，防止长期运行磁盘无限增长）
+    _AGENT_LOG_MAX_BYTES = 8 * 1024 * 1024
+    _AGENT_LOG_KEEP_LINES = 2000
+
+    def _maybe_trim_jsonl(self):
+        """如果 agent_log.jsonl 过大，截断为最近 _AGENT_LOG_KEEP_LINES 行。"""
+        try:
+            if not os.path.exists(self.log_file_path):
+                return
+            size = os.path.getsize(self.log_file_path)
+            if size <= self._AGENT_LOG_MAX_BYTES:
+                return
+            with open(self.log_file_path, 'r', encoding='utf-8', errors='replace') as f:
+                lines = f.readlines()
+            if len(lines) <= self._AGENT_LOG_KEEP_LINES:
+                return
+            kept = lines[-self._AGENT_LOG_KEEP_LINES:]
+            # 原子写回，避免截断过程中崩溃留下半个文件
+            from ..utils.atomic_json import atomic_write_text
+            atomic_write_text(self.log_file_path, "".join(kept))
+            logger.warning(
+                "agent_log.jsonl 超过 %dMB，已截断保留最近 %d 行: %s",
+                self._AGENT_LOG_MAX_BYTES // (1024 * 1024),
+                self._AGENT_LOG_KEEP_LINES,
+                self.log_file_path,
+            )
+        except Exception as e:
+            logger.warning(f"agent_log.jsonl 截断失败（忽略）: {e}")
+
     def _get_elapsed_time(self) -> float:
         """获取从开始到现在的耗时（秒）"""
         return (datetime.now() - self.start_time).total_seconds()
@@ -81,6 +110,7 @@ class ReportLogger:
             section_title: 当前章节标题（可选）
             section_index: 当前章节索引（可选）
         """
+        self._maybe_trim_jsonl()
         log_entry = {
             "timestamp": datetime.now().isoformat(),
             "elapsed_seconds": round(self._get_elapsed_time(), 2),
@@ -337,14 +367,17 @@ class ReportConsoleLogger:
         os.makedirs(log_dir, exist_ok=True)
 
     def _setup_file_handler(self):
-        """设置文件处理器，将日志同时写入文件"""
+        """设置文件处理器，将日志同时写入文件（自动轮转，防止无限增长）"""
         import logging
+        from logging.handlers import RotatingFileHandler
 
-        # 创建文件处理器
-        self._file_handler = logging.FileHandler(
+        # 使用 RotatingFileHandler：单个文件 5MB，保留 2 个备份
+        self._file_handler = RotatingFileHandler(
             self.log_file_path,
+            maxBytes=5 * 1024 * 1024,
+            backupCount=2,
+            encoding='utf-8',
             mode='a',
-            encoding='utf-8'
         )
         self._file_handler.setLevel(logging.INFO)
 

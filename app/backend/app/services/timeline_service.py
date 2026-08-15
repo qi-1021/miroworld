@@ -562,6 +562,45 @@ def _restore_interrupted(task: Dict[str, Any]) -> Dict[str, Any]:
     return task
 
 
+def prune_old_task_files(retention_days: Optional[int] = None) -> int:
+    """清理过旧的时间线任务状态文件，防止 data/world-timeline/tasks 无限增长。
+
+    - 默认保留天数从环境变量 TIMELINE_TASK_RETENTION_DAYS 读取（默认 90）；
+    - 只删除 status 非 running 且文件 mtime 超过保留天数的任务文件；
+    - running 任务文件永远保留（可能正在执行）；
+    - 返回删除数量。任何单个文件异常只告警跳过。
+    """
+    if retention_days is None:
+        try:
+            retention_days = int(os.environ.get("TIMELINE_TASK_RETENTION_DAYS", "90"))
+        except (TypeError, ValueError):
+            retention_days = 90
+    retention_days = max(1, retention_days)
+    if not os.path.isdir(_TASKS_DIR):
+        return 0
+    cutoff = time.time() - retention_days * 24 * 3600
+    removed = 0
+    for fn in os.listdir(_TASKS_DIR):
+        if not fn.endswith(".json"):
+            continue
+        path = os.path.join(_TASKS_DIR, fn)
+        try:
+            st = os.stat(path)
+            if st.st_mtime > cutoff:
+                continue
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and data.get("status") == "running":
+                continue
+            os.remove(path)
+            removed += 1
+        except Exception as e:
+            logger.warning(f"清理旧任务文件失败（跳过）: {path}, {e}")
+    if removed:
+        logger.info(f"已清理 {removed} 个超过 {retention_days} 天的旧任务状态文件")
+    return removed
+
+
 def _ensure_tasks_loaded() -> None:
     """懒加载一次磁盘上的任务状态；status=running → interrupted。幂等。"""
     global _tasks_loaded

@@ -223,7 +223,9 @@
     "visualFuture": "future",
     "footerNote": "Every story, told in infinite ways",
     "mediaEmptyHint": "Upload documents and set a goal first",
-    "worldEmptyHint": "Add background or story material first (upload or paste)"
+    "worldEmptyHint": "Add background or story material first (upload or paste)",
+    "modelConfigRequired": "No usable model configured. Please set up a model first.",
+    "modelConfigCheckFailed": "Model check failed or timed out. Please set up a model first."
   },
   "main": {
     "layoutGraph": "Graph",

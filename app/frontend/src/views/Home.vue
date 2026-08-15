@@ -287,11 +287,11 @@ const ensureModelConfigured = async () => {
       modelConfigAlert.value = ''
       return true
     }
-    modelConfigAlert.value = '尚未配置可用模型，请先完成模型设置'
+    modelConfigAlert.value = t('home.modelConfigRequired')
     return false
   } catch (e) {
     // 查询失败/超时时同样视为未就绪并引导配置，避免提交后连接凭空失败
-    modelConfigAlert.value = '模型配置检查失败或超时，请先完成模型设置'
+    modelConfigAlert.value = t('home.modelConfigCheckFailed')
     return false
   }
 }
