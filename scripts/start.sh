@@ -207,6 +207,9 @@ start_app() {
     
     # 启动应用
     log_info "启动前端和后端..."
+    # 建图 LLM 并发（属性/摘要调用并行度）：默认 2 保留性能调优；
+    # 网关不稳时可用 GRAPHITI_MAX_CONCURRENCY=1 ./scripts/start.sh 降回串行。
+    export GRAPHITI_MAX_CONCURRENCY="${GRAPHITI_MAX_CONCURRENCY:-2}"
     npm run dev &
     
     # 等待服务启动
@@ -224,6 +227,46 @@ start_app() {
     fi
 }
 
+# 清理上一次运行残留的进程（端口 3000/5001 上属于本项目的旧进程）。
+# 否则"端口被占用"会导致新后端绑定失败、前端被 concurrently 连带杀掉，
+# 表现为"打不开"。只清理本项目进程（run.py/vite/concurrently），
+# 不误杀占用同端口的无关程序。
+cleanup_previous() {
+    log_info "清理上一次运行残留（端口 3000/5001）..."
+    local port pid cmd found=""
+    for port in 3000 5001; do
+        local pids
+        pids=$(lsof -nP -iTCP:$port -sTCP:LISTEN -t 2>/dev/null || true)
+        [ -z "$pids" ] && continue
+        for pid in $pids; do
+            cmd=$(ps -p "$pid" -o command= 2>/dev/null | head -1)
+            case "$cmd" in
+                *mirofish-portable*|*run.py*|*vite*|*concurrently*|*npm*run*dev*)
+                    found=yes
+                    log_warn "停止旧进程 pid=$pid (${cmd:0:60})，释放端口 $port"
+                    kill "$pid" 2>/dev/null || true
+                    ;;
+                *)
+                    log_warn "端口 $port 被无关进程占用 (${cmd:0:60})，跳过清理"
+                    ;;
+            esac
+        done
+    done
+    if [ -z "$found" ]; then
+        log_info "✓ 无残留进程"
+    fi
+    # 等待端口释放（最多 10 秒）
+    local i
+    for i in $(seq 1 10); do
+        if ! lsof -nP -iTCP:3000 -sTCP:LISTEN -t >/dev/null 2>&1 &&            ! lsof -nP -iTCP:5001 -sTCP:LISTEN -t >/dev/null 2>&1; then
+            log_info "✓ 端口已释放"
+            return 0
+        fi
+        sleep 1
+    done
+    log_warn "端口未完全释放，将继续尝试启动（若失败请手动检查占用）"
+}
+
 # 主程序
 main() {
     echo "================================================"
@@ -232,6 +275,9 @@ main() {
     echo ""
     
     check_dependencies
+    echo ""
+    
+    cleanup_previous
     echo ""
     
     start_neo4j
