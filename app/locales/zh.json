@@ -212,7 +212,9 @@
     "visualBranch": "分叉",
     "visualNow": "现在",
     "visualFuture": "未来",
-    "footerNote": "把故事讲成无数种可能"
+    "footerNote": "把故事讲成无数种可能",
+    "mediaEmptyHint": "请先上传文档并填写任务目标",
+    "worldEmptyHint": "请先填写背景资料或章节正文（支持上传文件或直接粘贴）"
   },
   "main": {
     "layoutGraph": "图谱",

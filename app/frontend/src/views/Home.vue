@@ -139,7 +139,10 @@
               <span class="mc-text">⚠ {{ modelConfigAlert }}</span>
               <button class="mc-link" type="button" @click="openModelSettings">{{ $t('home.configureModel') }}</button>
             </div>
-            <button class="btn btn-primary btn-lg" @click="startSimulation" :disabled="!canSubmit || loading">
+            <div v-if="error" class="world-error">{{ error }}</div>
+            <button class="btn btn-primary btn-lg" @click="startSimulation"
+              :class="{ 'btn-disabled': !canSubmit }" :disabled="loading"
+              :title="!canSubmit ? $t('home.mediaEmptyHint') : ''">
               <span v-if="!loading">{{ $t('home.startEngine') }}</span>
               <span v-else>{{ $t('home.initializing') }}</span>
               <span class="btn-arrow">→</span>
@@ -208,7 +211,9 @@
               <span class="mc-text">⚠ {{ modelConfigAlert }}</span>
               <button class="mc-link" type="button" @click="openModelSettings">{{ $t('home.configureModel') }}</button>
             </div>
-            <button class="btn btn-primary btn-lg" @click="createWorldProject" :disabled="!canCreateWorld || loading">
+            <button class="btn btn-primary btn-lg" @click="createWorldProject"
+              :class="{ 'btn-disabled': !canCreateWorld }" :disabled="loading"
+              :title="!canCreateWorld ? $t('home.worldEmptyHint') : ''">
               <span v-if="!loading">{{ $t('home.createWorld') }}</span>
               <span v-else>{{ $t('home.creatingWorld') }}</span>
               <span class="btn-arrow">→</span>
@@ -232,6 +237,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import HistoryDatabase from '../components/HistoryDatabase.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import { BRAND } from '../config/brand'
@@ -240,6 +246,7 @@ import { saveWorldInputMultipart } from '../api/world'
 import { getModelRegistry } from '../api/models'
 
 const router = useRouter()
+const { t } = useI18n()
 
 // 表单数据
 const formData = ref({
@@ -268,7 +275,11 @@ const modelConfigAlert = ref('')
  */
 const ensureModelConfigured = async () => {
   try {
-    const res = await getModelRegistry()
+    // 8 秒超时：避免模型注册表接口异常时按钮长时间无反馈
+    const res = await Promise.race([
+      getModelRegistry(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
+    ])
     const registry = res?.data || res || {}
     const models = registry.models || []
     const hasVerified = models.some(item => item.verified)
@@ -279,8 +290,8 @@ const ensureModelConfigured = async () => {
     modelConfigAlert.value = '尚未配置可用模型，请先完成模型设置'
     return false
   } catch (e) {
-    // 查询失败时同样视为未就绪并引导配置，避免提交后连接凭空失败
-    modelConfigAlert.value = '模型配置查询失败，请先完成模型设置'
+    // 查询失败/超时时同样视为未就绪并引导配置，避免提交后连接凭空失败
+    modelConfigAlert.value = '模型配置检查失败或超时，请先完成模型设置'
     return false
   }
 }
@@ -407,9 +418,16 @@ const removeWorldFile = (index, kind) => {
 
 // 创建世界项目：建项目 → 上传资料 → 进入世界设定页
 const createWorldProject = async () => {
-  if (!canCreateWorld.value || loading) return
+  if (loading.value) return
+
+  // 未填写任何资料：给出明确提示（按钮不再静默禁用）
+  if (!canCreateWorld.value) {
+    worldError.value = t('home.worldEmptyHint')
+    return
+  }
 
   // 模型前置校验：无已验证模型时阻止创建并引导配置
+  worldError.value = ''
   if (!(await ensureModelConfigured())) return
 
   loading.value = true
@@ -444,9 +462,16 @@ const scrollToConsole = () => {
 
 // 开始模拟 - 立即跳转，API调用在Process页面进行
 const startSimulation = async () => {
-  if (!canSubmit.value || loading.value) return
+  if (loading.value) return
+
+  // 未选择文件或未填写目标：给出明确提示
+  if (!canSubmit.value) {
+    error.value = t('home.mediaEmptyHint')
+    return
+  }
 
   // 模型前置校验：无已验证模型时阻止提交并引导配置
+  error.value = ''
   if (!(await ensureModelConfigured())) return
 
   // 存储待上传的数据
@@ -569,6 +594,8 @@ const startSimulation = async () => {
   transition: background 0.18s ease, transform 0.12s ease, box-shadow 0.18s ease;
 }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-disabled { opacity: 0.55; cursor: not-allowed; }
+.btn-disabled:hover:not(:disabled) { background: var(--accent); opacity: 0.55; }
 .btn-primary {
   background: var(--accent);
   color: #fff;
