@@ -7,6 +7,7 @@
 - 🗄️ Neo4j 本地数据库（自动安装）
 - 🔄 跨平台启动脚本（macOS/Linux/Windows）
 - 💾 完全可移植（支持移动硬盘部署）
+- 🌍 **世界推演优先**：首页默认进入世界推演，舆情分析作为第二选项保留
 
 ---
 
@@ -41,6 +42,15 @@ scripts\stop.bat --all  REM 停止前端/后端/Neo4j
 
 ---
 
+## 📖 文档
+
+- `docs/USER-GUIDE.md`：使用者指南（推荐先读）
+- `docs/PROJECT-STRUCTURE.md`：项目结构说明
+- `docs/QUICK-START.md`：快速部署
+- `docs/DEPLOYMENT.md`：部署与运维
+- `docs/CONFIG-REFERENCE.md`：配置项参考
+- `docs/TROUBLESHOOTING.md`：排障
+
 ## 📦 项目结构
 
 ```
@@ -53,8 +63,12 @@ mirofish-portable/
 ├── scripts/            # 启动和安装脚本
 │   ├── start.sh       # macOS/Linux 启动
 │   ├── start.bat      # Windows 启动
+│   ├── setup-env.sh/.bat  # 环境搭建
+│   ├── smoke.sh/.bat      # 冒烟
 │   └── install-neo4j.*
-├── docs/              # 文档
+├── docs/              # 文档中心
+│   ├── USER-GUIDE.md
+│   ├── PROJECT-STRUCTURE.md
 │   ├── QUICK-START.md
 │   └── DEPLOYMENT.md
 └── .config/           # 自定义配置
