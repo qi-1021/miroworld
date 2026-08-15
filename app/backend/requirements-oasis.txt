@@ -1,0 +1,7 @@
+# OASIS 社交媒体模拟环境依赖（与 Graphiti 主环境隔离）
+# 原因：camel-oasis 锁定 neo4j==5.23.0，而 graphiti-core 需要 neo4j>=5.26，
+# 两个后端不能共存在同一个 Python 环境。
+# 安装方式：scripts/setup-env.sh 会自动创建 app/backend/.venv-simulation 并安装。
+camel-oasis==0.2.5
+camel-ai==0.2.78
+zep-cloud==3.13.0

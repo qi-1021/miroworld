@@ -121,6 +121,44 @@ def test_normalize_event_keeps_thread_and_dimension():
     assert ev2["dimension"] == "main"
 
 
+def test_identify_threads_and_hint():
+    class _ThreadLLM:
+        def chat(self, **kw):
+            return ('[{"id":"乌萨斯","name":"乌萨斯帝国线","dimension":"main",'
+                    '"parallel_group":"大陆诸国","description":"北方军事帝国"},'
+                    '{"id":"龙门","name":"龙门线","dimension":"main",'
+                    '"parallel_group":"移动城市","description":"商业城市"}]')
+
+    threads = svc._identify_threads(_ThreadLLM(), "背景文本")
+    assert len(threads) == 2
+    assert threads[0]["id"] == "乌萨斯"
+    assert threads[0]["dimension"] == "main"
+    hint = svc._thread_hint_block(threads)
+    assert "乌萨斯帝国线" in hint
+    assert "龙门线" in hint
+
+
+def test_save_load_threads(tl_service):
+    svc.save_threads("proj_0123456789ab", [
+        {"id": "乌萨斯", "name": "乌萨斯线", "dimension": "main"},
+    ])
+    loaded = svc.load_threads("proj_0123456789ab")
+    assert len(loaded) == 1
+    assert loaded[0]["name"] == "乌萨斯线"
+    assert svc.load_threads("proj_0123456789ab_missing") == []
+
+
+def test_endpoint_get_threads(tl_client):
+    svc.save_threads("proj_0123456789ab", [
+        {"id": "龙国", "name": "龙国线", "dimension": "main"},
+    ])
+    r = tl_client.get("/api/timeline/proj_0123456789ab/threads")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["count"] == 1
+    assert body["data"]["threads"][0]["name"] == "龙国线"
+
+
 def test_heuristic_fallback_on_llm_down(tl_service, monkeypatch):
     """LLM 全挂：每块重试 1 次后走启发式；状态 partial_failed，事件 confidence<0.4。"""
 

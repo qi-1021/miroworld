@@ -220,3 +220,15 @@ export function generateTimelineCharacters(projectId) {
     method: 'post'
   })
 }
+
+/**
+ * 获取背景时间线线索清单（第一遍识别结果）
+ * @param {String} projectId
+ * @returns {Promise} { success, data: { threads }, count }
+ */
+export function getTimelineThreads(projectId) {
+  return service({
+    url: '/api/timeline/' + projectId + '/threads',
+    method: 'get'
+  })
+}

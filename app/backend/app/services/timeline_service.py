@@ -385,9 +385,101 @@ _LLM_SYSTEM = (
 )
 
 
-def _llm_extract_chunk(llm, chunk: str) -> List[Dict[str, Any]]:
+_THREAD_SYSTEM = (
+    "你是一个世界背景时间线分析师。请从给定的世界背景设定文本中，识别出并行的"
+    "时间线线索（线程）。线索可以是：国家/地区历史、势力/阵营、文明、种族、"
+    "人物个人线、以及不同叙事维度（如寓言层、导演层、高维总结）。"
+    "仅输出一个 JSON 数组，不要多余文字。每项含字段："
+    "id(字符串,短标识)、name(显示名)、dimension(默认'main';寓言/导演/高维等用'allegory'/'meta')、"
+    "parallel_group(可选,并行分组名)、description(一句话说明)。"
+    "最多输出 20 条；如果文本没有明显多线，可以只输出 1 条 main。"
+)
+
+
+def _identify_threads(llm, text: str) -> List[Dict[str, Any]]:
+    """第一遍：识别背景文本中的时间线线索（线程）。失败抛异常。"""
+    user = f"请识别下面世界背景中的时间线线索：\n<文本>\n{text[:8000]}\n"
+    resp = llm.chat(
+        messages=[
+            {"role": "system", "content": _THREAD_SYSTEM},
+            {"role": "user", "content": user},
+        ],
+        temperature=0.1,
+        max_tokens=2048,
+    )
+    arr = _extract_json_array(resp)
+    if not isinstance(arr, list):
+        raise ValueError("线索识别响应不是数组")
+    out = []
+    for item in arr:
+        if not isinstance(item, dict):
+            continue
+        tid = str(item.get("id") or item.get("name") or "").strip()
+        name = str(item.get("name") or tid or "").strip()
+        if not tid and not name:
+            continue
+        out.append({
+            "id": (tid or name)[:80],
+            "name": name[:80],
+            "dimension": str(item.get("dimension") or "main").strip()[:40] or "main",
+            "parallel_group": str(item.get("parallel_group") or "").strip()[:80],
+            "description": str(item.get("description") or "").strip()[:300],
+        })
+        if len(out) >= 20:
+            break
+    return out
+
+
+def _thread_hint_block(threads: List[Dict[str, Any]]) -> str:
+    """把识别出的线索列表渲染成提示词块；空返回空串。"""
+    if not threads:
+        return ""
+    lines = ["已知时间线线索（供归类参考）："]
+    for t in threads:
+        dim = t.get("dimension") or "main"
+        desc = t.get("description") or ""
+        lines.append(f"- {t.get('name') or t.get('id')}（{dim}）{('：' + desc) if desc else ''}")
+    return "\n".join(lines)
+
+
+def _threads_path(project_id: str) -> str:
+    return os.path.join(TIMELINE_ROOT, validate_project_id(project_id), "threads.json")
+
+
+def save_threads(project_id: str, threads: List[Dict[str, Any]]) -> bool:
+    """保存背景时间线线索清单。失败仅告警。"""
+    try:
+        path = _threads_path(project_id)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        atomic_write_json(path, {"project_id": project_id, "threads": threads})
+        return True
+    except Exception as e:
+        logger.warning(f"写入时间线线索失败: {e}")
+        return False
+
+
+def load_threads(project_id: str) -> List[Dict[str, Any]]:
+    """读取背景时间线线索清单；不存在/失败返回 []。"""
+    try:
+        path = _threads_path(project_id)
+        if not os.path.exists(path):
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        items = data.get("threads") if isinstance(data, dict) else data
+        if not isinstance(items, list):
+            return []
+        return [dict(t) for t in items if isinstance(t, dict) and (t.get("id") or t.get("name"))]
+    except Exception as e:
+        logger.warning(f"读取时间线线索失败: {e}")
+        return []
+
+
+def _llm_extract_chunk(llm, chunk: str, thread_hint: str = "") -> List[Dict[str, Any]]:
     """调用一次 LLM 抽取该块，返回原始事件列表；失败抛异常。"""
     user_msg = f"请抽取下面文本段的时间线事件，输出 JSON 数组：\n<文本段>\n{chunk}\n"
+    if thread_hint:
+        user_msg += f"\n{thread_hint}\n"
     resp = llm.chat(
         messages=[
             {"role": "system", "content": _LLM_SYSTEM},
@@ -776,6 +868,23 @@ def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
             logger.warning(f"构造 LLM 客户端失败，全部走启发式: {e}")
             _task_log(task_id, "LLM 客户端不可用，改用启发式抽取")
 
+        # 第一遍：背景文本先识别时间线线索（线程），供逐块抽取归类
+        thread_hint = ""
+        if source == "bg" and llm is not None:
+            try:
+                _task_log(task_id, "识别背景时间线线索（第一遍）...")
+                _update(stage="识别线索", progress=2)
+                threads = _identify_threads(llm, text)
+                if threads:
+                    save_threads(project_id, threads)
+                    thread_hint = _thread_hint_block(threads)
+                    _task_log(task_id, f"识别到 {len(threads)} 条时间线线索")
+                else:
+                    _task_log(task_id, "未识别到独立线索，按单线抽取")
+            except Exception as e:
+                logger.warning(f"[{task_id}] 背景线索识别失败，继续普通抽取: {e}")
+                _task_log(task_id, "线索识别失败，继续普通抽取")
+
         seq = 0
         for i, chunk in enumerate(chunks):
             used = "heuristic"
@@ -784,7 +893,7 @@ def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
                 _task_log(task_id, f"第 {i + 1}/{total} 块开始 LLM 抽取")
                 for attempt in range(MAX_LLM_ATTEMPTS):
                     try:
-                        events = _llm_extract_chunk(llm, chunk)
+                        events = _llm_extract_chunk(llm, chunk, thread_hint)
                         if events:
                             used = "llm"
                         break

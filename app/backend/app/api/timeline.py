@@ -151,6 +151,19 @@ def batch_events(project_id):
         return jsonify({"success": False, "error": f"批量操作失败: {e}"}), 500
 
 
+@timeline_bp.route('/<project_id>/threads', methods=['GET'])
+def get_threads(project_id):
+    """获取背景时间线线索清单（第一遍识别结果，可能为空）。"""
+    try:
+        threads = timeline_service.load_threads(project_id)
+        return jsonify({"success": True, "data": {"project_id": project_id, "threads": threads}, "count": len(threads)})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"读取时间线线索失败: {e}")
+        return jsonify({"success": False, "error": f"读取失败: {e}"}), 500
+
+
 # ---------------------------------------------------------------------------
 # 动态路由
 # ---------------------------------------------------------------------------
