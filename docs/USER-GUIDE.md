@@ -195,3 +195,4 @@ python scripts/mirofish_cli.py --json assistant ask --project-id proj_xxx --ques
 - `docs/DEPLOYMENT.md`：部署与运维
 - `docs/CONFIG-REFERENCE.md`：配置项参考
 - `docs/TROUBLESHOOTING.md`：排障
+- `docs/DADI-VALIDATION.md`：《大地巡旅》长设定集验证与处理建议
