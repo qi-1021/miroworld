@@ -347,7 +347,9 @@ def _apply_new_node_only_attributes_patch() -> bool:
         entity_types=None,
         should_summarize_node=None,
     ):
-        def _only_new(node):
+        # 注意：graphiti 用 `await should_summarize_node(node)` 调用过滤函数，
+        # 必须是 async 函数（同步 bool 会导致 "object bool can't be used in 'await'"）。
+        async def _only_new(node):
             summary = (node.summary or "").strip()
             return len(summary) < 10
 
@@ -434,6 +436,21 @@ def apply_patch() -> bool:
 
         # 新节点优先属性/摘要 patch（跳过已有节点的重复 LLM 调用，显著加速建图）
         _apply_new_node_only_attributes_patch()
+
+        # 边提取分块 patch：graphiti 默认 MAX_NODES=15，一次边提取要推理
+        # 15 实体 × 105 对组合，OpenCode 等网关对此稳定超时/断连（实测
+        # 118s 后 Connection error），导致图谱只有节点没有边。
+        # 拆成每块 6 个实体（15 对）的小任务，单次生成轻量得多，成功率高。
+        try:
+            from graphiti_core.utils.maintenance import edge_operations as _edge_ops
+            if getattr(_edge_ops, "MAX_NODES", 15) > 6:
+                _edge_ops.MAX_NODES = 6
+                logger.info(
+                    f"edge 提取 MAX_NODES {getattr(_edge_ops, 'MAX_NODES', 15)} → 6"
+                    "（分块边提取，提升 OpenCode 网关成功率）"
+                )
+        except Exception as exc:
+            logger.warning(f"应用 edge 分块 patch 失败: {exc}")
 
         # 并发限制 patch：OpenCode/DeepSeek 等网关在并发 LLM 请求下
         # 会返回空内容或断开连接（实测 3 并发全部失败、串行全部成功）。

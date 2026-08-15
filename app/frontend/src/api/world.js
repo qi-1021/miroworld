@@ -113,13 +113,39 @@ export function deleteWorldData(projectId) {
 /**
  * 启动世界模拟
  * @param {String} projectId
- * @param {Object} data - { total_steps?, time_step_minutes? }
+ * @param {Object} data - { total_steps?, time_step_minutes?, goal? }
  */
 export function startWorldSimulation(projectId, data = {}) {
   return service({
     url: `/api/world/${projectId}/simulate`,
     method: 'post',
     data
+  })
+}
+
+/**
+ * 构建世界知识图谱（LLM 本体 + Graphiti/Neo4j，后台任务）
+ * @param {String} projectId
+ * @param {Object} data - { goal?, force?, chunk_size?, chunk_overlap? }
+ * @returns {Promise} { success, task_id, graph_id }
+ */
+export function buildWorldGraph(projectId, data = {}) {
+  return service({
+    url: `/api/world/${projectId}/graph/build`,
+    method: 'post',
+    data
+  })
+}
+
+/**
+ * 读取世界知识图谱数据（节点/边/统计）
+ * @param {String} projectId
+ * @returns {Promise} { success, graph: { nodes, edges, node_count, edge_count }, graph_id }
+ */
+export function getWorldGraph(projectId) {
+  return service({
+    url: `/api/world/${projectId}/graph`,
+    method: 'get'
   })
 }
 

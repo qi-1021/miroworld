@@ -110,6 +110,8 @@ class WorldBible:
             "updated_at": self.updated_at,
             "has_background": bool(self.background_text.strip()),
             "has_story": bool(self.story_text.strip()),
+            # 任务目标（首页/设定页可填写，作为世界推演的默认目标）
+            "goal": (self.metadata or {}).get("goal", ""),
         }
 
 

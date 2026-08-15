@@ -184,7 +184,16 @@
     "worldStoryTextPlaceholder": "// Optional: paste novel excerpts",
     "worldDivider": "Background and story: at least one required",
     "createWorld": "Create World",
-    "creatingWorld": "Creating..."
+    "creatingWorld": "Creating...",
+    "taskGoal": ">_ 02 / Task Goal",
+    "taskGoalMeta": "Required · one sentence",
+    "taskGoalPlaceholder": "// Describe your goal in one sentence (e.g. predict the public reaction after the notice is withdrawn)",
+    "extraContext": ">_ 03 / Extra Context",
+    "extraContextMeta": "Optional",
+    "extraContextPlaceholder": "// Optional: constraints, focus areas, character perspectives...",
+    "worldGoalLabel": "03 / Task Goal",
+    "worldGoalMeta": "Optional",
+    "worldGoalPlaceholder": "// Optional: world simulation goal (e.g. who will unify the continent in 3 years)"
   },
   "main": {
     "layoutGraph": "Graph",

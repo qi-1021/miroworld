@@ -480,3 +480,109 @@ def test_simulate_whatif_endpoint_missing_fields(world_sim_client, monkeypatch):
     )
     assert rv.status_code == 400
     assert "假设问题不能为空" in rv.get_json()["error"]
+
+
+# ==================== 任务目标（goal） ====================
+
+
+def test_input_goal_saved_and_returned_in_settings(client):
+    """任务目标随世界输入保存，settings 返回 goal。"""
+    rv = client.post(
+        "/api/world/p1/input",
+        json={"background": BG, "story": STORY, "goal": "推演三年后谁将统一大陆"},
+    )
+    assert rv.status_code == 200
+    rv = client.get("/api/world/p1/settings")
+    assert rv.status_code == 200
+    stats = rv.get_json()["stats"]
+    assert stats["goal"] == "推演三年后谁将统一大陆"
+
+
+def test_input_goal_multipart_form(client):
+    """multipart 表单中 goal 字段同样入库。"""
+    rv = client.post(
+        "/api/world/p1/input",
+        data={"background_text": BG, "goal": "推演城门能否守住"},
+        content_type="multipart/form-data",
+    )
+    assert rv.status_code == 200
+    rv = client.get("/api/world/p1/settings")
+    assert rv.get_json()["stats"]["goal"] == "推演城门能否守住"
+
+
+def test_input_goal_empty_not_stored(client):
+    """goal 为空时不写入 metadata。"""
+    rv = client.post("/api/world/p1/input", json={"background": BG, "goal": "  "})
+    assert rv.status_code == 200
+    rv = client.get("/api/world/p1/settings")
+    assert rv.get_json()["stats"]["goal"] == ""
+
+
+def test_settings_includes_graph_info(client):
+    """settings 附带图谱状态字段（无项目 → None）。"""
+    client.post("/api/world/p1/input", json={"background": BG})
+    rv = client.get("/api/world/p1/settings")
+    stats = rv.get_json()["stats"]
+    assert "graph_id" in stats
+    assert "graph_status" in stats
+    assert stats["graph_id"] is None
+
+
+# ==================== 世界知识图谱 ====================
+
+
+def test_world_graph_build_requires_input(client):
+    """未提交设定库 → 构建图谱返回 400，不创建任务。"""
+    rv = client.post("/api/world/p1/graph/build", json={})
+    assert rv.status_code == 400
+    assert "尚未提交世界输入" in rv.get_json()["error"]
+
+
+def test_world_graph_get_without_graph(client):
+    """未构建图谱 → graph 为 None。"""
+    rv = client.get("/api/world/p1/graph")
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body["graph"] is None
+    assert body["graph_id"] is None
+
+
+def test_simulate_passes_goal(client, monkeypatch):
+    """simulate 端点把 goal 透传给 start_simulation。"""
+    from app.services.world_simulation import WorldSimulationService
+
+    captured = {}
+
+    def fake_start(cls, project_id, total_steps=6, time_step_minutes=30, goal=None):
+        captured["goal"] = goal
+        from app.services.world_simulation import WorldSimulationState
+        return WorldSimulationState(
+            simulation_id="ws_goal", project_id=project_id, status="preparing"
+        )
+
+    monkeypatch.setattr(WorldSimulationService, "start_simulation", classmethod(fake_start))
+    rv = client.post(
+        "/api/world/p1/simulate",
+        json={"total_steps": 5, "goal": "推演结局"},
+    )
+    assert rv.status_code == 200
+    assert captured["goal"] == "推演结局"
+
+
+def test_simulate_goal_default_none(client, monkeypatch):
+    """不传 goal 时 start_simulation 收到 None。"""
+    from app.services.world_simulation import WorldSimulationService
+
+    captured = {}
+
+    def fake_start(cls, project_id, total_steps=6, time_step_minutes=30, goal=None):
+        captured["goal"] = goal
+        from app.services.world_simulation import WorldSimulationState
+        return WorldSimulationState(
+            simulation_id="ws_goal2", project_id=project_id, status="preparing"
+        )
+
+    monkeypatch.setattr(WorldSimulationService, "start_simulation", classmethod(fake_start))
+    rv = client.post("/api/world/p1/simulate", json={"total_steps": 5})
+    assert rv.status_code == 200
+    assert captured["goal"] is None

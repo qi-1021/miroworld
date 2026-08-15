@@ -184,7 +184,16 @@
     "worldStoryTextPlaceholder": "// 可选：直接粘贴小说正文片段",
     "worldDivider": "正文与背景可只填其一，也可两者都传",
     "createWorld": "创建世界",
-    "creatingWorld": "创建中..."
+    "creatingWorld": "创建中...",
+    "taskGoal": ">_ 02 / 任务目标",
+    "taskGoalMeta": "必填 · 一句话目标",
+    "taskGoalPlaceholder": "// 用一句话描述你要推演或分析的目标（例. 预测撤销公告后的舆情走向）",
+    "extraContext": ">_ 03 / 附加说明",
+    "extraContextMeta": "可选",
+    "extraContextPlaceholder": "// 可选：补充背景约束、关注重点、角色视角等详细说明",
+    "worldGoalLabel": "03 / 任务目标",
+    "worldGoalMeta": "可选",
+    "worldGoalPlaceholder": "// 可选：世界推演目标（例. 推演三年后谁将统一大陆）"
   },
   "main": {
     "layoutGraph": "图谱",

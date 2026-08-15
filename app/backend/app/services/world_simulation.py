@@ -79,6 +79,11 @@ WORLD_CONFIG_PROMPT = """你是一名小说世界模拟专家。请根据给定�
 4. characters 的 location 必须是 locations 中存在的 id
 5. connections 是地点之间的连通关系
 6. 只输出 JSON，不要输出其他内容
+7. 世界推演应围绕"任务目标"展开：角色的 goal 与世界的规则设计
+   都要服务于达成或阻碍该目标；无明确目标时按设定自然推演
+
+任务目标：
+{goal}
 
 世界背景设定：
 {background}
@@ -348,8 +353,9 @@ class WorldSimulationService:
         background: str,
         story: str,
         llm: LLMClient,
+        goal: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """LLM 生成世界模拟配置"""
+        """LLM 生成世界模拟配置（goal 为可选任务目标）"""
         # 控制输入规模：背景/正文各截取前 6000 字
         bg = background[:6000] if background else ""
         st = story[:6000] if story else ""
@@ -357,6 +363,7 @@ class WorldSimulationService:
         prompt = WORLD_CONFIG_PROMPT.format(
             background=bg or "（无背景设定）",
             story=st or "（无正文）",
+            goal=goal or "（无明确目标，请根据设定自然推演）",
         )
         result = llm.chat_json(
             messages=[
@@ -391,11 +398,12 @@ class WorldSimulationService:
         project_id: str,
         total_steps: int = 6,
         time_step_minutes: int = 30,
+        goal: Optional[str] = None,
     ) -> WorldSimulationState:
         """
         启动世界模拟：
         1. 读取设定库
-        2. LLM 生成世界配置
+        2. LLM 生成世界配置（可指定任务目标 goal）
         3. 写入配置目录
         4. 后台线程调用 .venv-simulation 子进程
         """
@@ -423,7 +431,7 @@ class WorldSimulationService:
                 # 1. LLM 生成配置
                 llm = cls._build_llm_client(project_id)
                 config = cls._generate_world_config(
-                    project_id, bible.background_text, bible.story_text, llm
+                    project_id, bible.background_text, bible.story_text, llm, goal=goal
                 )
                 config["world"]["total_steps"] = int(total_steps)
                 config["world"]["time_step_minutes"] = int(time_step_minutes)

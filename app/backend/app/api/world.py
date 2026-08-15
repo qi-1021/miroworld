@@ -150,6 +150,10 @@ def save_world_input(project_id: str):
             except (TypeError, ValueError):
                 pass
             metadata = {"files": file_manifest}
+            # 任务目标（可选）：作为世界推演的默认目标
+            goal = (request.form.get('goal') or '').strip()
+            if goal:
+                metadata["goal"] = goal
 
         # ---------------- JSON 文本输入（兼容） ----------------
         else:
@@ -158,7 +162,10 @@ def save_world_input(project_id: str):
             story_parts.append(data.get('story', ''))
             chunk_size = int(data.get('chunk_size', Config.DEFAULT_CHUNK_SIZE))
             overlap = int(data.get('chunk_overlap', Config.DEFAULT_CHUNK_OVERLAP))
-            metadata = data.get('metadata') or {}
+            metadata = dict(data.get('metadata') or {})
+            goal = str(data.get('goal') or '').strip()
+            if goal:
+                metadata["goal"] = goal
 
         background = "\n\n".join(p for p in background_parts if p and p.strip())
         story = "\n\n".join(p for p in story_parts if p and p.strip())
@@ -189,11 +196,222 @@ def save_world_input(project_id: str):
 
 @world_bp.route('/<project_id>/settings', methods=['GET'])
 def get_world_settings(project_id: str):
-    """查询设定库统计信息"""
+    """查询设定库统计信息（含任务目标与世界图谱状态）"""
     stats = WorldBibleService.get_stats(project_id)
     if stats is None:
         return jsonify({"success": True, "stats": None}), 200
+    # 附带世界知识图谱状态（若有）
+    try:
+        from ..models.project import ProjectManager
+        project = ProjectManager.get_project(project_id)
+        stats["graph_id"] = project.graph_id if project else None
+        stats["graph_status"] = (
+            project.status.value if project and project.status else None
+        )
+    except Exception:
+        stats["graph_id"] = None
+        stats["graph_status"] = None
     return jsonify({"success": True, "stats": stats})
+
+
+# ---------------------------------------------------------------- 世界知识图谱
+
+@world_bp.route('/<project_id>/graph/build', methods=['POST'])
+def build_world_graph(project_id: str):
+    """
+    为世界设定库构建知识图谱（LLM 本体生成 + Graphiti/Neo4j 建图）。
+
+    与媒体分析流程相同的建图管线，但文本来源是设定库（背景+正文）。
+    构建完成后 project.graph_id 会被写入，世界模拟事件也会回写到该图谱。
+
+    请求（JSON）：
+        {
+            "goal": "可选，任务目标（作为本体生成的上文）",
+            "force": false,   // 已有图谱时是否强制重建
+            "chunk_size": 1500,
+            "chunk_overlap": 150
+        }
+
+    返回：
+        { "success": true, "task_id": "...", "graph_id": null|"..." }
+    """
+    from ..models.project import ProjectManager, ProjectStatus
+    from ..services.graph_builder import GraphBuilderService
+    from ..services.ontology_generator import OntologyGenerator
+    from ..services.text_processor import TextProcessor
+
+    data = request.get_json(silent=True) or {}
+    force = bool(data.get('force', False))
+    goal = str(data.get('goal') or '').strip()
+
+    try:
+        bible = WorldBibleService.get_bible(project_id)
+    except Exception as e:
+        return jsonify({"success": False, "error": f"读取设定库失败: {e}"}), 500
+
+    if bible is None or (not bible.background_text.strip() and not bible.story_text.strip()):
+        return jsonify({
+            "success": False,
+            "error": "尚未提交世界输入，请先在「世界设定」中保存背景/正文"
+        }), 400
+
+    project = ProjectManager.get_project(project_id)
+    if project is None:
+        project = ProjectManager.create_project(name="世界模拟")
+    if project.graph_id and not force:
+        return jsonify({
+            "success": False,
+            "error": "世界图谱已存在，如需重建请加 force: true",
+            "graph_id": project.graph_id,
+        }), 400
+
+    # 组装设定文本（背景+正文）
+    parts = []
+    if bible.background_text.strip():
+        parts.append(f"【世界背景设定】\n{bible.background_text}")
+    if bible.story_text.strip():
+        parts.append(f"【小说正文】\n{bible.story_text}")
+    text = "\n\n".join(parts)
+
+    chunk_size = int(data.get('chunk_size', Config.DEFAULT_CHUNK_SIZE))
+    overlap = int(data.get('chunk_overlap', Config.DEFAULT_CHUNK_OVERLAP))
+
+    # 后台任务：本体生成 → 建图 → 写回 project.graph_id
+    task_id = task_manager.create_task(f"构建世界图谱: {project.name or project_id}")
+    project.graph_build_task_id = task_id
+    project.status = ProjectStatus.GRAPH_BUILDING
+    ProjectManager.save_project(project)
+
+    def _build_task():
+        build_logger = logger
+        try:
+            task_manager.update_task(
+                task_id, status=TaskStatus.PROCESSING,
+                progress=3, message="准备世界设定文本..."
+            )
+
+            # 1. LLM 生成本体（面向小说世界的实体/关系类型）
+            task_manager.update_task(
+                task_id, progress=8, message="LLM 分析设定生成世界本体..."
+            )
+            generator = OntologyGenerator(llm_client=_build_llm_client_for_project(project_id))
+            ontology = generator.generate(
+                document_texts=[text],
+                simulation_requirement=goal or "构建小说世界的知识图谱",
+                additional_context=(
+                    "这是世界模拟的设定资料（背景设定与小说正文）。"
+                    "请提取适合知识图谱的实体类型（人物/地点/组织/物品/概念等）与关系类型，"
+                    "并全部使用与文本一致的中文命名。"
+                ),
+            )
+            task_manager.update_task(
+                task_id, progress=20,
+                message=f"本体生成完成：{len(ontology.get('entity_types', []))} 个实体类型"
+            )
+
+            # 2. 创建图谱并设置本体
+            builder = GraphBuilderService()
+            # 注意：此处必须重新取 project（闭包内对 project 的赋值会使其
+            # 成为局部变量，直接引用外层 project 会触发 UnboundLocalError）
+            proj = ProjectManager.get_project(project_id) or project
+            graph_id = builder.create_graph(name=f"世界图谱-{proj.name or project_id}")
+            proj.graph_id = graph_id
+            ProjectManager.save_project(proj)
+            task_manager.update_task(
+                task_id, progress=25, message=f"图谱已创建: {graph_id}"
+            )
+            builder.set_ontology(graph_id, ontology)
+
+            # 3. 分块并添加 episode
+            chunks = TextProcessor.split_text(text, chunk_size=chunk_size, overlap=overlap)
+            total_chunks = len(chunks)
+            task_manager.update_task(
+                task_id, progress=30,
+                message=f"设定文本已分割为 {total_chunks} 个块，开始写入图谱..."
+            )
+
+            def add_progress_callback(msg, progress_ratio):
+                task_manager.update_task(
+                    task_id,
+                    message=msg,
+                    progress=30 + int(progress_ratio * 55),  # 30-85%
+                )
+
+            episode_uuids = builder.add_text_batches(
+                graph_id, chunks, batch_size=3,
+                progress_callback=add_progress_callback,
+            )
+            builder._wait_for_episodes(episode_uuids)
+
+            # 4. 统计并收尾
+            graph_data = builder.get_graph_data(graph_id)
+            node_count = graph_data.get("node_count", 0)
+            edge_count = graph_data.get("edge_count", 0)
+            proj = ProjectManager.get_project(project_id) or project
+            proj.status = ProjectStatus.GRAPH_COMPLETED
+            ProjectManager.save_project(proj)
+
+            task_manager.update_task(
+                task_id, status=TaskStatus.COMPLETED, progress=100,
+                message=f"世界图谱构建完成（{node_count} 节点 / {edge_count} 边）",
+                result={
+                    "project_id": project_id,
+                    "graph_id": graph_id,
+                    "node_count": node_count,
+                    "edge_count": edge_count,
+                    "chunk_count": total_chunks,
+                },
+            )
+            build_logger.info(
+                f"世界图谱构建完成: project={project_id}, graph={graph_id}, "
+                f"nodes={node_count}, edges={edge_count}"
+            )
+        except Exception as e:
+            import traceback
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            logger.error(f"世界图谱构建失败: {error_msg}")
+            task_manager.fail_task(task_id, error_msg)
+            try:
+                project = ProjectManager.get_project(project_id)
+                if project:
+                    project.status = ProjectStatus.FAILED
+                    project.error = f"世界图谱构建失败: {e}"
+                    ProjectManager.save_project(project)
+            except Exception:
+                pass
+
+    thread = threading.Thread(target=_build_task, daemon=True)
+    thread.start()
+
+    return jsonify({
+        "success": True,
+        "task_id": task_id,
+        "graph_id": project.graph_id,
+        "message": "世界图谱构建已启动（本体生成 + Graphiti 建图）",
+    })
+
+
+@world_bp.route('/<project_id>/graph', methods=['GET'])
+def get_world_graph(project_id: str):
+    """读取世界知识图谱数据（节点/边/统计）"""
+    try:
+        from ..models.project import ProjectManager
+        from ..services.graph_builder import GraphBuilderService
+
+        project = ProjectManager.get_project(project_id)
+        if project is None or not project.graph_id:
+            return jsonify({"success": True, "graph": None, "graph_id": None})
+
+        builder = GraphBuilderService()
+        graph_data = builder.get_graph_data(project.graph_id)
+        return jsonify({
+            "success": True,
+            "graph": graph_data,
+            "graph_id": project.graph_id,
+        })
+    except Exception as e:
+        logger.error(f"读取世界图谱失败: {e}")
+        return jsonify({"success": False, "error": f"读取世界图谱失败: {e}"}), 500
 
 
 @world_bp.route('/<project_id>/chunks', methods=['GET'])
@@ -334,7 +552,8 @@ def start_world_simulation(project_id: str):
     请求（JSON）：
         {
             "total_steps": 6,          // 可选，模拟步数
-            "time_step_minutes": 30    // 可选，每步模拟分钟数
+            "time_step_minutes": 30,   // 可选，每步模拟分钟数
+            "goal": "任务目标（可选）"  // 推演目标，如"推演三年后谁将统一大陆"
         }
     """
     try:
@@ -343,11 +562,13 @@ def start_world_simulation(project_id: str):
         data = request.get_json(silent=True) or {}
         total_steps = int(data.get('total_steps', 6))
         time_step_minutes = int(data.get('time_step_minutes', 30))
+        goal = str(data.get('goal') or '').strip() or None
 
         state = WorldSimulationService.start_simulation(
             project_id=project_id,
             total_steps=total_steps,
             time_step_minutes=time_step_minutes,
+            goal=goal,
         )
         return jsonify({"success": True, "simulation": state.to_dict()})
     except ValueError as e:

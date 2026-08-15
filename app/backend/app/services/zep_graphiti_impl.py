@@ -287,11 +287,12 @@ class GraphitiClient(ZepClientAdapter):
         try:
             import httpx
             from openai import AsyncOpenAI
-            # timeout=45 + max_retries=0：OpenCode 等网关在负载高时可能
-            # 长时间无响应（实测单次调用可挂 60-240 秒）。让 openai SDK
-            # 不做内部重试，统一由 graphiti_patch 的重试/降级逻辑处理，
-            # 避免"超时 × 重试"叠加导致整体构建长时间卡死。
-            http_client = httpx.AsyncClient(trust_env=False, timeout=45)
+            # timeout=300 + max_retries=0：OpenCode 等网关在负载高时可能
+            # 长时间无响应（实测边提取等大提示词调用可耗时 90-240 秒）。
+            # 45 秒超时会把"慢但正常"的调用误判为失败（边提取几乎必挂，
+            # 导致图谱只有节点没有边）。统一由 graphiti_patch 的重试/降级
+            # 逻辑处理错误，避免"超时 × 重试"叠加导致整体构建长时间卡死。
+            http_client = httpx.AsyncClient(trust_env=False, timeout=300)
             return OpenAIGenericClient(config=config, client=AsyncOpenAI(
                 api_key=api_key,
                 base_url=base_url,

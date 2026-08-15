@@ -250,6 +250,15 @@
         </p>
 
         <div class="sim-controls">
+          <div class="sim-field sim-field-wide">
+            <label class="sim-label">任务目标（可选 · 决定推演走向）</label>
+            <textarea
+              v-model="simGoal"
+              class="sim-goal-input"
+              rows="2"
+              placeholder="例：推演三年后谁将统一大陆？不填则按设定自然推演"
+            ></textarea>
+          </div>
           <div class="sim-field">
             <label class="sim-label">模拟步数</label>
             <input v-model.number="simSteps" type="number" min="1" max="30" class="sim-input" />
@@ -450,6 +459,81 @@
           </div>
         </div>
       </div>
+
+      <!-- 世界图谱（GraphRAG · Neo4j） -->
+      <div v-if="stats" class="step-card">
+        <div class="card-header">
+          <div class="step-info">
+            <span class="step-num">05</span>
+            <span class="step-title">世界图谱</span>
+          </div>
+          <div class="step-status">
+            <span v-if="graphBuilding" class="badge processing">构建中...</span>
+            <span v-else-if="graphInfo && graphInfo.node_count" class="badge success">{{ graphInfo.node_count }} 节点 · {{ graphInfo.edge_count }} 边</span>
+            <span v-else class="badge hint">GraphRAG · Neo4j</span>
+          </div>
+        </div>
+
+        <p class="description">
+          将设定库（背景+正文）自动构建为知识图谱：实体/关系抽取、语义检索、社区发现。
+          世界模拟产生的事件也会持续回写到这张图谱，推演过程可见、可查。
+        </p>
+
+        <div class="graph-actions">
+          <button class="action-btn" :disabled="graphBuilding" @click="handleBuildGraph">
+            <span v-if="graphBuilding" class="spinner-sm"></span>
+            {{ graphBuilding ? (graphProgressMsg || '构建中...') : graphInfo ? '重新构建图谱' : '构建世界图谱' }}
+          </button>
+          <span v-if="graphMsg" class="msg-line" :class="{ error: graphMsgError }">{{ graphMsg }}</span>
+        </div>
+
+        <!-- SVG 力导向可视化 -->
+        <div v-if="graphInfo && graphNodes.length" class="graph-viz-wrap">
+          <svg
+            ref="graphSvg"
+            :viewBox="`0 0 ${GV_W} ${GV_H}`"
+            class="graph-svg"
+            @click="selectedGraphNode = null"
+          >
+            <line
+              v-for="(e, i) in graphEdges"
+              :key="'e' + i"
+              :x1="graphNodeX(e.source)"
+              :y1="graphNodeY(e.source)"
+              :x2="graphNodeX(e.target)"
+              :y2="graphNodeY(e.target)"
+              class="graph-edge"
+            />
+            <g
+              v-for="(n, i) in graphNodes"
+              :key="'n' + i"
+              :transform="`translate(${graphNodeX(n.uuid)},${graphNodeY(n.uuid)})`"
+              @click.stop="selectedGraphNode = n"
+            >
+              <circle
+                :r="graphNodeR(n)"
+                class="graph-node"
+                :class="{ selected: selectedGraphNode && selectedGraphNode.uuid === n.uuid }"
+                :style="{ fill: graphNodeColor(n) }"
+              />
+              <text class="graph-node-label" text-anchor="middle" :y="graphNodeR(n) + 14">{{ n.name }}</text>
+            </g>
+          </svg>
+
+          <div v-if="selectedGraphNode" class="graph-node-info">
+            <div class="graph-node-info-name">{{ selectedGraphNode.name }}</div>
+            <div class="graph-node-info-type">{{ graphNodeType(selectedGraphNode) }}</div>
+            <div v-if="selectedGraphNode.summary" class="graph-node-info-summary">{{ selectedGraphNode.summary }}</div>
+            <div v-if="selectedGraphAttrs.length" class="graph-node-info-attrs">
+              <div v-for="(row, ai) in selectedGraphAttrs" :key="ai" class="attr-row">
+                <span class="attr-k">{{ row[0] }}</span>
+                <span class="attr-v">{{ row[1] }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else-if="graphInfo" class="empty-note">图谱为空（设定库可能过短，未提取到实体）</div>
+      </div>
     </div>
   </div>
 </template>
@@ -471,7 +555,9 @@ import {
   controlWorldSimulation,
   simulateWorldWhatIf,
   generateWorldReport,
-  getWorldReport
+  getWorldReport,
+  buildWorldGraph,
+  getWorldGraph
 } from '../api/world'
 import { getTaskStatus } from '../api/graph'
 
@@ -502,6 +588,7 @@ const stFileInput = ref(null)
 // 世界模拟状态
 const simSteps = ref(6)
 const simStepMin = ref(30)
+const simGoal = ref('')  // 任务目标（可选，决定推演走向）
 const simStarting = ref(false)
 const simStatus = ref('idle')
 const simMsg = ref('')
@@ -510,6 +597,197 @@ const simEvents = ref([])
 const simHistory = ref([])
 let simPollTimer = null
 let simPollingId = ''
+
+// 世界图谱状态
+const GV_W = 780
+const GV_H = 420
+const graphInfo = ref(null)          // { nodes, edges, node_count, edge_count }
+const graphPos = ref({})             // uuid -> {x, y}（力导向布局结果）
+const graphBuilding = ref(false)
+const graphProgressMsg = ref('')
+const graphMsg = ref('')
+const graphMsgError = ref(false)
+const selectedGraphNode = ref(null)
+let graphPollTimer = null
+
+const graphNodes = computed(() => (graphInfo.value && graphInfo.value.nodes) || [])
+const graphEdges = computed(() => {
+  if (!graphInfo.value || !graphInfo.value.edges) return []
+  return graphInfo.value.edges.map(e => ({
+    source: e.source_node_uuid,
+    target: e.target_node_uuid,
+    fact: e.fact || e.name || ''
+  }))
+})
+
+const GRAPH_COLORS = ['#FF5722', '#2196F3', '#4CAF50', '#9C27B0', '#FF9800', '#00BCD4', '#795548', '#607D8B']
+
+function graphNodeType(n) {
+  const labels = (n.labels || []).filter(l => l !== 'Entity')
+  return labels.join(' / ') || '实体'
+}
+
+function graphNodeColor(n) {
+  const type = graphNodeType(n)
+  let hash = 0
+  for (const ch of type) hash = (hash * 31 + ch.codePointAt(0)) >>> 0
+  return GRAPH_COLORS[hash % GRAPH_COLORS.length]
+}
+
+function graphNodeR(n) {
+  const name = (n.name || '').length
+  return name > 6 ? 14 : 11
+}
+
+function graphNodeX(uuid) {
+  const p = graphPos.value[uuid]
+  return p ? p.x : GV_W / 2
+}
+
+function graphNodeY(uuid) {
+  const p = graphPos.value[uuid]
+  return p ? p.y : GV_H / 2
+}
+
+const selectedGraphAttrs = computed(() => {
+  const n = selectedGraphNode.value
+  if (!n || !n.attributes) return []
+  return Object.entries(n.attributes).filter(([k, v]) => {
+    if (typeof v === 'string' && v.length > 200) return false
+    return true
+  }).slice(0, 12)
+})
+
+// 简易力导向布局（斥力 + 弹簧 + 重力，纯前端计算）
+function layoutGraph(nodes, edges) {
+  const pos = {}
+  nodes.forEach((n, i) => {
+    const angle = (i / nodes.length) * Math.PI * 2
+    pos[n.uuid] = {
+      x: GV_W / 2 + Math.cos(angle) * 170,
+      y: GV_H / 2 + Math.sin(angle) * 130
+    }
+  })
+  const linkMap = new Map()
+  edges.forEach(e => {
+    for (const k of [e.source, e.target]) {
+      if (!linkMap.has(k)) linkMap.set(k, new Set())
+    }
+    linkMap.get(e.source).add(e.target)
+    linkMap.get(e.target).add(e.source)
+  })
+  for (let iter = 0; iter < 260; iter++) {
+    // 斥力
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = pos[nodes[i].uuid]
+        const b = pos[nodes[j].uuid]
+        let dx = a.x - b.x
+        let dy = a.y - b.y
+        let d = Math.sqrt(dx * dx + dy * dy) || 1
+        const force = 3200 / (d * d)
+        dx /= d
+        dy /= d
+        a.x += dx * force
+        a.y += dy * force
+        b.x -= dx * force
+        b.y -= dy * force
+      }
+    }
+    // 弹簧（相连节点靠近）
+    edges.forEach(e => {
+      const a = pos[e.source]
+      const b = pos[e.target]
+      if (!a || !b) return
+      let dx = b.x - a.x
+      let dy = b.y - a.y
+      let d = Math.sqrt(dx * dx + dy * dy) || 1
+      const force = (d - 120) * 0.03
+      dx /= d
+      dy /= d
+      a.x += dx * force
+      a.y += dy * force
+      b.x -= dx * force
+      b.y -= dy * force
+    })
+    // 向心重力
+    nodes.forEach(n => {
+      const p = pos[n.uuid]
+      p.x += (GV_W / 2 - p.x) * 0.012
+      p.y += (GV_H / 2 - p.y) * 0.012
+    })
+  }
+  nodes.forEach(n => {
+    const p = pos[n.uuid]
+    p.x = Math.max(60, Math.min(GV_W - 60, p.x))
+    p.y = Math.max(40, Math.min(GV_H - 40, p.y))
+  })
+  return pos
+}
+
+async function fetchGraph() {
+  try {
+    const res = await getWorldGraph(projectId)
+    graphInfo.value = res.graph || null
+    if (graphInfo.value && graphInfo.value.nodes) {
+      const edges = (graphInfo.value.edges || []).map(e => ({
+        source: e.source_node_uuid,
+        target: e.target_node_uuid
+      }))
+      graphPos.value = layoutGraph(graphInfo.value.nodes, edges)
+    }
+  } catch (e) {
+    graphMsg.value = e.message || '读取图谱失败'
+    graphMsgError.value = true
+  }
+}
+
+function pollGraphTask(taskId) {
+  graphPollTimer = setInterval(async () => {
+    try {
+      const res = await getTaskStatus(taskId)
+      const task = res.task || res.data || res
+      const status = task.status
+      if (status === 'completed' || status === 'failed' || status === 'COMPLETED' || status === 'FAILED') {
+        clearInterval(graphPollTimer)
+        graphPollTimer = null
+        graphBuilding.value = false
+        graphProgressMsg.value = ''
+        graphMsg.value = task.message || (status === 'completed' ? '世界图谱构建完成' : '构建失败')
+        graphMsgError.value = !(status === 'completed' || status === 'COMPLETED')
+        await fetchGraph()
+      } else {
+        graphProgressMsg.value = task.message || '构建中...'
+      }
+    } catch (e) {
+      clearInterval(graphPollTimer)
+      graphPollTimer = null
+      graphBuilding.value = false
+      graphMsg.value = e.message || '构建状态查询失败'
+      graphMsgError.value = true
+    }
+  }, 3000)
+}
+
+async function handleBuildGraph() {
+  if (graphBuilding.value) return
+  graphBuilding.value = true
+  graphMsg.value = ''
+  graphMsgError.value = false
+  graphProgressMsg.value = ''
+  try {
+    const res = await buildWorldGraph(projectId, {
+      goal: simGoal.value.trim() || undefined,
+      force: !!graphInfo.value
+    })
+    graphMsg.value = res.message || '构建已启动'
+    pollGraphTask(res.task_id)
+  } catch (e) {
+    graphBuilding.value = false
+    graphMsg.value = e.message || '启动构建失败'
+    graphMsgError.value = true
+  }
+}
 
 // IPC 控制
 const simCtlMsg = ref('')
@@ -639,6 +917,11 @@ async function loadAll() {
     ])
     stats.value = statsRes.stats || null
     report.value = conflictsRes.report || null
+    // 预填任务目标（来自首页或上次保存）
+    if (stats.value && stats.value.goal) {
+      simGoal.value = stats.value.goal
+    }
+    await fetchGraph()
   } catch (e) {
     console.error('加载世界设定失败', e)
   }
@@ -811,7 +1094,8 @@ async function handleStartSim() {
   try {
     const res = await startWorldSimulation(projectId, {
       total_steps: simSteps.value || 6,
-      time_step_minutes: simStepMin.value || 30
+      time_step_minutes: simStepMin.value || 30,
+      goal: simGoal.value.trim() || undefined
     })
     const sim = res.simulation
     simStatus.value = 'running'
@@ -1284,6 +1568,26 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+.sim-field-wide {
+  flex-basis: 100%;
+}
+.sim-goal-input {
+  width: 100%;
+  border: 1px solid #E0E0E0;
+  border-radius: 4px;
+  background: #FAFAFA;
+  color: #000;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  resize: vertical;
+}
+.sim-goal-input:focus {
+  outline: none;
+  border-color: #FF5722;
+  background: #FFF;
 }
 .sim-label {
   font-size: 10.5px;
@@ -2037,5 +2341,96 @@ onMounted(() => {
   font-weight: 600;
   color: #3F51B5;
   margin-bottom: 8px;
+}
+
+/* ==================== 世界图谱 ==================== */
+.graph-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.graph-viz-wrap {
+  border: 1px solid #E8E8E8;
+  border-radius: 6px;
+  background: #FBFBFB;
+  padding: 10px;
+  position: relative;
+}
+.graph-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  cursor: grab;
+}
+.graph-edge {
+  stroke: #D0D0D0;
+  stroke-width: 1;
+}
+.graph-node {
+  stroke: #FFF;
+  stroke-width: 1.5;
+  cursor: pointer;
+  opacity: 0.92;
+  transition: opacity 0.15s;
+}
+.graph-node:hover {
+  opacity: 1;
+}
+.graph-node.selected {
+  stroke: #FF5722;
+  stroke-width: 2.5;
+}
+.graph-node-label {
+  font-size: 10px;
+  fill: #333;
+  font-family: 'JetBrains Mono', monospace;
+  pointer-events: none;
+}
+.graph-node-info {
+  margin-top: 10px;
+  border: 1px solid #E0E0E0;
+  border-radius: 4px;
+  background: #FFF;
+  padding: 12px;
+}
+.graph-node-info-name {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+.graph-node-info-type {
+  font-size: 11px;
+  color: #FF5722;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.graph-node-info-summary {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #444;
+  margin-bottom: 6px;
+}
+.graph-node-info-attrs {
+  border-top: 1px dashed #EEE;
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.attr-row {
+  display: flex;
+  gap: 8px;
+  font-size: 11.5px;
+}
+.attr-k {
+  color: #999;
+  min-width: 90px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.attr-v {
+  color: #333;
+  word-break: break-all;
 }
 </style>

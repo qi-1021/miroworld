@@ -39,7 +39,7 @@ def test_new_node_only_summary_filter_applies():
         seen_filters.append(should_summarize_node)
         if should_summarize_node is None:
             return list(nodes)
-        return [n for n in nodes if should_summarize_node(n)]
+        return [n for n in nodes if await should_summarize_node(n)]
 
     # 先替换两个命名空间为假实现，再应用 patch（patch 会包装当前引用）
     no.extract_attributes_from_nodes = fake_original
@@ -58,8 +58,12 @@ def test_new_node_only_summary_filter_applies():
 
     assert seen_filters, "应注入默认的 should_summarize_node 过滤"
     flt = seen_filters[-1]
-    assert flt(new_node) is True, "新节点（无摘要）应被处理"
-    assert flt(existing_node) is False, "已有摘要的节点应被跳过"
+
+    async def _check(node):
+        return await flt(node)
+
+    assert asyncio.run(_check(new_node)) is True, "新节点（无摘要）应被处理"
+    assert asyncio.run(_check(existing_node)) is False, "已有摘要的节点应被跳过"
     assert results == [new_node], "只有新节点应触发属性/摘要提取"
 
 
@@ -81,7 +85,7 @@ def test_explicit_filter_overrides_default():
         seen_filters.append(should_summarize_node)
         if should_summarize_node is None:
             return list(nodes)
-        return [n for n in nodes if should_summarize_node(n)]
+        return [n for n in nodes if await should_summarize_node(n)]
 
     no.extract_attributes_from_nodes = fake_original
     g.extract_attributes_from_nodes = fake_original
@@ -90,7 +94,8 @@ def test_explicit_filter_overrides_default():
 
     _apply_new_node_only_attributes_patch()
 
-    def always_false(node):
+    # graphiti 用 `await filter(node)` 调用过滤函数，显式过滤必须是 async
+    async def always_false(node):
         return False
 
     node = _FakeNode("")

@@ -192,17 +192,35 @@
                 <span>{{ $t('home.inputParams') }}</span>
               </div>
 
-              <!-- 输入区域 -->
+              <!-- 任务目标（必填） -->
               <div class="console-section">
                 <div class="console-header">
-                  <span class="console-label">{{ $t('home.simulationPrompt') }}</span>
+                  <span class="console-label">{{ $t('home.taskGoal') }}</span>
+                  <span class="console-meta">{{ $t('home.taskGoalMeta') }}</span>
                 </div>
                 <div class="input-wrapper">
                   <textarea
                     v-model="formData.simulationRequirement"
                     class="code-input"
-                    :placeholder="$t('home.promptPlaceholder')"
-                    rows="6"
+                    :placeholder="$t('home.taskGoalPlaceholder')"
+                    rows="2"
+                    :disabled="loading"
+                  ></textarea>
+                </div>
+              </div>
+
+              <!-- 附加说明（可选） -->
+              <div class="console-section">
+                <div class="console-header">
+                  <span class="console-label">{{ $t('home.extraContext') }}</span>
+                  <span class="console-meta">{{ $t('home.extraContextMeta') }}</span>
+                </div>
+                <div class="input-wrapper">
+                  <textarea
+                    v-model="formData.additionalContext"
+                    class="code-input"
+                    :placeholder="$t('home.extraContextPlaceholder')"
+                    rows="3"
                     :disabled="loading"
                   ></textarea>
                   <div class="model-badge">{{ $t('home.engineBadge') }}</div>
@@ -328,6 +346,23 @@
                 </div>
               </div>
 
+              <!-- 任务目标（可选，作为世界推演的默认目标） -->
+              <div class="console-section">
+                <div class="console-header">
+                  <span class="console-label">{{ $t('home.worldGoalLabel') }}</span>
+                  <span class="console-meta">{{ $t('home.worldGoalMeta') }}</span>
+                </div>
+                <div class="input-wrapper">
+                  <textarea
+                    v-model="worldGoal"
+                    class="code-input"
+                    :placeholder="$t('home.worldGoalPlaceholder')"
+                    rows="2"
+                    :disabled="loading"
+                  ></textarea>
+                </div>
+              </div>
+
               <!-- 创建世界按钮 -->
               <div class="console-section btn-section">
                 <div v-if="worldError" class="world-error">{{ worldError }}</div>
@@ -364,7 +399,8 @@ const router = useRouter()
 
 // 表单数据
 const formData = ref({
-  simulationRequirement: ''
+  simulationRequirement: '',  // 任务目标（必填）
+  additionalContext: ''       // 附加说明（可选）
 })
 
 // 文件列表
@@ -383,6 +419,7 @@ const worldBgFiles = ref([])
 const worldStoryFiles = ref([])
 const worldBgText = ref('')
 const worldStoryText = ref('')
+const worldGoal = ref('')  // 任务目标（可选，世界推演的默认目标）
 const worldError = ref('')
 const bgDragOver = ref(false)
 const storyDragOver = ref(false)
@@ -505,6 +542,7 @@ const createWorldProject = async () => {
     worldStoryFiles.value.forEach(f => formData.append('story_files', f))
     if (worldBgText.value.trim()) formData.append('background_text', worldBgText.value)
     if (worldStoryText.value.trim()) formData.append('story_text', worldStoryText.value)
+    if (worldGoal.value.trim()) formData.append('goal', worldGoal.value.trim())
 
     await saveWorldInputMultipart(pid, formData)
 
@@ -531,7 +569,11 @@ const startSimulation = () => {
 
   // 存储待上传的数据
   import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
-    setPendingUpload(files.value, formData.value.simulationRequirement)
+    setPendingUpload(
+      files.value,
+      formData.value.simulationRequirement,
+      formData.value.additionalContext
+    )
 
     // 立即跳转到Process页面（使用特殊标识表示新建项目）
     router.push({
