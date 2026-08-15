@@ -186,6 +186,8 @@
     "initializing": "初始化中...",
     "modeMedia": "媒体分析",
     "modeWorld": "世界模拟",
+    "hideMediaMode": "隐藏舆情分析",
+    "showMediaMode": "显示舆情分析",
     "worldBgLabel": "01 / 背景世界资料",
     "worldStoryLabel": "02 / 章节正文",
     "worldBgUpload": "拖拽上传背景资料（可多个）",
@@ -873,6 +875,8 @@
     "simTimeJumpsLabel": "每步时间标签",
     "simTimeJumpsPlaceholder": "例：数日后，三个月后，一年后，十年后（逗号/顿号分隔）",
     "simUseTimeline": "把当前时间线作为推演上下文",
+    "simStartEventLabel": "起点事件（可选）",
+    "simStartEventNone": "从世界初始状态开始",
     "simStartBtn": "启动世界模拟",
     "simStarting": "启动中...",
     "simRunning": "模拟运行中...",
@@ -1045,7 +1049,13 @@
     },
     "parentEvent": "父事件",
     "noParent": "无父事件",
-    "linkedEvents": "关联事件（可多选）"
+    "linkedEvents": "关联事件（可多选）",
+    "structureView": "结构视图",
+    "structureTree": "树状结构",
+    "structureLinks": "网状关联",
+    "structureParallel": "并行线程",
+    "structureMeta": "世界外/元叙事",
+    "structureEmpty": "暂无数据"
   },
   "fork": {
     "forkBtn": "在此分叉推演",

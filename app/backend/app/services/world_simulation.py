@@ -497,6 +497,7 @@ class WorldSimulationService:
         time_mode: str = "minutes",
         time_jumps: Optional[List[str]] = None,
         include_timeline: bool = False,
+        from_event_id: Optional[str] = None,
     ) -> WorldSimulationState:
         """
         启动世界模拟：
@@ -513,6 +514,11 @@ class WorldSimulationService:
             raise ValueError("time_mode 必须是 minutes 或 narrative")
         if time_mode == "narrative" and not time_jumps:
             raise ValueError("narrative 模式需要提供 time_jumps 时间标签列表")
+        if from_event_id:
+            from .timeline_service import load_timeline
+            events = load_timeline(project_id, None).get("events", [])
+            if not any(e.get("id") == from_event_id for e in events):
+                raise ValueError(f"起点事件不存在: {from_event_id}")
 
         sim_id = f"worldsim_{datetime.now().strftime('%Y%m%d%H%M%S')}_{project_id[-6:]}"
         sim_dir = os.path.join(WORLD_SIM_ROOT, project_id, sim_id)
@@ -534,14 +540,25 @@ class WorldSimulationService:
                 # 1. LLM 生成配置
                 llm = cls._build_llm_client(project_id)
                 timeline_context = ""
-                if include_timeline:
+                if from_event_id or include_timeline:
                     try:
                         from .timeline_service import load_timeline
                         events = load_timeline(project_id, None).get("events", [])
                         lines = []
-                        for e in events[:40]:
-                            lines.append(f"- {e.get('time_text') or ''} {e.get('summary') or ''}".strip())
-                        timeline_context = "\n".join(lines) if lines else "（时间线为空）"
+                        if from_event_id:
+                            idx = next((i for i, e in enumerate(events) if e.get("id") == from_event_id), None)
+                            if idx is not None:
+                                start = events[idx]
+                                lines.append(
+                                    f"- [起点] {start.get('time_text') or ''} {start.get('summary') or ''}".strip()
+                                )
+                                for e in events[idx + 1: idx + 40]:
+                                    lines.append(f"- {e.get('time_text') or ''} {e.get('summary') or ''}".strip())
+                            timeline_context = "\n".join(lines) if lines else "（时间线为空）"
+                        else:
+                            for e in events[:40]:
+                                lines.append(f"- {e.get('time_text') or ''} {e.get('summary') or ''}".strip())
+                            timeline_context = "\n".join(lines) if lines else "（时间线为空）"
                     except Exception as e:
                         logger.warning(f"读取时间线上下文失败（忽略）: {e}")
                 config = cls._generate_world_config(

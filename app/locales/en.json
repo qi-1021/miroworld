@@ -186,6 +186,8 @@
     "initializing": "Initializing...",
     "modeMedia": "Media Analysis",
     "modeWorld": "World Simulation",
+    "hideMediaMode": "Hide Media Analysis",
+    "showMediaMode": "Show Media Analysis",
     "worldBgLabel": "01 / Background World",
     "worldStoryLabel": "02 / Story Chapters",
     "worldBgUpload": "Drop background files (multi)",
@@ -873,6 +875,8 @@
     "simTimeJumpsLabel": "Time labels per step",
     "simTimeJumpsPlaceholder": "e.g. a few days later, three months later, one year later, ten years later",
     "simUseTimeline": "Use current timeline as reasoning context",
+    "simStartEventLabel": "Start Event (optional)",
+    "simStartEventNone": "Start from initial world state",
     "simStartBtn": "Start World Simulation",
     "simStarting": "Starting...",
     "simRunning": "Simulation running...",
@@ -1045,7 +1049,13 @@
     },
     "parentEvent": "Parent Event",
     "noParent": "No parent",
-    "linkedEvents": "Linked Events (multi-select)"
+    "linkedEvents": "Linked Events (multi-select)",
+    "structureView": "Structure View",
+    "structureTree": "Tree",
+    "structureLinks": "Network Links",
+    "structureParallel": "Parallel Threads",
+    "structureMeta": "Meta / Outside World",
+    "structureEmpty": "No data"
   },
   "fork": {
     "forkBtn": "Fork here",

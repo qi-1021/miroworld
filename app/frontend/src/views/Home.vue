@@ -93,15 +93,18 @@
           <button class="mode-tab" :class="{ active: activeMode === 'world' }" @click="activeMode = 'world'">
             {{ $t('home.modeWorld') }}
           </button>
-          <button class="mode-tab" :class="{ active: activeMode === 'media' }" @click="activeMode = 'media'">
+          <button v-if="mediaModeEnabled" class="mode-tab" :class="{ active: activeMode === 'media' }" @click="activeMode = 'media'">
             {{ $t('home.modeMedia') }}
           </button>
         </div>
+        <button class="media-toggle" @click="toggleMediaMode">
+          {{ mediaModeEnabled ? $t('home.hideMediaMode') : $t('home.showMediaMode') }}
+        </button>
       </div>
 
       <div class="console-card">
-        <!-- ===== 媒体分析 ===== -->
-        <template v-if="activeMode === 'media'">
+        <!-- ===== 媒体分析（可隐藏） ===== -->
+        <template v-if="mediaModeEnabled && activeMode === 'media'">
           <div class="form-row">
             <label class="field-label">{{ $t('home.realitySeed') }}<span class="field-meta">{{ $t('home.supportedFormats') }}</span></label>
             <div class="upload-zone" :class="{ 'drag-over': isDragOver, 'has-files': files.length > 0 }"
@@ -302,8 +305,14 @@ const openModelSettings = () => {
   window.dispatchEvent(new CustomEvent('open-model-settings'))
 }
 
-// ============ 模式选择：世界推演（第一优先）/ 舆情分析（第二） ============
+// ============ 模式选择：世界推演（第一优先）/ 舆情分析（第二，可隐藏） ============
 const activeMode = ref('world')
+const mediaModeEnabled = ref(localStorage.getItem('mirofish.mediaMode') !== 'hidden')
+function toggleMediaMode() {
+  mediaModeEnabled.value = !mediaModeEnabled.value
+  if (!mediaModeEnabled.value && activeMode.value === 'media') activeMode.value = 'world'
+  localStorage.setItem('mirofish.mediaMode', mediaModeEnabled.value ? 'visible' : 'hidden')
+}
 
 // 世界模拟：背景资料 / 章节正文（各支持多文件 + 直接文本）
 const worldBgFiles = ref([])
@@ -811,7 +820,22 @@ const startSimulation = async () => {
   background: #fff;
   color: var(--ink);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-  font-weight: 500;
+}
+.media-toggle {
+  margin-top: 20px;
+  margin-left: 12px;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: #fff;
+  border-radius: 980px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.media-toggle:hover {
+  border-color: var(--ink);
+  color: var(--ink);
 }
 .console-card {
   background: #fff;

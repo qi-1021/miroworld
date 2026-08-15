@@ -28,6 +28,7 @@
         </button>
       </div>
       <button class="tl-play-btn" @click="togglePlay">{{ playing ? $t('timeline.pause') : $t('timeline.play') }}</button>
+      <button class="tl-play-btn" @click="structureOpen = true">{{ $t('timeline.structureView') }}</button>
     </div>
 
     <!-- 批量操作条 -->
@@ -460,6 +461,56 @@
         </div>
       </div>
     </div>
+
+    <!-- 结构视图 -->
+    <div v-if="structureOpen" class="tl-modal-mask" @click.self="structureOpen = false">
+      <div class="tl-modal structure">
+        <div class="tl-modal-head">
+          <span class="tl-modal-type">{{ $t('timeline.structureView') }}</span>
+          <button class="tl-modal-close" @click="structureOpen = false">×</button>
+        </div>
+        <div class="structure-body">
+          <div class="structure-section">
+            <div class="structure-title">{{ $t('timeline.structureTree') }}</div>
+            <div v-if="structureData.treeRows.length" class="structure-tree">
+              <div v-for="row in structureData.treeRows" :key="row.event.event_id" class="tree-row" :style="{ paddingLeft: (row.depth * 16) + 'px' }">
+                <span class="tree-depth" v-if="row.depth">└─</span>
+                <span class="tree-summary">{{ row.event.summary }}</span>
+              </div>
+            </div>
+            <div v-else class="structure-empty">{{ $t('timeline.structureEmpty') }}</div>
+          </div>
+          <div class="structure-section">
+            <div class="structure-title">{{ $t('timeline.structureLinks') }}</div>
+            <div v-if="structureData.linkPairs.length" class="structure-links">
+              <div v-for="(pair, i) in structureData.linkPairs" :key="i" class="link-row">
+                <span class="link-from">{{ pair.from.summary }}</span>
+                <span class="link-arrow">⇄</span>
+                <span class="link-to">{{ pair.to.summary }}</span>
+              </div>
+            </div>
+            <div v-else class="structure-empty">{{ $t('timeline.structureEmpty') }}</div>
+          </div>
+          <div class="structure-section">
+            <div class="structure-title">{{ $t('timeline.structureParallel') }}</div>
+            <div v-if="structureData.threads.length" class="structure-threads">
+              <span v-for="th in structureData.threads" :key="th.key" class="thread-chip">{{ th.label }}</span>
+            </div>
+            <div v-else class="structure-empty">{{ $t('timeline.structureEmpty') }}</div>
+          </div>
+          <div class="structure-section">
+            <div class="structure-title">{{ $t('timeline.structureMeta') }}</div>
+            <div v-if="structureData.metaEvents.length" class="structure-meta">
+              <div v-for="ev in structureData.metaEvents" :key="ev.event_id" class="meta-row">
+                <span class="meta-dim">{{ ev.dimension }}</span>
+                <span class="meta-summary">{{ ev.summary }}</span>
+              </div>
+            </div>
+            <div v-else class="structure-empty">{{ $t('timeline.structureEmpty') }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -495,6 +546,7 @@ const loadError = ref('')
 const activeType = ref('')
 const activeThread = ref('')
 const selectedEvent = ref(null)
+const structureOpen = ref(false)
 const cardRefs = {}
 const editDraft = ref({ summary: '', age: null, sort_lower: null, location_name: '', structure_type: 'linear', parent_event_id: '', linked_event_ids: [] })
 const structureTypes = ['linear', 'parallel', 'tree', 'network', 'meta']
@@ -736,6 +788,35 @@ const presentThreads = computed(() => {
     }
   });
   return Array.from(map.values());
+});
+
+const structureData = computed(() => {
+  const evById = new Map(events.value.map(e => [e.event_id, e]));
+  const children = new Map();
+  events.value.forEach(e => {
+    const p = e.parent_event_id;
+    if (p && evById.has(p)) {
+      if (!children.has(p)) children.set(p, []);
+      children.get(p).push(e);
+    }
+  });
+  const roots = events.value.filter(e => !e.parent_event_id || !evById.has(e.parent_event_id));
+  const treeRows = [];
+  const walk = (ev, depth) => {
+    treeRows.push({ event: ev, depth });
+    const kids = (children.get(ev.event_id) || []).slice().sort((a, b) => sortNum(a) - sortNum(b));
+    kids.forEach(child => walk(child, depth + 1));
+  };
+  roots.slice().sort((a, b) => sortNum(a) - sortNum(b)).forEach(ev => walk(ev, 0));
+  const linkPairs = [];
+  events.value.forEach(ev => {
+    (ev.linked_event_ids || []).forEach(tid => {
+      const target = evById.get(tid);
+      if (target) linkPairs.push({ from: ev, to: target });
+    });
+  });
+  const metaEvents = events.value.filter(ev => ev.dimension && ev.dimension !== 'main');
+  return { treeRows, linkPairs, threads: presentThreads.value, metaEvents };
 });
 
 
@@ -1739,5 +1820,24 @@ onUnmounted(() => {
 .tl-btn.gen { background: #FF5722; border-color: #FF5722; }
 .tl-btn.gen:disabled { background: #FDBA74; border-color: #FDBA74; }
 .tl-char-hint { font-size: 11px; color: #2E7D32; }
+
+/* 结构视图 */
+.tl-modal.structure { width: 620px; }
+.structure-body { display: flex; flex-direction: column; gap: 14px; max-height: 65vh; overflow-y: auto; }
+.structure-section { border-top: 1px dashed #E5E7EB; padding-top: 10px; }
+.structure-title { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+.structure-empty { font-size: 12px; color: #999; }
+.structure-tree, .structure-links, .structure-meta { display: flex; flex-direction: column; gap: 4px; }
+.tree-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.tree-depth { color: #999; font-family: 'JetBrains Mono', monospace; }
+.tree-summary { color: #333; }
+.link-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.link-from, .link-to { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #333; }
+.link-arrow { color: #FF5722; }
+.structure-threads { display: flex; flex-wrap: wrap; gap: 6px; }
+.thread-chip { background: #F3E8FF; color: #7C3AED; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+.meta-row { display: flex; gap: 8px; font-size: 12px; align-items: baseline; }
+.meta-dim { background: #FFEDD5; color: #C2410C; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+.meta-summary { color: #333; }
 
 </style>

@@ -341,6 +341,15 @@
               {{ $t('world.simUseTimeline') }}
             </label>
           </div>
+          <div class="sim-field sim-field-wide">
+            <label class="sim-label">{{ $t('world.simStartEventLabel') }}</label>
+            <select v-model="simStartEventId" class="sim-input">
+              <option value="">{{ $t('world.simStartEventNone') }}</option>
+              <option v-for="ev in simTimelineEvents" :key="ev.event_id" :value="ev.event_id">
+                {{ ev.summary.length > 40 ? ev.summary.slice(0, 40) + '…' : ev.summary }}
+              </option>
+            </select>
+          </div>
           <button class="action-btn sim-start" :disabled="simStarting || simStatus === 'running'" @click="handleStartSim">
             <span v-if="simStarting" class="spinner-sm"></span>
             {{ simStarting ? $t('world.simStarting') : simStatus === 'running' ? $t('world.simRunning') : $t('world.simStartBtn') }}
@@ -685,6 +694,7 @@ import {
 } from '../api/world'
 import { getTaskStatus, exportProjectSnapshot, importProjectSnapshot } from '../api/graph'
 import { askAssistant } from '../api/assistant'
+import { getTimeline } from '../api/timeline'
 import TimelineView from '../components/TimelineView.vue'
 
 const route = useRoute()
@@ -733,6 +743,8 @@ const simStepMin = ref(30)
 const simTimeMode = ref('minutes')
 const simTimeJumps = ref('')
 const simUseTimeline = ref(false)
+const simStartEventId = ref('')
+const simTimelineEvents = ref([])
 const simGoal = ref('')  // 任务目标（可选，决定推演走向）
 const simStarting = ref(false)
 const simStatus = ref('idle')
@@ -1201,6 +1213,21 @@ function retryLoad() {
   loadAll()
 }
 
+async function loadSimTimelineEvents() {
+  try {
+    const res = await getTimeline(projectId, '')
+    const body = res?.data || res || {}
+    const events = body.events || body.data?.events || []
+    simTimelineEvents.value = events.map(e => ({
+      event_id: e.event_id || e.id,
+      summary: e.summary || e.time_text || ''
+    })).filter(e => e.event_id)
+  } catch (e) {
+    console.error('加载时间线事件列表失败', e)
+    simTimelineEvents.value = []
+  }
+}
+
 async function handleSave() {
   if (!hasAnyInput.value) return
   saving.value = true
@@ -1409,6 +1436,7 @@ async function handleStartSim() {
       time_mode: simTimeMode.value || 'minutes',
       time_jumps: jumps,
       include_timeline: simUseTimeline.value,
+      from_event_id: simStartEventId.value || undefined,
       goal: simGoal.value.trim() || undefined
     })
     const sim = res.simulation
@@ -1611,6 +1639,7 @@ function pollWhatIf(simulationId, question) {
 onMounted(() => {
   loadAll()
   loadSimHistory()
+  loadSimTimelineEvents()
 })
 
 onUnmounted(() => {
