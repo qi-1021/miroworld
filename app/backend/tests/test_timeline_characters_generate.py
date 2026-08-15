@@ -118,6 +118,25 @@ def test_generate_failure_sets_error(monkeypatch):
     assert status["error"] and status["stage"] == "失败"
 
 
+def test_save_characters_preserves_aliases():
+    svc.save_characters("proj_0123456789ab", [
+        {"name": "阿米娅", "aliases": "阿米娅·亚莱、Doctor, 罗德岛的阿米娅",
+         "traits": "温柔", "description": "罗德岛领袖"},
+        {"name": "博士", "aliases": ["Doctor", "指挥官"], "traits": "", "description": ""},
+    ])
+    loaded = svc.load_characters("proj_0123456789ab")
+    by_name = {p["name"]: p for p in loaded}
+    assert by_name["阿米娅"]["aliases"] == ["阿米娅·亚莱", "Doctor", "罗德岛的阿米娅"]
+    assert by_name["阿米娅"]["canonical_name"] == "阿米娅"
+    assert by_name["博士"]["aliases"] == ["Doctor", "指挥官"]
+    # 别名中与正式名相同的项应被剔除
+    svc.save_characters("proj_0123456789ab", [
+        {"name": "阿米娅", "aliases": ["阿米娅", "阿米娅·亚莱"], "traits": "", "description": ""},
+    ])
+    reloaded = svc.load_characters("proj_0123456789ab")
+    assert reloaded[0]["aliases"] == ["阿米娅·亚莱"]
+
+
 def test_endpoint_generate(monkeypatch):
     _seed_characters(["阿米娅"])
     llm = _GenLLM('[{"name":"阿米娅","traits":"t","description":"d"}]')

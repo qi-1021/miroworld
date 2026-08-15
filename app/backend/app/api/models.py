@@ -231,6 +231,24 @@ def create_model_entry():
             metadata=body.get("metadata") or {},
             local_path=body.get("local_path"),
         )
+
+        # 自动探测 embedding 能力：当调用方没有显式声明 embedding 时，
+        # 若该连接实测 /embeddings 可用，则自动加入 embedding 能力并记录维度。
+        # 探测失败只跳过，不阻断模型条目创建。
+        if body.get("auto_detect_embedding", True) and draft.connection_id and "embedding" not in draft.capabilities:
+            try:
+                connection = registry_service.get_connection(draft.connection_id)
+                api_key = registry_service.resolve_connection_secret(draft.connection_id)
+                detection = detect_connection(_connection_draft(connection, api_key=api_key))
+                emb = detection.capabilities.get("embedding", {})
+                if emb.get("status") == "available":
+                    draft.capabilities.append("embedding")
+                    draft.metadata = dict(draft.metadata or {})
+                    if emb.get("dimension"):
+                        draft.metadata["dimension"] = emb["dimension"]
+            except Exception:
+                pass
+
         result = registry_service.save_model_entry(
             draft, expected_revision=body.get("revision")
         )

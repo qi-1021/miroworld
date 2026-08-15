@@ -102,6 +102,25 @@ def test_normalize_event_sort_non_null():
 # ---------------------------------------------------------------------------
 # 启发式降级
 # ---------------------------------------------------------------------------
+def test_normalize_event_keeps_thread_and_dimension():
+    ev = svc._normalize_event(
+        {"summary": "乌萨斯帝国东扩", "time_text": "1090 年", "ev_type": "conflict",
+         "thread_id": "乌萨斯", "thread_name": "乌萨斯线", "dimension": "main",
+         "parallel_group": "大陆诸国", "characters": []},
+        "proj_0123456789ab", "bg", 0, "llm", 1,
+    )
+    assert ev["thread_id"] == "乌萨斯"
+    assert ev["thread_name"] == "乌萨斯线"
+    assert ev["dimension"] == "main"
+    assert ev["parallel_group"] == "大陆诸国"
+    # 未提供 dimension 时默认 main
+    ev2 = svc._normalize_event(
+        {"summary": "寓言结尾", "time_text": "", "ev_type": "other"},
+        "proj_0123456789ab", "story", 0, "llm", 2,
+    )
+    assert ev2["dimension"] == "main"
+
+
 def test_heuristic_fallback_on_llm_down(tl_service, monkeypatch):
     """LLM 全挂：每块重试 1 次后走启发式；状态 partial_failed，事件 confidence<0.4。"""
 

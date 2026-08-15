@@ -56,6 +56,7 @@
         <template v-else>
           <div v-for="(c, i) in charactersList" :key="i" class="tl-char-row">
             <input v-model="c.name" class="tl-char-name" :placeholder="$t('characters.namePlaceholder')" />
+            <input v-model="c.aliasesText" class="tl-char-aliases" :placeholder="$t('characters.aliasesPlaceholder')" />
             <input v-model="c.traits" class="tl-char-traits" :placeholder="$t('characters.traitsPlaceholder')" />
             <textarea v-model="c.description" class="tl-char-desc" rows="2" :placeholder="$t('characters.descPlaceholder')"></textarea>
             <button class="tl-char-del" @click="removeCharacterRow(i)">×</button>
@@ -96,7 +97,7 @@
     </div>
 
     <!-- 分支切换器 -->
-    <div v-if="branchIds.length > 1" class="branch-switcher">
+    <div v-if="branchIds.length > 0" class="branch-switcher">
       <button class="branch-chip" :class="{ active: branchId === 'base' }" @click="selectBranch('base')">{{ $t('fork.branchBase') }}</button>
       <button v-for="(b, i) in branchList" :key="b" class="branch-chip" :class="{ active: branchId === b }" @click="selectBranch(b)">{{ $t('fork.branchN', { n: i + 1 }) }}</button>
     </div>
@@ -123,6 +124,18 @@
       <div class="type-filters">
         <button class="type-chip" :class="{ active: activeType === '' }" @click="activeType = ''">{{ $t('timeline.allTypes') }}</button>
         <button v-for="et in presentTypesC" :key="et" class="type-chip" :class="{ active: activeType === et }" @click="activeType = et">{{ evTypeLabel(et) }}</button>
+      </div>
+
+      <!-- 线程/维度过滤 -->
+      <div v-if="presentThreads.length" class="thread-filters">
+        <button class="type-chip" :class="{ active: activeThread === '' }" @click="activeThread = ''">{{ $t('timeline.allThreads') }}</button>
+        <button
+          v-for="th in presentThreads"
+          :key="th.key"
+          class="type-chip"
+          :class="{ active: activeThread === th.key }"
+          @click="activeThread = th.key"
+        >{{ th.label }}</button>
       </div>
 
       <!-- 时间条（可拖动 scrubber） -->
@@ -461,6 +474,7 @@ const events = ref([])
 const loading = ref(false)
 const loadError = ref('')
 const activeType = ref('')
+const activeThread = ref('')
 const selectedEvent = ref(null)
 const cardRefs = {}
 const editDraft = ref({ summary: '', age: null, sort_lower: null, location_name: '' })
@@ -644,22 +658,40 @@ function isHappened(ev) {
   return sortNum(ev) <= scrubT.value;
 }
 
-// 展示事件：按分支过滤 + 排序；T 附近事件置顶由 displayEvents 排序实现
+// 某分支的分叉点 sort（取该分支第一条事件的 branch_point 对应事件）
+function branchPointSort(branchId) {
+  const branchEvent = events.value.find(ev => ev.branch_id === branchId && ev.branch_point);
+  if (!branchEvent) return -Infinity;
+  const bp = events.value.find(ev => ev.id === branchEvent.branch_point || ev.event_id === branchEvent.branch_point);
+  return bp ? sortNum(bp) : -Infinity;
+}
+
+// 展示事件：按分支过滤 + 排序；主线视图不再混入任何分支事件
 const displayEvents = computed(() => {
-  let list = events.value;
-  if (branchId.value !== 'base') {
-    // 选中分支：过去事件共用 base，分支事件保留
+  let list;
+  if (branchId.value === 'base') {
+    // 主线：只看非分支事件（含未来事件）
+    list = events.value.filter(ev => !isBranchEvent(ev));
+  } else {
+    // 选中分支：分叉点及之前的主线事件 + 该分支事件
+    const bpSort = branchPointSort(branchId.value);
     list = events.value.filter(ev => {
       const b = ev.branch_id || 'base';
       if (b === branchId.value) return true;
-      if (b === 'base' && !isFuture(ev)) return true;
+      if (b === 'base' && !isFuture(ev) && sortNum(ev) <= bpSort) return true;
       return false;
     });
   }
   // 类型过滤
   list = list.filter(ev => !activeType.value || (ev.ev_type || 'other') === activeType.value);
+  // 线程/维度过滤
+  if (activeThread.value) list = list.filter(ev => threadKey(ev) === activeThread.value);
   return list.slice().sort((a, b) => sortNum(a) - sortNum(b));
 });
+
+function threadKey(ev) {
+  return ev.thread_name || ev.thread_id || (ev.dimension && ev.dimension !== 'main' ? ev.dimension : '');
+}
 
 function isFuture(ev) { return ev.kind === 'future'; }
 
@@ -671,6 +703,19 @@ const presentTypesC = computed(() => {
   const s = new Set();
   events.value.forEach(ev => { if (ev.ev_type) s.add(ev.ev_type) });
   return Array.from(s);
+});
+
+const presentThreads = computed(() => {
+  const map = new Map();
+  events.value.forEach(ev => {
+    const key = threadKey(ev);
+    if (!key) return;
+    if (!map.has(key)) {
+      const dim = ev.dimension && ev.dimension !== 'main' ? ` · ${ev.dimension}` : '';
+      map.set(key, { key, label: (ev.thread_name || ev.thread_id || ev.dimension) + dim });
+    }
+  });
+  return Array.from(map.values());
 });
 
 
@@ -872,7 +917,7 @@ function stepPlay(id) {
 function stopPlay() { clearTimeout(playTimer); playTimer = null; playing.value = false; }
 
 function extractingLabel() { const p = extractProgress.value; return t('timeline.extracting', { done: p.done || 0, total: p.total || 0 }); }
-async function switchSource(s) { if (source.value === s) return; source.value = s; activeType.value = ''; branchId.value = 'base'; await loadEvents(true); }
+async function switchSource(s) { if (source.value === s) return; source.value = s; activeType.value = ''; activeThread.value = ''; branchId.value = 'base'; await loadEvents(true); }
 
 async function loadEvents(force) {
   loading.value = true; loadError.value = '';
@@ -1259,27 +1304,45 @@ async function toggleCharacters() {
   charactersOpen.value = !charactersOpen.value;
   if (charactersOpen.value && !charactersList.value.length) await loadCharacters();
 }
+function splitAliases(text) {
+  return String(text || '')
+    .split(/[,，、;；]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
 async function loadCharacters() {
   charactersLoading.value = true; charactersMsg.value = ''; charactersMsgError.value = false;
   try {
     const res = await getTimelineCharacters(props.projectId);
     const body = res?.data || res || {};
-    charactersList.value = (body.characters || []).map(c => ({ name: c.name || '', traits: c.traits || '', description: c.description || '' }));
-    if (charactersList.value.length === 0) charactersList.value = [{ name: '', traits: '', description: '' }];
+    charactersList.value = (body.characters || []).map(c => ({
+      name: c.name || '',
+      aliases: Array.isArray(c.aliases) ? c.aliases.slice() : [],
+      aliasesText: (Array.isArray(c.aliases) ? c.aliases : []).join('、'),
+      traits: c.traits || '',
+      description: c.description || ''
+    }));
+    if (charactersList.value.length === 0) charactersList.value = [{ name: '', aliases: [], aliasesText: '', traits: '', description: '' }];
   } catch (e) { charactersMsg.value = e?.message || t('characters.loadFailed'); charactersMsgError.value = true; }
   finally { charactersLoading.value = false; }
 }
-function addCharacterRow() { charactersList.value.push({ name: '', traits: '', description: '' }); }
+function addCharacterRow() { charactersList.value.push({ name: '', aliases: [], aliasesText: '', traits: '', description: '' }); }
 function removeCharacterRow(i) { charactersList.value.splice(i, 1); }
 async function saveCharacters() {
   const list = charactersList.value
-    .map(c => ({ name: (c.name || '').trim(), traits: (c.traits || '').trim(), description: (c.description || '').trim() }))
+    .map(c => ({
+      name: (c.name || '').trim(),
+      canonical_name: (c.canonical_name || c.name || '').trim(),
+      aliases: splitAliases(c.aliasesText),
+      traits: (c.traits || '').trim(),
+      description: (c.description || '').trim()
+    }))
     .filter(c => c.name);
   if (charactersSaving.value) return;
   charactersSaving.value = true; charactersMsg.value = ''; charactersMsgError.value = false;
   try {
     await saveTimelineCharacters(props.projectId, list);
-    charactersList.value = list.length ? list : [{ name: '', traits: '', description: '' }];
+    charactersList.value = list.length ? list.map(c => ({ ...c, aliasesText: (c.aliases || []).join('、') })) : [{ name: '', aliases: [], aliasesText: '', traits: '', description: '' }];
     charactersMsg.value = t('characters.saved');
   } catch (e) { charactersMsg.value = e?.message || t('characters.saveFailed'); charactersMsgError.value = true; }
   finally { charactersSaving.value = false; }
@@ -1392,6 +1455,7 @@ onUnmounted(() => {
 .branch-chip.active { background: #000; color: #FFF; border-color: #000; }
 /* 类型过滤 */
 .type-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.thread-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 .type-chip { border: 1px solid #E5E7EB; background: #FFF; color: #666; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; cursor: pointer; }
 .type-chip.active { background: #000; color: #FFF; border-color: #000; }
 /* 时间条 */
@@ -1585,6 +1649,7 @@ onUnmounted(() => {
 .tl-char-loading { font-size: 12px; color: #999; }
 .tl-char-row { display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap; }
 .tl-char-name { width: 120px; border: 1px solid #E0E0E0; border-radius: 4px; padding: 6px; font-size: 12px; color: #000; }
+.tl-char-aliases { width: 160px; border: 1px solid #E0E0E0; border-radius: 4px; padding: 6px; font-size: 12px; color: #000; }
 .tl-char-traits { flex: 1; min-width: 140px; border: 1px solid #E0E0E0; border-radius: 4px; padding: 6px; font-size: 12px; color: #000; }
 .tl-char-desc { width: 100%; box-sizing: border-box; border: 1px solid #E0E0E0; border-radius: 4px; padding: 6px; font-size: 12px; resize: vertical; color: #000; }
 .tl-char-del { border: none; background: none; color: #999; font-size: 16px; cursor: pointer; }

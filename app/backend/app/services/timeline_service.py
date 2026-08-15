@@ -139,6 +139,8 @@ def load_characters(project_id: str) -> List[Dict[str, Any]]:
             if isinstance(it, dict) and it.get("name"):
                 out.append({
                     "name": str(it.get("name"))[:40],
+                    "canonical_name": str(it.get("canonical_name") or it.get("name") or "")[:40],
+                    "aliases": _clean_aliases(it.get("aliases")),
                     "traits": str(it.get("traits") or "")[:_CHAR_TRAITS_MAX],
                     "description": str(it.get("description") or "")[:_CHAR_DESC_MAX],
                 })
@@ -146,6 +148,31 @@ def load_characters(project_id: str) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"读取人物设定失败: {e}")
         return []
+
+
+_CHAR_ALIASES_MAX = 20
+_ALIAS_LEN_MAX = 40
+
+
+def _clean_aliases(raw) -> List[str]:
+    """把 aliases 规范化为去重、去空、截断的字符串列表（不含与 name 相同的项）。"""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        # 兼容逗号/顿号分隔的字符串输入
+        raw = re.split(r"[,，、;；]+", raw)
+    if not isinstance(raw, list):
+        return []
+    seen = set()
+    out = []
+    for a in raw:
+        s = str(a or "").strip()[:_ALIAS_LEN_MAX]
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
+        if len(out) >= _CHAR_ALIASES_MAX:
+            break
+    return out
 
 
 def save_characters(project_id: str, profiles: List[Dict[str, Any]]) -> bool:
@@ -162,8 +189,13 @@ def save_characters(project_id: str, profiles: List[Dict[str, Any]]) -> bool:
             if not name.strip() or name in seen:
                 continue
             seen.add(name)
+            aliases = _clean_aliases(it.get("aliases"))
+            # 别名里去掉与正式名相同的项
+            aliases = [a for a in aliases if a != name]
             clean.append({
                 "name": name,
+                "canonical_name": str(it.get("canonical_name") or name)[:40],
+                "aliases": aliases,
                 "traits": str(it.get("traits") or "")[:_CHAR_TRAITS_MAX],
                 "description": str(it.get("description") or "")[:_CHAR_DESC_MAX],
             })
@@ -191,7 +223,8 @@ def ensure_characters(project_id: str) -> List[Dict[str, Any]]:
                 counts[c] = counts.get(c, 0) + 1
     seeded = []
     for name, _cnt in sorted(counts.items(), key=lambda kv: -kv[1]):
-        seeded.append({"name": name, "traits": "", "description": ""})
+        seeded.append({"name": name, "canonical_name": name, "aliases": [],
+                       "traits": "", "description": ""})
         if len(seeded) >= _CHAR_SEED_LIMIT:
             break
     if seeded:
@@ -341,8 +374,14 @@ _LLM_SYSTEM = (
     "year(泰拉纪年整数,推测不出填null)、age(人物年龄整数,推测不出填null)、"
     "location_text(原文地点表达)、location_name(归一后地点名,没有则保留原文)、"
     "ev_type(枚举:birth/life/education/duty/task/conflict/disaster/culture/milestone/farewell/other)、"
-    "confidence(0到1)、characters(人物名数组)。规则：只抽推动情节或事件性的内容；"
-    "过长叙述拆成多个事件；保持原文简洁转述；无把握的时间锚填unspecified,year/age填null。"
+    "confidence(0到1)、characters(人物名数组)、"
+    "thread_id(可选字符串,该事件所属时间线线索id,如'乌萨斯'或'龙国'或'寓言层')、"
+    "thread_name(可选字符串,线索/线程显示名,没有可省略)、"
+    "dimension(可选字符串,叙事维度,默认'main';寓言/导演/高维视角等用'allegory'/'meta')、"
+    "parallel_group(可选字符串,并行时间线分组名,没有可省略)。"
+    "规则：只抽推动情节或事件性的内容；多国/多势力/多人物线并行时应尽量归入不同 thread_name；"
+    "若文本明显是另一叙事维度（如寓言、电影、回忆嵌套、高维总结），用 dimension 区分，"
+    "不要强行与主时间线排序；过长叙述拆成多个事件；保持原文简洁转述；无把握的时间锚填unspecified,year/age填null。"
 )
 
 
@@ -390,6 +429,10 @@ def _normalize_event(raw: Dict[str, Any], project_id: str, source: str,
         "location_kind": str(raw.get("location_kind") or "unspecified"),
         "characters": _str_list(raw.get("characters")),
         "entities": _str_list(raw.get("entities")),
+        "thread_id": str(raw.get("thread_id") or "").strip()[:80],
+        "thread_name": str(raw.get("thread_name") or "").strip()[:80],
+        "dimension": str(raw.get("dimension") or "main").strip()[:40] or "main",
+        "parallel_group": str(raw.get("parallel_group") or "").strip()[:80],
         "confidence": _float_or(raw.get("confidence"), 0.5),
         "raw_source": str(raw.get("raw_source") or "").strip(),
         "extract_seq": seq,
@@ -814,7 +857,8 @@ def _merge_events(existing: List[Dict[str, Any]], new: List[Dict[str, Any]]) -> 
 
 
 def _dedupe_key(e: Dict[str, Any]) -> str:
-    return f"{e.get('source')}|{e.get('summary')}|{e.get('location_name')}"
+    return (f"{e.get('source')}|{e.get('summary')}|{e.get('location_name')}|"
+            f"{e.get('thread_id') or ''}|{e.get('dimension') or 'main'}")
 
 
 def _source_text(project_id: str, story: bool) -> str:

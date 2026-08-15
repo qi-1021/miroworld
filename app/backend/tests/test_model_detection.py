@@ -74,6 +74,7 @@ def test_detector_discovers_and_verifies_chat_models():
         [
             HttpResponse(200, {"data": [{"id": "alpha-chat"}, {"id": "beta-chat"}]}),
             HttpResponse(200, {"choices": [{"message": {"content": "ok"}}]}),
+            HttpResponse(200, {"data": [{"embedding": [0.1, 0.2, 0.3, 0.4]}]}),
         ]
     )
     detector = ModelConnectionDetector(transport=transport, resolver=public_resolver)
@@ -90,8 +91,11 @@ def test_detector_discovers_and_verifies_chat_models():
     assert result.models == ["alpha-chat", "beta-chat"]
     assert result.capabilities["models"]["status"] == "available"
     assert result.capabilities["chat"]["status"] == "available"
+    assert result.capabilities["embedding"]["status"] == "available"
+    assert result.capabilities["embedding"]["dimension"] == 4
     assert transport.requests[0].url == "https://models.example.com/v1/models"
     assert transport.requests[1].body["model"] == "alpha-chat"
+    assert transport.requests[2].url.endswith("/embeddings")
     assert transport.requests[0].headers["Authorization"] == "Bearer secret-token"
     assert "secret-token" not in str(result.to_dict())
 
@@ -101,6 +105,7 @@ def test_ollama_discovery_accepts_native_tags_response_without_api_key():
         [
             HttpResponse(200, {"models": [{"name": "qwen3:8b"}]}),
             HttpResponse(200, {"choices": [{"message": {"content": "ok"}}]}),
+            HttpResponse(200, {"data": [{"embedding": [0.1, 0.2, 0.3]}]}),
         ]
     )
     detector = ModelConnectionDetector(transport=transport)
@@ -111,6 +116,7 @@ def test_ollama_discovery_accepts_native_tags_response_without_api_key():
 
     assert result.provider_id == "ollama"
     assert result.models == ["qwen3:8b"]
+    assert result.capabilities["embedding"]["status"] == "available"
     assert "Authorization" not in transport.requests[0].headers
 
 
@@ -130,6 +136,7 @@ def test_private_network_can_be_enabled_for_local_deployment():
         [
             HttpResponse(200, {"data": [{"id": "local-model"}]}),
             HttpResponse(200, {"choices": [{"message": {"content": "ok"}}]}),
+            HttpResponse(200, {"data": [{"embedding": [0.1]}]}),
         ]
     )
     detector = ModelConnectionDetector(transport=transport, resolver=private_resolver)

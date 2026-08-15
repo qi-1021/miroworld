@@ -259,6 +259,25 @@ class ModelConnectionDetector:
         ]
 
     @staticmethod
+    def _extract_embedding_dimension(data: Any) -> Optional[int]:
+        """从 OpenAI 兼容 /embeddings 响应中提取向量维度；失败返回 None。"""
+        if not isinstance(data, dict):
+            return None
+        items = data.get("data")
+        if not isinstance(items, list) or not items:
+            return None
+        first = items[0]
+        if not isinstance(first, dict):
+            return None
+        emb = first.get("embedding")
+        if isinstance(emb, list) and emb:
+            try:
+                return len(emb)
+            except TypeError:
+                return None
+        return None
+
+    @staticmethod
     def _redact(message: str, secret: Optional[str]) -> str:
         if secret:
             message = message.replace(secret, "[REDACTED]")
@@ -324,6 +343,36 @@ class ModelConnectionDetector:
             capabilities["chat"] = {
                 "status": "not_tested",
                 "url": endpoint.chat_url,
+                "reason": "需要手动填写模型 ID",
+            }
+
+        if models:
+            emb_body = {"model": models[0], "input": ["mirofish embedding probe"]}
+            try:
+                response = self.transport.request(
+                    "POST",
+                    endpoint.embedding_url,
+                    headers=headers,
+                    json_body=emb_body,
+                    timeout=15.0,
+                )
+                dimension = self._extract_embedding_dimension(response.data)
+                capabilities["embedding"] = {
+                    "status": "available" if dimension is not None else "unavailable",
+                    "url": endpoint.embedding_url,
+                    "http_status": response.status,
+                    "dimension": dimension,
+                }
+            except DetectionRequestError as exc:
+                capabilities["embedding"] = {
+                    "status": "unavailable",
+                    "url": endpoint.embedding_url,
+                }
+                errors.append(self._redact(str(exc), draft.api_key))
+        else:
+            capabilities["embedding"] = {
+                "status": "not_tested",
+                "url": endpoint.embedding_url,
                 "reason": "需要手动填写模型 ID",
             }
 

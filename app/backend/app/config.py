@@ -65,8 +65,10 @@ class Config:
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
 
     # Zep配置
+    # 默认使用 Graphiti + Neo4j 本地图谱（用户明确要求本地优先，Zep Cloud 仅作可选配置）。
+    # 需要 Zep Cloud 时通过环境变量 ZEP_BACKEND=cloud 显式开启。
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
-    ZEP_BACKEND = os.environ.get('ZEP_BACKEND', 'cloud')  # 'cloud' | 'graphiti'
+    ZEP_BACKEND = os.environ.get('ZEP_BACKEND', 'graphiti')  # 'graphiti' | 'cloud'
 
     # Graphiti / Neo4j 配置（本地部署时使用）
     NEO4J_URI = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')

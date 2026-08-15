@@ -111,6 +111,36 @@ def list_projects():
     })
 
 
+@graph_bp.route('/project/<project_id>/export', methods=['GET'])
+def export_project(project_id: str):
+    """导出项目完整快照（JSON，可下载保存为 .mirofish.json）。"""
+    try:
+        from ..services.project_snapshot import export_project_snapshot
+        snapshot = export_project_snapshot(project_id)
+        return jsonify({"success": True, "snapshot": snapshot})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 404
+    except Exception as e:
+        logger.error(f"导出项目快照失败: {e}")
+        return jsonify({"success": False, "error": f"导出失败: {e}"}), 500
+
+
+@graph_bp.route('/project/import', methods=['POST'])
+def import_project():
+    """从项目快照 JSON 创建新项目并恢复已完成步骤。"""
+    try:
+        data = request.get_json(silent=True) or {}
+        snapshot = data.get('snapshot') or data
+        from ..services.project_snapshot import import_project_snapshot
+        project = import_project_snapshot(snapshot)
+        return jsonify({"success": True, "data": project})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"导入项目快照失败: {e}")
+        return jsonify({"success": False, "error": f"导入失败: {e}"}), 500
+
+
 @graph_bp.route('/project/<project_id>', methods=['DELETE'])
 def delete_project(project_id: str):
     """
