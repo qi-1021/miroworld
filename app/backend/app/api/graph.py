@@ -590,18 +590,20 @@ def build_graph():
                 )
 
             except Exception as e:
-                # 更新项目状态为失败
-                build_logger.error(f"[{task_id}] 图谱构建失败: {str(e)}")
+                # 更新项目状态为失败（模型配置类错误用可读中文引导）
+                from ..services.llm_error_normalizer import normalize_llm_error
+                friendly = normalize_llm_error(e)
+                build_logger.error(f"[{task_id}] 图谱构建失败: {friendly}")
                 build_logger.debug(traceback.format_exc())
 
                 project.status = ProjectStatus.FAILED
-                project.error = str(e)
+                project.error = f"图谱构建失败: {friendly}"
                 ProjectManager.save_project(project)
 
                 task_manager.update_task(
                     task_id,
                     status=TaskStatus.FAILED,
-                    message=f"构建失败: {str(e)}",
+                    message=f"构建失败: {friendly}",
                     error=traceback.format_exc()
                 )
 

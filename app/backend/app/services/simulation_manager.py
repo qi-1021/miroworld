@@ -486,6 +486,34 @@ class SimulationManager:
 
         return simulations
 
+    def delete_simulation(self, simulation_id: str) -> bool:
+        """删除一条媒体模拟（其数据目录 uploads/simulations/<sim>）并清内存缓存。
+
+        同时终止正在运行的模拟子进程（若可查），随后删除目录。
+        返回是否删除了某个目录（目录不存在但状态曾被加载时也算 True 以清理缓存）。
+        """
+        # 若该模拟正在运行，先尝试优雅停掉
+        state = self._load_simulation_state(simulation_id)
+        if state is not None:
+            try:
+                if state.status in (SimulationStatus.RUNNING, SimulationStatus.PREPARING):
+                    from .simulation_runner import SimulationRunner
+                    SimulationRunner.close_simulation_env(simulation_id)
+            except Exception as e:
+                logger.warning(f"删除模拟前停止运行失败（忽略，继续删除）: {simulation_id}, {e}")
+
+        sim_dir = os.path.join(self.SIMULATION_DATA_DIR, simulation_id)
+        removed = False
+        if os.path.isdir(sim_dir) or os.path.islink(sim_dir):
+            shutil.rmtree(sim_dir, ignore_errors=True)
+            removed = True
+        elif os.path.isfile(sim_dir):
+            os.remove(sim_dir)
+            removed = True
+        # 清内存缓存（无论目录是否存在）
+        removed = self._simulations.pop(simulation_id, None) is not None or removed
+        return removed
+
     def get_profiles(self, simulation_id: str, platform: str = "reddit") -> List[Dict[str, Any]]:
         """获取模拟的Agent Profile"""
         state = self._load_simulation_state(simulation_id)

@@ -2,7 +2,7 @@ import service from './index'
 
 /**
  * 触发时间线抽取（异步任务）
- * @param {Object} data - { project_id, source: 'story'|'bg' }
+ * @param {Object} data - { project_id, source: 'story'|'bg', timeline_type?: 'linear'|'parallel'|'tree'|'network'|'meta'|'auto' }
  * @returns {Promise} { success, data: { task_id } }
  */
 export function extractTimeline(data) {

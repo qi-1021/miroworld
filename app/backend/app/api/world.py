@@ -96,6 +96,42 @@ def list_modes():
         return jsonify({"success": False, "error": f"读取模式失败: {e}"}), 500
 
 
+@world_bp.route('/simulations/orphans', methods=['GET'])
+def list_orphan_world_simulations():
+    """列出 data/world-sim 下全部孤儿/空世界模拟（归属项目不存在，可安全删除）。
+
+    返回：
+        { "success": true, "orphans": [{project_id, simulation_id, status, created_at, has_events}], "count": N }
+    """
+    try:
+        from ..services.world_simulation import WorldSimulationService
+        orphans = WorldSimulationService.list_orphan_simulations(limit=200)
+        return jsonify({"success": True, "orphans": orphans, "count": len(orphans)})
+    except Exception as e:
+        logger.error(f"列出孤儿世界模拟失败: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@world_bp.route('/simulations/cleanup', methods=['POST'])
+def cleanup_orphan_world_simulations():
+    """清理 data/world-sim 下全部孤儿/空世界模拟。
+
+    请求（JSON，可选）：
+        { "dry_run": true }   // true 时只统计不删除（默认 false 实际删除）
+
+    返回：
+        { "success": true, "scan": N, "removed": N, "skipped": N }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        from ..services.world_simulation import WorldSimulationService
+        result = WorldSimulationService.cleanup_orphans(dry_run=bool(data.get('dry_run', False)))
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        logger.error(f"清理孤儿世界模拟失败: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # ---------------------------------------------------------------- 输入与设定库
 
 @world_bp.route('/<project_id>/input', methods=['POST'])
@@ -429,14 +465,16 @@ def build_world_graph(project_id: str):
             )
         except Exception as e:
             import traceback
-            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            from ..services.llm_error_normalizer import normalize_llm_error
+            friendly = normalize_llm_error(e)
+            error_msg = f"{friendly}\n\n详细堆栈:\n{traceback.format_exc()}"
             logger.error(f"世界图谱构建失败: {error_msg}")
-            task_manager.fail_task(task_id, error_msg)
+            task_manager.fail_task(task_id, friendly)
             try:
                 project = ProjectManager.get_project(project_id)
                 if project:
                     project.status = ProjectStatus.FAILED
-                    project.error = f"世界图谱构建失败: {e}"
+                    project.error = f"世界图谱构建失败: {friendly}"
                     ProjectManager.save_project(project)
             except Exception:
                 pass
@@ -721,6 +759,27 @@ def get_world_simulation(project_id: str, simulation_id: str):
         return jsonify({"success": True, "simulation": state.to_dict()})
     except Exception as e:
         logger.error(f"查询世界模拟失败: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@world_bp.route('/<project_id>/simulation/<simulation_id>', methods=['DELETE'])
+def delete_world_simulation(project_id: str, simulation_id: str):
+    """删除单条世界模拟（data/world-sim/<project>/<simulation_id>），仅删该条，不动项目。"""
+    try:
+        from ..services.world_simulation import WorldSimulationService
+        ok = WorldSimulationService.delete_simulation(project_id, simulation_id)
+        if not ok:
+            return jsonify({
+                "success": False,
+                "error": f"世界模拟不存在: {simulation_id}"
+            }), 404
+        return jsonify({
+            "success": True,
+            "project_id": project_id,
+            "simulation_id": simulation_id,
+        })
+    except Exception as e:
+        logger.error(f"删除世界模拟失败: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 

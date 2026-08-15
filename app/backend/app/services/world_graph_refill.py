@@ -193,8 +193,10 @@ def start_edge_refill(
         except ValueError as e:
             task_manager.fail_task(task_id, str(e))
         except Exception as e:
+            from .llm_error_normalizer import normalize_llm_error
+            friendly = normalize_llm_error(e)
             logger.error(f"补边任务失败: {e}\n{traceback.format_exc()}")
-            task_manager.fail_task(task_id, str(e))
+            task_manager.fail_task(task_id, friendly)
 
     import threading
     threading.Thread(target=_refill_task, daemon=True).start()

@@ -164,6 +164,22 @@ def get_threads(project_id):
         return jsonify({"success": False, "error": f"读取失败: {e}"}), 500
 
 
+@timeline_bp.route('/<project_id>/structure', methods=['GET'])
+def get_structure(project_id):
+    """获取时间线结构类型判断结果（single/parallel/tree/network/meta/mixed；可能为 null）。
+
+    前端据此展示结构视图与抽取策略信息。
+    """
+    try:
+        structure = timeline_service.load_structure(project_id)
+        return jsonify({"success": True, "data": {"project_id": project_id, "structure": structure}})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"读取时间线结构类型失败: {e}")
+        return jsonify({"success": False, "error": f"读取失败: {e}"}), 500
+
+
 # ---------------------------------------------------------------------------
 # 动态路由
 # ---------------------------------------------------------------------------

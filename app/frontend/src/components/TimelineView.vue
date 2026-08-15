@@ -14,8 +14,23 @@
       </div>
     </div>
 
-    <!-- 操作区：抽取 / 未来 / 播放 -->
+    <!-- 操作区：类型选择 / 抽取 / 未来 / 播放 -->
     <div class="tl-ops">
+      <div class="tl-type-select" :class="{ open: typePickerOpen }">
+        <button class="tl-btn ghost type-trigger" @click="typePickerOpen = !typePickerOpen" :title="$t('timeline.typeSelectHint')">
+          <span class="type-trigger-label">{{ timelineTypeLabel }}</span>
+          <span class="type-caret">▾</span>
+        </button>
+        <div v-if="typePickerOpen" class="tl-type-menu">
+          <button
+            v-for="st in selectableTypes"
+            :key="st.key"
+            class="tl-type-option"
+            :class="{ active: timelineType === st.key }"
+            @click="selectTimelineType(st.key)"
+          >{{ st.label }}<span class="tl-type-desc">{{ st.desc }}</span></button>
+        </div>
+      </div>
       <button class="tl-btn primary" :disabled="extracting || loading" @click="runExtract">
         <span v-if="extracting" class="spinner-sm"></span>
         {{ extracting ? extractingLabel() : $t('timeline.extract') }}
@@ -550,6 +565,28 @@ const structureOpen = ref(false)
 const cardRefs = {}
 const editDraft = ref({ summary: '', age: null, sort_lower: null, location_name: '', structure_type: 'linear', parent_event_id: '', linked_event_ids: [] })
 const structureTypes = ['linear', 'parallel', 'tree', 'network', 'meta']
+// 时间线类型选择（抽取前）：linear/parallel/tree/network/meta 或 auto（自动判断）
+const timelineType = ref('auto')
+const typePickerOpen = ref(false)
+const selectableTypes = computed(() => {
+  const defs = [
+    { key: 'auto', label: t('timeline.type.auto'), desc: t('timeline.typeDesc.auto') },
+    { key: 'linear', label: t('timeline.structure.linear'), desc: t('timeline.typeDesc.linear') },
+    { key: 'parallel', label: t('timeline.structure.parallel'), desc: t('timeline.typeDesc.parallel') },
+    { key: 'tree', label: t('timeline.structure.tree'), desc: t('timeline.typeDesc.tree') },
+    { key: 'network', label: t('timeline.structure.network'), desc: t('timeline.typeDesc.network') },
+    { key: 'meta', label: t('timeline.structure.meta'), desc: t('timeline.typeDesc.meta') }
+  ]
+  return defs
+})
+const timelineTypeLabel = computed(() => {
+  const found = selectableTypes.value.find(s => s.key === timelineType.value)
+  return found ? found.label : t('timeline.type.auto')
+})
+function selectTimelineType(key) {
+  timelineType.value = key
+  typePickerOpen.value = false
+}
 const savingEdit = ref(false)
 const editMsg = ref('')
 const editMsgError = ref(false)
@@ -1047,7 +1084,8 @@ async function runExtract() {
   extractProgress.value = { done: 0, total: 0 };
   extractStage.value = ''; extractSteps.value = []; extractError.value = ''; extractDetail.value = true; extractTries = 0; extractInterrupted.value = false;
   try {
-    const res = await extractTimeline({ project_id: props.projectId, source: source.value });
+    const res = await extractTimeline({ project_id: props.projectId, source: source.value, timeline_type: timelineType.value });
+    typePickerOpen.value = false;
     const taskId = res?.data?.task_id || res?.task_id;
     if (!taskId) throw new Error(t('timeline.extractFailed'));
     extractTask.value = taskId; pollExtract();
@@ -1548,6 +1586,47 @@ onUnmounted(() => {
 .source-tab { border: 1px solid #E0E0E0; background: #FFF; color: #666; padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; }
 .source-tab.active { background: #000; color: #FFF; border-color: #000; }
 .tl-ops { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+/* 时间线类型选择器 */
+.tl-type-select { position: relative; }
+.type-trigger { display: inline-flex; align-items: center; gap: 6px; }
+.type-trigger .type-caret { font-size: 10px; color: #888; }
+.tl-type-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  min-width: 240px;
+  background: #FFF;
+  border: 1px solid #E0E0E0;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tl-type-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #111;
+}
+.tl-type-option:hover { background: #F3F3F3; }
+.tl-type-option.active { background: #FF5722; color: #FFF; }
+.tl-type-option .tl-type-desc { font-size: 11px; font-weight: 400; color: #888; line-height: 1.35; }
+.tl-type-option.active .tl-type-desc { color: rgba(255,255,255,0.85); }
+.tl-type-select.open .type-trigger { border-color: #FF5722; color: #FF5722; }
+.tl-type-select.open .tl-btn.ghost { border-color: #FF5722; }
 .tl-batch-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; padding: 8px 10px; background: #F9FAFB; border: 1px solid #EAEAEA; border-radius: 6px; }
 .tl-batch-bar .tl-btn.active { background: #000; color: #FFF; border-color: #000; }
 .batch-count { font-size: 12px; color: #666; font-family: 'JetBrains Mono', monospace; }

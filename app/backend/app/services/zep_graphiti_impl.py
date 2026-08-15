@@ -804,8 +804,9 @@ class GraphitiClient(ZepClientAdapter):
                 # 消歧响应形状不符）大多在重试后消失。重试有界（1 次），
                 # 避免"重试 × 重试"叠加卡死构建。
                 import time as _time
+                from .llm_error_normalizer import normalize_llm_error
                 logger.warning(
-                    f"episode {i} 添加失败（{str(e)[:120]}），重试 1 次..."
+                    f"episode {i} 添加失败（{normalize_llm_error(e)[:160]}），重试 1 次..."
                 )
                 _time.sleep(0.5)
                 try:

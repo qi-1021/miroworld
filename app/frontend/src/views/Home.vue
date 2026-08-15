@@ -57,27 +57,31 @@
 
     <!-- 特性 -->
     <section class="features">
+      <div class="lg-bg features-bg">
+        <div class="lg-glow g2 fg-left"></div>
+        <div class="lg-glow g1 fg-right"></div>
+      </div>
       <div class="features-head">
         <h2 class="section-title">{{ $t('home.featuresTitle') }}</h2>
         <p class="section-desc">{{ $t('home.featuresDesc') }}</p>
       </div>
       <div class="feature-grid">
-        <div class="feature-card">
+        <div class="feature-card liquid-glass">
           <div class="f-icon">▤</div>
           <h3 class="f-title">{{ $t('home.f1Title') }}</h3>
           <p class="f-desc">{{ $t('home.f1Desc') }}</p>
         </div>
-        <div class="feature-card">
+        <div class="feature-card liquid-glass">
           <div class="f-icon">⑃</div>
           <h3 class="f-title">{{ $t('home.f2Title') }}</h3>
           <p class="f-desc">{{ $t('home.f2Desc') }}</p>
         </div>
-        <div class="feature-card">
+        <div class="feature-card liquid-glass">
           <div class="f-icon">◉</div>
           <h3 class="f-title">{{ $t('home.f3Title') }}</h3>
           <p class="f-desc">{{ $t('home.f3Desc') }}</p>
         </div>
-        <div class="feature-card">
+        <div class="feature-card liquid-glass">
           <div class="f-icon">✎</div>
           <h3 class="f-title">{{ $t('home.f4Title') }}</h3>
           <p class="f-desc">{{ $t('home.f4Desc') }}</p>
@@ -87,6 +91,12 @@
 
     <!-- 控制台 -->
     <section class="console-section" ref="consoleRef">
+      <div class="lg-bg console-bg">
+        <div class="lg-glow g3 cg-left"></div>
+        <div class="lg-glow g4 cg-top"></div>
+        <div class="lg-glow g2 cg-right"></div>
+        <div class="lg-glow g1 cg-bottom"></div>
+      </div>
       <div class="console-head">
         <h2 class="section-title">{{ $t('home.consoleTitle') }}</h2>
         <div class="mode-tabs">
@@ -102,7 +112,7 @@
         </button>
       </div>
 
-      <div class="console-card">
+      <div class="console-card liquid-glass">
         <!-- ===== 媒体分析（可隐藏） ===== -->
         <template v-if="mediaModeEnabled && activeMode === 'media'">
           <div class="form-row">
@@ -636,13 +646,27 @@ const startSimulation = async () => {
 
 /* ---------- Hero 视觉：时间线示意图 ---------- */
 .hero-visual {
-  background: var(--canvas-alt);
-  border-radius: 20px;
+  position: relative;
+  background: linear-gradient(135deg, rgba(255,240,214,0.55), rgba(217,220,255,0.55) 45%, rgba(210,250,236,0.55));
+  border: 1px solid rgba(255,255,255,0.55);
+  border-radius: 24px;
   padding: 64px 24px;
   max-width: 900px;
   margin: 0 auto 96px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.7);
 }
-.tl-demo { position: relative; }
+.hero-visual::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(255,183,107,0.35), transparent 45%),
+    radial-gradient(circle at 85% 75%, rgba(158,167,255,0.35), transparent 45%),
+    radial-gradient(circle at 60% 15%, rgba(107,240,198,0.25), transparent 45%);
+  pointer-events: none;
+}
+.tl-demo { position: relative; z-index: 1; }
 .tl-main {
   display: flex;
   align-items: center;
@@ -732,11 +756,23 @@ const startSimulation = async () => {
 
 /* ---------- 特性 ---------- */
 .features {
+  position: relative;
   padding: 0 40px 96px;
   max-width: 1100px;
   margin: 0 auto;
 }
+.features-bg {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  max-width: 1100px;
+  min-height: 100%;
+}
+.fg-left { width: 380px; height: 380px; left: -160px; top: -60px; }
+.fg-right { width: 420px; height: 420px; right: -180px; bottom: -80px; }
 .features-head {
+  position: relative;
+  z-index: 1;
   text-align: center;
   margin-bottom: 56px;
 }
@@ -753,20 +789,23 @@ const startSimulation = async () => {
   margin: 0;
 }
 .feature-grid {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 20px;
 }
 .feature-card {
-  background: var(--canvas);
+  background: rgba(255,255,255,0.60);
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
   padding: 32px 24px;
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  transition: box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
 }
 .feature-card:hover {
   box-shadow: var(--card-shadow);
   transform: translateY(-2px);
+  background: rgba(255,255,255,0.72);
 }
 .f-icon {
   font-size: 26px;
@@ -789,10 +828,22 @@ const startSimulation = async () => {
 
 /* ---------- 控制台 ---------- */
 .console-section {
+  position: relative;
   background: var(--canvas-alt);
   padding: 96px 40px;
 }
+.console-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.cg-left  { width: 460px; height: 460px; left: -140px;  top: 20%;  }
+.cg-top   { width: 340px; height: 340px; left: 30%;     top: -140px; }
+.cg-right { width: 420px; height: 420px; right: -160px; bottom: 10%; }
+.cg-bottom{ width: 360px; height: 360px; left: 12%;     bottom: -140px; opacity: 0.4; }
 .console-head {
+  position: relative;
+  z-index: 1;
   max-width: 900px;
   margin: 0 auto 40px;
   text-align: center;
@@ -838,12 +889,14 @@ const startSimulation = async () => {
   color: var(--ink);
 }
 .console-card {
-  background: rgba(255,255,255,0.58);
+  position: relative;
+  z-index: 1;
+  background: rgba(255,255,255,0.50);
   border-radius: 24px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.7);
-  border: 1px solid rgba(255,255,255,0.65);
-  backdrop-filter: saturate(180%) blur(24px);
-  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.72);
+  border: 1px solid rgba(255,255,255,0.60);
+  backdrop-filter: saturate(200%) blur(26px);
+  -webkit-backdrop-filter: saturate(200%) blur(26px);
   max-width: 900px;
   margin: 0 auto;
   padding: 48px;

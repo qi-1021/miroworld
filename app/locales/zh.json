@@ -493,6 +493,9 @@
     "delete": "删除",
     "deleteConfirm": "确定删除该项目？此操作不可恢复。",
     "deleteError": "删除失败",
+    "deleteEmpty": "删除空模拟",
+    "deleteEmptyConfirm": "确定删除这个空模拟记录？该记录没有关联项目或内容，可安全清理。",
+    "deleteEmptyHint": "删除没有关联项目/内容的空模拟记录",
     "retryConfirm": "确定重置该项目状态并重新构建图谱？",
     "retryError": "重置失败"
   },
@@ -1055,7 +1058,19 @@
     "structureLinks": "网状关联",
     "structureParallel": "并行线程",
     "structureMeta": "世界外/元叙事",
-    "structureEmpty": "暂无数据"
+    "structureEmpty": "暂无数据",
+    "typeSelectHint": "选择时间线类型（影响抽取策略）",
+    "type": {
+      "auto": "自动判断"
+    },
+    "typeDesc": {
+      "auto": "由 AI 自动判断时间线结构",
+      "linear": "单一连续的线性故事",
+      "parallel": "多条并行推进的线索",
+      "tree": "单点分叉、树状展开",
+      "network": "事件间网状关联",
+      "meta": "含世界外/元叙事层"
+    }
   },
   "fork": {
     "forkBtn": "在此分叉推演",

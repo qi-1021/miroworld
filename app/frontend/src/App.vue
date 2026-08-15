@@ -157,13 +157,49 @@ button {
   font-family: inherit;
 }
 
-/* Apple Liquid Glass 通用卡片类 */
+/* Apple Liquid Glass 通用卡片类：
+   增强版 —— 提高透明度的同时保留可读性，配合背景彩色光晕让
+   backdrop-filter 的模糊/加饱和效果肉眼可见，呈现真正 Liquid Glass 质感。 */
 .liquid-glass {
-  background: rgba(255,255,255,0.58);
-  border: 1px solid rgba(255,255,255,0.65);
+  background: rgba(255,255,255,0.42);
+  border: 1px solid rgba(255,255,255,0.55);
   border-radius: 20px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.7);
-  backdrop-filter: saturate(180%) blur(24px);
-  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  box-shadow:
+    0 8px 32px rgba(0,0,0,0.10),
+    inset 0 1px 0 rgba(255,255,255,0.75),
+    inset 0 -1px 0 rgba(255,255,255,0.20);
+  backdrop-filter: saturate(200%) blur(28px);
+  -webkit-backdrop-filter: saturate(200%) blur(28px);
+  /* 玻璃高光：一条沿顶部的细亮线模拟反射 */
+  position: relative;
 }
+.liquid-glass::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 5%;
+  right: 5%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.9), transparent);
+  pointer-events: none;
+}
+
+/* 彩色背景光晕（用在玻璃卡片所在的容器上，为 backdrop-filter 提供可模糊内容）。
+   用法：在玻璃卡片的父容器加 class="lg-bg"，内部放若干 .lg-glow 定位光斑。 */
+.lg-bg {
+  position: relative;
+  overflow: hidden;
+}
+.lg-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 0;
+}
+.lg-glow.g1 { background: radial-gradient(circle, #ffb76b, rgba(255,183,107,0)); }
+.lg-glow.g2 { background: radial-gradient(circle, #9ea7ff, rgba(158,167,255,0)); }
+.lg-glow.g3 { background: radial-gradient(circle, #6bf0c6, rgba(107,240,198,0)); }
+.lg-glow.g4 { background: radial-gradient(circle, #ff8fd0, rgba(255,143,208,0)); }
 </style>

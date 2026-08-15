@@ -1,5 +1,9 @@
 @echo off
 REM MiroFish 可移植部署 - Windows 启动脚本
+REM
+REM 统一入口逻辑与 start.sh 一致：前端/后端各自独立启动并写入独立日志，
+REM 逐服务校验端口，失败即提示日志路径与排查引导（避免"提示已就绪但打不开"的端口失效）。
+REM 日志目录：app\backend\logs\start-backend.log / start-frontend.log
 
 setlocal enabledelayedexpansion
 
@@ -7,6 +11,10 @@ set SCRIPT_DIR=%~dp0
 for %%I in ("%SCRIPT_DIR%..") do set PROJECT_ROOT=%%~fI
 set APP_DIR=%PROJECT_ROOT%\app
 set NEO4J_DIR=%PROJECT_ROOT%\neo4j
+set LOG_DIR=%APP_DIR%\backend\logs
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
+set BACKEND_LOG=%LOG_DIR%\start-backend.log
+set FRONTEND_LOG=%LOG_DIR%\start-frontend.log
 
 echo ================================================
 echo    MiroFish 可移植部署启动脚本 (Windows)
@@ -84,12 +92,26 @@ if exist "%NEO4J_DIR%\neo4j-data-persistent" (
     echo [INFO] 使用便携数据目录: neo4j-data-persistent
 )
 
-REM 启动 Neo4j
-cd /d "%NEO4J_HOME%\bin"
-start "" neo4j.bat console
+REM Neo4j 已在监听则跳过
+netstat -ano | findstr ":7687" | findstr "LISTENING" >nul 2>nul
+if not errorlevel 1 (
+    echo [INFO] Neo4j 已在监听端口 7687，跳过启动
+) else (
+    REM 启动 Neo4j（独立最小化窗口，输出写入日志）
+    start "MiroFish-Neo4j" /min cmd /c "cd /d "%NEO4J_HOME%\bin" && neo4j.bat console > "%LOG_DIR%\neo4j-console.log" 2>&1"
+    echo [INFO] Neo4j 启动中... (请稍候 10 秒初始化)
+    timeout /t 10 /nobreak
+)
 
-echo [INFO] Neo4j 启动中... (请稍候 10 秒初始化)
-timeout /t 10 /nobreak
+REM 校验 Neo4j
+netstat -ano | findstr ":7687" | findstr "LISTENING" >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] Neo4j 启动失败。查看日志：
+    if exist "%LOG_DIR%\neo4j-console.log" type "%LOG_DIR%\neo4j-console.log"
+    pause
+    exit /b 1
+)
+echo [INFO] ✓ Neo4j 已就绪 (neo4j/password)
 
 echo.
 echo [INFO] 启动 MiroFish 应用...
@@ -136,15 +158,69 @@ if exist "%SCRIPT_DIR%init-models.bat" (
     call "%SCRIPT_DIR%init-models.bat"
 )
 
-echo [INFO] 启动前端和后端...
-call npm run dev
+echo [INFO] 启动后端 (Flask) → 日志 %BACKEND_LOG%
+start "MiroFish-Backend" /min cmd /c "cd /d "%APP_DIR%\backend" && uv run python run.py > "%BACKEND_LOG%" 2>&1"
+
+REM 等待后端端口 5001（最多 20 秒）
+set READY=0
+for /l %%i in (1,1,20) do (
+    netstat -ano | findstr ":5001" | findstr "LISTENING" >nul 2>nul
+    if not errorlevel 1 (
+        set READY=1
+        goto backend_ready
+    )
+    timeout /t 1 /nobreak >nul
+)
+:backend_ready
+if "%READY%"=="0" (
+    echo [ERROR] 后端启动失败（端口 5001 未监听）。最近日志：
+    if exist "%BACKEND_LOG%" powershell -NoProfile -Command "Get-Content -Tail 40 '%BACKEND_LOG%'"
+    echo 实时查看:   powershell -NoProfile -Command "Get-Content -Wait '%BACKEND_LOG%'"
+    echo 常见原因:
+    echo   1. 端口 5001 被无关进程占用 → netstat -ano ^| findstr :5001
+    echo   2. 依赖不完整 → 运行 scripts\setup-env.bat 重新搭建
+    echo   3. Neo4j 未就绪/配置错误 → 检查 app\.env
+    pause
+    exit /b 1
+)
+echo [INFO] ✓ 后端就绪 (http://localhost:5001)
+
+echo [INFO] 启动前端 (Vue3) → 日志 %FRONTEND_LOG%
+start "MiroFish-Frontend" /min cmd /c "cd /d "%APP_DIR%\frontend" && npm run dev > "%FRONTEND_LOG%" 2>&1"
+
+REM 等待前端端口 3000（最多 30 秒）
+set READY2=0
+for /l %%i in (1,1,30) do (
+    netstat -ano | findstr ":3000" | findstr "LISTENING" >nul 2>nul
+    if not errorlevel 1 (
+        set READY2=1
+        goto frontend_ready
+    )
+    timeout /t 1 /nobreak >nul
+)
+:frontend_ready
+if "%READY2%"=="0" (
+    echo [ERROR] 前端启动失败（端口 3000 未监听）。最近日志：
+    if exist "%FRONTEND_LOG%" powershell -NoProfile -Command "Get-Content -Tail 40 '%FRONTEND_LOG%'"
+    echo 实时查看:   powershell -NoProfile -Command "Get-Content -Wait '%FRONTEND_LOG%'"
+    echo 常见原因:
+    echo   1. 端口 3000 被无关进程占用 → netstat -ano ^| findstr :3000
+    echo   2. 前端依赖不完整 → 在 app\frontend 下运行 npm install
+    pause
+    exit /b 1
+)
+echo [INFO] ✓ 前端就绪 (http://localhost:3000)
 
 echo.
-echo [INFO] 所有服务已启动！
-echo [INFO] 前端: http://localhost:3000
-echo [INFO] 后端: http://localhost:5001
-echo [INFO] Neo4j: http://localhost:7474
+echo [INFO] 所有服务已就绪！
+echo [INFO] 前端:   http://localhost:3000
+echo [INFO] 后端:   http://localhost:5001
+echo [INFO] Neo4j:  http://localhost:7474 (neo4j/password)
 echo [INFO] 模型设置: 打开前端后点击右下角「模型设置」
-echo [INFO] 按 CTRL+C 停止服务
+echo [INFO] 日志（失败/异常时查看）:
+echo [INFO]   后端: powershell -NoProfile -Command "Get-Content -Wait '%BACKEND_LOG%'"
+echo [INFO]   前端: powershell -NoProfile -Command "Get-Content -Wait '%FRONTEND_LOG%'"
+echo [INFO] 停止服务: 运行 scripts\stop.bat（可加 --all 连 Neo4j 一起停）
+echo.
 
 pause

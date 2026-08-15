@@ -185,3 +185,12 @@ export const getSimulationHistory = (limit = 20) => {
   return service.get('/api/simulation/history', { params: { limit } })
 }
 
+/**
+ * 删除模拟记录（空模拟 / 未绑定项目的孤立模拟）
+ * @param {string} simulationId - 模拟ID
+ * @returns {Promise} { success, message }
+ */
+export const deleteSimulation = (simulationId) => {
+  return service.delete(`/api/simulation/${simulationId}`)
+}
+

@@ -795,6 +795,84 @@ def get_simulation(simulation_id: str):
         }), 500
 
 
+@simulation_bp.route('/<simulation_id>', methods=['DELETE'])
+def delete_simulation(simulation_id: str):
+    """
+    删除一条模拟记录（首页「删除空模拟/删除项目」共用）。
+
+    支持三种标识：
+    - 媒体模拟 ID（sim_xxx）      → 删除 uploads/simulations/<id>
+    - 世界模拟 ID（worldsim_xxx） → 在 data/world-sim 全盘定位并删除该模拟
+    - 世界项目占位（world_<proj_id>）→ 删除该项目的世界模拟数据目录
+
+    返回：
+        { "success": true, "deleted": [...], "removed_any": true }
+    """
+    sid = (simulation_id or "").strip()
+    if not sid:
+        return jsonify({"success": False, "error": "simulation_id 不能为空"}), 400
+
+    deleted = []
+    removed_any = False
+    try:
+        # 1) world_<project_id>：整项目世界模拟数据
+        if sid.startswith("world_"):
+            pid = sid[len("world_"):]
+            from ..services import world_simulation as _ws_mod
+            root = os.path.join(_ws_mod.WORLD_SIM_ROOT, pid)
+            if os.path.isdir(root):
+                import shutil as _sh
+                _sh.rmtree(root, ignore_errors=True)
+                removed_any = True
+                deleted.append({"project_id": pid, "scope": "project-world-sim"})
+            if not removed_any:
+                return jsonify({"success": False, "error": f"世界模拟数据不存在: {pid}"}), 404
+            return jsonify({"success": True, "deleted": deleted, "removed_any": True})
+
+        # 2) 媒体模拟目录
+        manager = SimulationManager()
+        media_sim = os.path.join(manager.SIMULATION_DATA_DIR, sid)
+        if os.path.isdir(media_sim):
+            ok = manager.delete_simulation(sid)
+            removed_any = removed_any or ok
+            deleted.append({"simulation_id": sid, "scope": "media"})
+
+        # 3) 世界模拟（按 simulation_id 全盘定位）
+        from ..services.world_simulation import WorldSimulationService
+        found = WorldSimulationService._find_simulation_json(sid)
+        if found:
+            ok = WorldSimulationService.delete_simulation(
+                found["project_id"], found["simulation_id"]
+            )
+            removed_any = removed_any or ok
+            deleted.append({"simulation_id": sid, "scope": "world"})
+
+        if not removed_any:
+            # 既不是媒体也不是世界模拟
+            media_state = manager.get_simulation(sid)
+            if media_state is not None:
+                removed_any = manager.delete_simulation(sid)
+                deleted.append({"simulation_id": sid, "scope": "media-cache-only"})
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": f"模拟不存在: {sid}",
+                }), 404
+
+        return jsonify({
+            "success": True,
+            "deleted": deleted,
+            "removed_any": removed_any,
+        })
+    except Exception as e:
+        logger.error(f"删除模拟失败: {sid}, {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
 @simulation_bp.route('/list', methods=['GET'])
 def list_simulations():
     """
@@ -917,6 +995,39 @@ def simulation_history():
                 })
         except Exception as exc:
             logger.warning(f"补充世界项目到历史列表失败（不影响主列表）: {exc}")
+
+        # 补充：孤儿/空世界模拟（data/world-sim 下归属项目不存在的残留）。
+        # 首页据此展示「删除空模拟」入口，让用户能清理这些难以手动删除的脏数据。
+        try:
+            from ..services.world_simulation import WorldSimulationService
+            existing_keys = {
+                (e.get('simulation_id'), e.get('project_id')) for e in data if e.get('simulation_id')
+            }
+            for o in WorldSimulationService.list_orphan_simulations(limit=20):
+                key = (o.get("simulation_id"), o.get("project_id"))
+                if key in existing_keys:
+                    continue
+                existing_keys.add(key)
+                data.append({
+                    "simulation_id": o.get("simulation_id"),
+                    # 无真实项目容器 → 前端 isEmptySimulation 识别为「空模拟」
+                    "project_id": None,
+                    "graph_id": None,
+                    "status": o.get("status") or "orphan",
+                    "created_at": o.get("created_at") or "",
+                    "updated_at": o.get("created_at") or "",
+                    "files": [],
+                    "simulation_requirement": "",
+                    "has_world_data": False,
+                    "history_type": "world",
+                    "kind": "orphan",
+                    "mode": "",
+                    "project_status": None,
+                    "project_error": None,
+                    "orphan": True,
+                })
+        except Exception as exc:
+            logger.warning(f"补充孤儿世界模拟到历史列表失败（不影响主列表）: {exc}")
 
         return jsonify({"success": True, "data": data, "count": len(data)})
 

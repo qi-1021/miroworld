@@ -185,6 +185,144 @@ class WorldSimulationService:
         """模拟数据目录（state.json 所在目录）"""
         return os.path.dirname(cls._state_path(project_id, simulation_id))
 
+    # ---------------- 删除与孤儿清理 ----------------
+
+    @classmethod
+    def delete_simulation(cls, project_id: str, simulation_id: str) -> bool:
+        """删除单条世界模拟（其目录 data/world-sim/<project>/<sim>）并清内存缓存。
+
+        不等同于删除整个项目：仅移除这一条模拟的数据。
+        返回是否实际删除了某条模拟目录。
+        """
+        sim_dir = cls._sim_dir(project_id, simulation_id)
+        removed = False
+        if os.path.isdir(sim_dir) or os.path.islink(sim_dir):
+            shutil.rmtree(sim_dir, ignore_errors=True)
+            removed = True
+        elif os.path.isfile(sim_dir):
+            os.remove(sim_dir)
+            removed = True
+        with cls._lock:
+            cls._states.pop(simulation_id, None)
+        # 删除后顺带清理空的项目目录，避免 data/world-sim 残留空壳
+        project_dir = os.path.join(WORLD_SIM_ROOT, project_id)
+        if os.path.isdir(project_dir) and not os.listdir(project_dir):
+            try:
+                os.rmdir(project_dir)
+            except OSError:
+                pass
+        return removed
+
+    @classmethod
+    def _find_simulation_json(
+        cls, simulation_id: str
+    ) -> Optional[Dict[str, str]]:
+        """按 simulation_id 在 data/world-sim 全盘定位归属（忽略无效/损坏状态文件）。
+
+        返回 {"project_id": ..., "simulation_id": ..., "sim_dir": ..., "state": {...}} 或 None。
+        优先用 state.json 的 project_id，其次以目录名作为归属。
+        """
+        if not os.path.isdir(WORLD_SIM_ROOT):
+            return None
+        for proj_name in sorted(os.listdir(WORLD_SIM_ROOT)):
+            proj_dir = os.path.join(WORLD_SIM_ROOT, proj_name)
+            if not os.path.isdir(proj_dir) or proj_name == IPC_COMMANDS_DIR:
+                continue
+            sim_dir = os.path.join(proj_dir, simulation_id)
+            if not os.path.isdir(sim_dir):
+                continue
+            state = cls._load_state_file(os.path.join(sim_dir, "state.json"))
+            owner = state.project_id if (state and state.project_id) else proj_name
+            return {
+                "project_id": owner,
+                "simulation_id": simulation_id,
+                "sim_dir": sim_dir,
+                "state": state.to_dict() if state else None,
+            }
+        return None
+
+    @classmethod
+    def _is_orphan_project_dir(cls, project_dir_name: str) -> bool:
+        """判断 data/world-sim 下一个顶层目录是否"孤儿"（其归属项目不存在）。
+
+        孤儿判定：顶层目录名不是某个真实 ProjectManager 项目，或该目录下
+        没有任何 state.json 指向真实存在项目（冗余目录/残留测试数据）。
+        """
+        if not project_dir_name or project_dir_name.startswith('.'):
+            return False
+        try:
+            from ..models.project import ProjectManager
+            if ProjectManager.get_project(project_dir_name) is not None:
+                return False
+        except Exception:
+            return False
+        return True
+
+    @classmethod
+    def list_orphan_simulations(
+        cls, limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """列出 data/world-sim 下的"孤儿/空模拟"（可安全删除，不占真实项目）。
+
+        每条：{project_id, simulation_id, sim_dir, status, created_at, has_events}。
+        这些通常来自：项目已被删除但模拟目录残留、单元测试写入的真实目录、或无归属的空壳。
+        供首页「删除空模拟」入口与孤儿清理使用。
+        """
+        orphans = []
+        if not os.path.isdir(WORLD_SIM_ROOT):
+            return orphans
+        for proj_name in sorted(os.listdir(WORLD_SIM_ROOT)):
+            proj_dir = os.path.join(WORLD_SIM_ROOT, proj_name)
+            if not os.path.isdir(proj_dir):
+                continue
+            if not cls._is_orphan_project_dir(proj_name):
+                continue
+            for sim_name in sorted(os.listdir(proj_dir), reverse=True):
+                sim_dir = os.path.join(proj_dir, sim_name)
+                if not os.path.isdir(sim_dir):
+                    continue
+                state = cls._load_state_file(os.path.join(sim_dir, "state.json"))
+                orphans.append({
+                    "project_id": proj_name,
+                    "simulation_id": sim_name,
+                    "sim_dir": sim_dir,
+                    "status": state.status if state else "orphan",
+                    "created_at": state.created_at if state else "",
+                    "has_events": os.path.exists(os.path.join(sim_dir, "events.json")),
+                })
+                if len(orphans) >= limit:
+                    return orphans
+        return orphans
+
+    @classmethod
+    def cleanup_orphans(cls, dry_run: bool = False) -> Dict[str, Any]:
+        """清理 data/world-sim 下全部孤儿模拟（归属项目不存在的残留）。
+
+        返回统计：scan / removed / skipped（dry_run=True 时只统计不删除）。
+        """
+        removed = 0
+        skipped = 0
+        for item in cls.list_orphan_simulations(limit=10_000):
+            if dry_run:
+                skipped += 1
+                continue
+            sim_dir = item.get("sim_dir")
+            if sim_dir and os.path.isdir(sim_dir):
+                shutil.rmtree(sim_dir, ignore_errors=True)
+                removed += 1
+            else:
+                skipped += 1
+        # 清理空的孤儿项目壳目录
+        if not dry_run and os.path.isdir(WORLD_SIM_ROOT):
+            for proj_name in os.listdir(WORLD_SIM_ROOT):
+                proj_dir = os.path.join(WORLD_SIM_ROOT, proj_name)
+                if os.path.isdir(proj_dir) and not os.listdir(proj_dir):
+                    try:
+                        os.rmdir(proj_dir)
+                    except OSError:
+                        pass
+        return {"scan": removed + skipped, "removed": removed, "skipped": skipped}
+
     @classmethod
     def _send_world_command(
         cls,

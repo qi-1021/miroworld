@@ -433,6 +433,59 @@ def _merge_thread(existing: Dict[str, Dict[str, Any]], item: Dict[str, Any]) -> 
         cur["parallel_group"] = item["parallel_group"]
 
 
+# 不恰当 / 占位类线程的缺陷词：合并时过滤这些“假线程”，减少误拆。
+# 仅当名字“恰好等于”这些占位词（或极短且以其开头）才过滤，避免误伤含“无/未知”
+# 等字眼的真实地名（如“无国界线”“未知之岛”）。
+_THREAD_JUNK_WORDS = ("未知", "未命名", "无", "其他", "其它", "待定", "默认",
+                      "unknown", "none", "n/a", "-")
+
+
+def _thread_looks_junk(t: Dict[str, Any]) -> bool:
+    """判断一条线程是否应被视为“占位/垃圾线程”而被过滤。
+    - 空 id/name
+    - 名字只有 1 个字符或不含任何中英文/数字（纯标点/空白）
+    - 名字恰好是占位词，或 ≤2 字且以占位词开头（如“未知”“暂无”）
+    """
+    if not isinstance(t, dict):
+        return True
+    name = str(t.get("name") or t.get("id") or "").strip()
+    if not name:
+        return True
+    if len(name) <= 1:
+        return True
+    if not re.search(r"[\u4e00-\u9fffA-Za-z0-9]", name):
+        return True
+    low = name.lower()
+    if low in _THREAD_JUNK_WORDS:
+        return True
+    if len(name) <= 2:
+        for w in _THREAD_JUNK_WORDS:
+            if low.startswith(w) and len(w) >= 2:
+                return True
+    return False
+
+
+def _dedupe_threads(threads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """去重 + 过滤占位线程，返回更干净的线程列表（供保存与提示词使用）。
+
+    - 归一化 key（按 id 或 name，去空白小写）
+    - 合并同 key 项（保留更完整 description）
+    - 剔除 junk 线程
+    - 超出上限截断
+    """
+    merged: Dict[str, Dict[str, Any]] = {}
+    for t in threads:
+        if _thread_looks_junk(t):
+            continue
+        key = (t.get("id") or t.get("name") or "").strip().lower()
+        if not key:
+            continue
+        _merge_thread(merged, t)
+        if len(merged) >= _THREAD_MAX:
+            break
+    return list(merged.values())[:_THREAD_MAX]
+
+
 def _identify_threads_chunk(llm, chunk: str, existing: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """对单个文本块识别线索；失败抛异常。"""
     user = f"请识别下面世界背景中的时间线线索：\n<文本>\n{chunk}\n"
@@ -498,6 +551,179 @@ def _thread_hint_block(threads: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# 时间线结构类型判断（抽取前“先判断类型，再按类型定制抽取策略”）
+# ---------------------------------------------------------------------------
+# 结构类型枚举：single=单线并行、parallel=多线并行、
+#   tree=树状(分支演进)、network=网状(多线交织)、meta=元叙事/嵌套(寓言/高维/回忆嵌套)、mixed=混合复杂
+STRUCTURE_TYPES = (
+    "single", "parallel", "tree", "network", "meta", "mixed",
+)
+_STRUCTURE_LABELS = {
+    "single": "单线叙事",
+    "parallel": "并行多线",
+    "tree": "树状/分支演进",
+    "network": "网状多线交织",
+    "meta": "元叙事/嵌套",
+    "mixed": "混合复杂",
+}
+
+_STRUCTURE_SYSTEM = (
+    "你是一个小说时间线结构分析师。请整体判断给定文本的时间线结构类型，并输出一个 JSON 对象："
+    "{\"type\": <'single'|'parallel'|'tree'|'network'|'meta'|'mixed'>, "
+    "\"confidence\": <0-1 的小数>, \"reason\": <一句话理由>, "
+    "\"strategy\": <简要说明应如何抽取该类型的时间线>}。"
+    "类型定义：single=从头到尾一条主时间线；parallel=多条人物/势力/地区线并行走各自前后顺序；"
+    "tree=由关键节点不断分支出新故事线（分叉/if线/前世今生）；network=多人多地事件相互交织、时间跳跃频繁；"
+    "meta=存在寓言层/导演层/高维总结/回忆嵌套等非主叙事的叙事维度；mixed=以上多种并存、难以归为单一类型。"
+    "只输出该 JSON 对象，不要多余文字。"
+)
+
+
+def _normalize_structure_type(raw: Any) -> str:
+    """把 LLM 返回的结构类型归一化为合法枚举；非法回退 mixed。"""
+    t = str(raw or "").strip().lower()
+    if t in STRUCTURE_TYPES:
+        return t
+    # 兼容中文/别名
+    for k, label in _STRUCTURE_LABELS.items():
+        if label in t or k in t:
+            return k
+    return "mixed"
+
+
+def detect_structure_type(llm, text: str) -> Optional[Dict[str, Any]]:
+    """在抽取前判断文本整体时间线结构类型。
+
+    返回 {"type","confidence","reason","strategy"}；LLM 不可用/失败返回 None
+    （调用方回退为“不按类型定制，使用默认抽取策略”）。
+    """
+    if not text or not text.strip():
+        return None
+    # 控制输入规模：取前 8000 字符足够判断整体结构
+    sample = text[:8000]
+    try:
+        resp = llm.chat(
+            messages=[
+                {"role": "system", "content": _STRUCTURE_SYSTEM},
+                {"role": "user",
+                 "content": f"请判断下面文本的时间线结构类型：\n<文本>\n{sample}\n"},
+            ],
+            temperature=0.1,
+            max_tokens=800,
+        )
+        arr = _extract_json_array(resp)
+        if arr is None:
+            # 兼容直接输出对象（非数组）的情况
+            obj = None
+            if resp.strip().startswith("{"):
+                try:
+                    obj = json.loads(resp.strip())
+                except Exception:
+                    obj = None
+            if not isinstance(obj, dict):
+                raise ValueError("结构判断响应不是 JSON 对象")
+        else:
+            # 数组里取第一条（防御：部分模型仍输出 [{type:...}]）
+            obj = arr[0] if isinstance(arr, list) and arr else None
+        if not isinstance(obj, dict):
+            return None
+        t = _normalize_structure_type(obj.get("type"))
+        return {
+            "type": t,
+            "confidence": _float_or(obj.get("confidence"), 0.5),
+            "reason": str(obj.get("reason") or "").strip()[:300],
+            "strategy": str(obj.get("strategy") or "").strip()[:500],
+        }
+    except Exception as e:
+        logger.warning(f"时间线结构类型判断失败（使用默认策略）: {e}")
+        return None
+
+
+# 各结构类型对应的抽取策略提示（注入到逐块抽取 prompt）
+_STRUCTURE_STRATEGIES: Dict[str, str] = {
+    "single": (
+        "已判定为【单线叙事】：主时间线按时间推进抽取即可；不要强行拆出多线/多维度，"
+        "thread_name/dimension 保持默认 main。"
+    ),
+    "parallel": (
+        "已判定为【并行多线】：存在多条各自独立前进的故事线。请把每条线的事件归入唯一 thread_name，"
+        "并为互相并行、时间上大体同步的多条线使用 parallel_group；不要把所有事件揉成一条主时间线。"
+    ),
+    "tree": (
+        "已判定为【树状/分支演进】：由关键节点不断分支出新故事线。请为每条分支事件设置 thread_name，"
+        "并给由同一母节点分出的分支相同的 parent_event_id 归属源事件；保留 branch/分支的相互关系。"
+    ),
+    "network": (
+        "已判定为【网状多线交织】：多人多地事件相互交织、时间跳跃频繁。请为每个主要叙事线独立 thread_name，"
+        "通过 linked_event_ids 标注跨线关键关联；事件较多时按线分组而不是强排全局时间线。"
+    ),
+    "meta": (
+        "已判定为【元叙事/嵌套】：存在寓言层/导演层/高维总结/回忆嵌套等非主叙事维度。"
+        "请用 dimension 区分叙事层（主叙事用 main，寓言/导演/高维用 allegory/meta）；"
+        "不同维度的内容不要强行与主时间线按时间混排。"
+    ),
+    "mixed": (
+        "已判定为【混合复杂】：多种结构并存。请以主叙事时间线为主线，并行线归入不同 thread_name 与 "
+        "parallel_group，跨维度内容用 dimension 区分，彼此关联用 linked_event_ids 标注。"
+    ),
+}
+
+
+def structure_hint_block(structure: Optional[Dict[str, Any]]) -> str:
+    """把结构判断 + 对应策略渲染成提示词块；无则空串（使用默认策略）。"""
+    if not structure or not structure.get("type"):
+        return ""
+    t = structure.get("type")
+    lines = [f"时间线结构：{_STRUCTURE_LABELS.get(t, t)}（置信度 {structure.get('confidence') or '未知'}）"]
+    stra = (structure.get("strategy") or "").strip()
+    if stra:
+        lines.append(f"结构说明：{stra}")
+    guide = _STRUCTURE_STRATEGIES.get(t)
+    if guide:
+        lines.append(guide)
+    return "\n".join(lines)
+
+
+# 结构类型持久化（随 threads.json 一起存 timeline metadata，供结构视图前端使用）
+def _structure_path(project_id: str) -> str:
+    return os.path.join(TIMELINE_ROOT, validate_project_id(project_id), "structure.json")
+
+
+def save_structure(project_id: str, structure: Optional[Dict[str, Any]]) -> bool:
+    try:
+        path = _structure_path(project_id)
+        if structure is None:
+            if os.path.exists(path):
+                os.remove(path)
+            return True
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        atomic_write_json(path, {
+            "project_id": project_id,
+            "type": structure.get("type"),
+            "confidence": structure.get("confidence"),
+            "reason": structure.get("reason", ""),
+            "strategy": structure.get("strategy", ""),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        })
+        return True
+    except Exception as e:
+        logger.warning(f"保存时间线结构类型失败: {e}")
+        return False
+
+
+def load_structure(project_id: str) -> Optional[Dict[str, Any]]:
+    try:
+        path = _structure_path(project_id)
+        if not os.path.exists(path):
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
 def _threads_path(project_id: str) -> str:
     return os.path.join(TIMELINE_ROOT, validate_project_id(project_id), "threads.json")
 
@@ -531,11 +757,16 @@ def load_threads(project_id: str) -> List[Dict[str, Any]]:
         return []
 
 
-def _llm_extract_chunk(llm, chunk: str, thread_hint: str = "") -> List[Dict[str, Any]]:
+def _llm_extract_chunk(llm, chunk: str, thread_hint: str = "", structure_hint: str = "") -> List[Dict[str, Any]]:
     """调用一次 LLM 抽取该块，返回原始事件列表；失败抛异常。"""
     user_msg = f"请抽取下面文本段的时间线事件，输出 JSON 数组：\n<文本段>\n{chunk}\n"
+    parts = []
+    if structure_hint:
+        parts.append(structure_hint)
     if thread_hint:
-        user_msg += f"\n{thread_hint}\n"
+        parts.append(thread_hint)
+    if parts:
+        user_msg += "\n" + "\n".join(parts) + "\n"
     resp = llm.chat(
         messages=[
             {"role": "system", "content": _LLM_SYSTEM},
@@ -935,6 +1166,7 @@ def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
                 _update(stage="识别线索", progress=2)
                 threads = _identify_threads(llm, text)
                 if threads:
+                    threads = _dedupe_threads(threads)
                     save_threads(project_id, threads)
                     thread_hint = _thread_hint_block(threads)
                     _task_log(task_id, f"识别到 {len(threads)} 条时间线线索")
@@ -944,6 +1176,28 @@ def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
                 logger.warning(f"[{task_id}] 背景线索识别失败，继续普通抽取: {e}")
                 _task_log(task_id, "线索识别失败，继续普通抽取")
 
+        # 结构类型判断：抽取前先判断整体是单线/并行/树状/网状/元叙事/混合，
+        # 再按类型注入抽取策略（复杂多线/嵌套时提示词更聚焦，减少不当线程与乱排）。
+        structure_hint = ""
+        if llm is not None:
+            try:
+                _task_log(task_id, "判断时间线结构类型...")
+                _update(stage="判断结构", progress=1)
+                structure = detect_structure_type(llm, text)
+                if structure:
+                    save_structure(project_id, structure)
+                    structure_hint = structure_hint_block(structure)
+                    _task_log(
+                        task_id,
+                        f"时间线结构：{_STRUCTURE_LABELS.get(structure.get('type'), structure.get('type'))}"
+                        f"（置信度 {structure.get('confidence') or '未知'}）",
+                    )
+                else:
+                    _task_log(task_id, "结构判断不可用，使用默认抽取策略")
+            except Exception as e:
+                logger.warning(f"[{task_id}] 结构判断失败，使用默认策略: {e}")
+                _task_log(task_id, "结构判断失败，使用默认策略")
+
         seq = 0
         for i, chunk in enumerate(chunks):
             used = "heuristic"
@@ -952,7 +1206,7 @@ def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
                 _task_log(task_id, f"第 {i + 1}/{total} 块开始 LLM 抽取")
                 for attempt in range(MAX_LLM_ATTEMPTS):
                     try:
-                        events = _llm_extract_chunk(llm, chunk, thread_hint)
+                        events = _llm_extract_chunk(llm, chunk, thread_hint, structure_hint)
                         if events:
                             used = "llm"
                         break

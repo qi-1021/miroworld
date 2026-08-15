@@ -130,6 +130,46 @@ def cmd_timeline(args) -> dict:
         return {"threads": timeline_service.load_threads(args.project_id)}
     if args.action == "characters":
         return {"characters": timeline_service.load_characters(args.project_id)}
+    if args.action == "structure":
+        # 读取项目已保存的结构类型（若有），否则现场用 LLM 判断
+        saved = timeline_service.load_structure(args.project_id)
+        if saved and not args.force:
+            return {"structure": saved}
+        from app.services import timeline_service as ts
+        from app.utils.llm_client import LLMClient
+        llm = _build_llm_client(args.project_id)
+        text = ts._source_text(args.project_id, story=(args.source == "story"))
+        structure = ts.detect_structure_type(llm, text)
+        if structure:
+            ts.save_structure(args.project_id, structure)
+        return {"structure": structure}
+    if args.action == "structure-text":
+        # 对输入的一段文本（不落项目）做结构判断，供复杂/多时间线快速验证
+        from app.utils.llm_client import LLMClient
+        if not (args.text or "").strip():
+            raise ValueError("structure-text 需要 --text 参数提供文本内容")
+        llm = _build_llm_client(args.project_id)
+        structure = timeline_service.detect_structure_type(llm, args.text)
+        return {"structure": structure}
+    if args.action == "extract-text":
+        # 对输入的一段文本做整块 LLM 抽取（含结构+线程提示），不写入项目，便于抽查
+        from app.utils.llm_client import LLMClient
+        if not (args.text or "").strip():
+            raise ValueError("extract-text 需要 --text 参数提供文本内容")
+        llm = _build_llm_client(args.project_id)
+        structure = timeline_service.detect_structure_type(llm, args.text)
+        struct_hint = timeline_service.structure_hint_block(structure)
+        thread_hint = ""
+        if args.source == "bg":
+            threads = timeline_service._dedupe_threads(
+                timeline_service._identify_threads(llm, args.text)
+            )
+            thread_hint = timeline_service._thread_hint_block(threads)
+        events = timeline_service._llm_extract_chunk(
+            llm, args.text, thread_hint, struct_hint
+        )
+        return {"structure": structure, "threads_hint": thread_hint != "",
+                "event_count": len(events), "events": events}
     raise ValueError(f"未知 timeline 动作: {args.action}")
 
 
@@ -279,6 +319,22 @@ def _parser() -> argparse.ArgumentParser:
     ta.add_parser("get").add_argument("--project-id", required=True)
     ta.add_parser("threads").add_argument("--project-id", required=True)
     ta.add_parser("characters").add_argument("--project-id", required=True)
+    tstruct = ta.add_parser("structure")
+    tstruct.add_argument("--project-id", required=True)
+    tstruct.add_argument("--source", choices=["story", "bg"], default="story")
+    tstruct.add_argument("--force", action="store_true",
+                         help="忽略已保存结果，强制用 LLM 重新判断")
+    tstruct_text = ta.add_parser("structure-text")
+    tstruct_text.add_argument("--text", required=True,
+                              help="要判断结构的文本片段（可剪贴部分正文）")
+    tstruct_text.add_argument("--project-id", default=None,
+                              help="可选：用指定项目的模型凭据")
+    textract = ta.add_parser("extract-text")
+    textract.add_argument("--text", required=True,
+                          help="要抽取的一段文本（可部分正文），模拟整流程抽查")
+    textract.add_argument("--source", choices=["story", "bg"], default="story")
+    textract.add_argument("--project-id", default=None,
+                          help="可选：用指定项目的模型凭据")
 
     c = sub.add_parser("conflict")
     ca = c.add_subparsers(dest="action", required=True)

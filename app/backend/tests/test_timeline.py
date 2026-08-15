@@ -345,3 +345,110 @@ def test_endpoint_future(tl_client, monkeypatch):
             break
         time.sleep(0.05)
     assert status["status"] == "completed"
+
+
+# ---------------------------------------------------------------------------
+# 时间线结构类型判断 + 策略提示 + 线程去重
+# ---------------------------------------------------------------------------
+
+def test_detect_structure_type_normalizes_and_returns():
+    class _SLLM:
+        def chat(self, **kw):
+            return ('{"type":"network","confidence":0.8,"reason":"多人多地交织",'
+                    '"strategy":"按人物线分组抽取"}')
+
+    st = svc.detect_structure_type(_SLLM(), "一段文本" * 100)
+    assert st is not None
+    assert st["type"] == "network"
+    assert st["confidence"] == 0.8
+    assert "按人物线分组" in st["strategy"]
+
+
+def test_detect_structure_type_accepts_array_wrapper():
+    class _SLLM2:
+        def chat(self, **kw):
+            return '[{"type":"parallel","confidence":0.9,"reason":"三国并行","strategy":"分线"}]'
+
+    st = svc.detect_structure_type(_SLLM2(), "三线并行文本")
+    assert st["type"] == "parallel"
+
+
+def test_detect_structure_type_chinese_alias():
+    class _SLLM3:
+        def chat(self, **kw):
+            return '{"type":"元叙事/嵌套","confidence":0.5}'
+
+    st = svc.detect_structure_type(_SLLM3(), "嵌套叙事文本")
+    assert st["type"] == "meta"
+
+
+def test_detect_structure_type_fails_returns_none():
+    class _Broken:
+        def chat(self, **kw):
+            raise RuntimeError("boom")
+
+    assert svc.detect_structure_type(_Broken(), "文本") is None
+    assert svc.detect_structure_type(_Broken(), "") is None
+
+
+def test_structure_hint_block():
+    hint = svc.structure_hint_block({"type": "network", "confidence": 0.7,
+                                     "strategy": "按线分组", "reason": "交织"})
+    assert "网状多线交织" in hint
+    assert "按线分组" in hint
+    assert svc.structure_hint_block(None) == ""
+    assert svc.structure_hint_block({}) == ""
+    single = svc.structure_hint_block({"type": "single", "confidence": 0.9})
+    assert "单线叙事" in single
+    assert "不要强行拆出多线" in single
+
+
+def test_save_load_structure(tl_service):
+    svc.save_structure("proj_0123456789ab", {"type": "tree", "confidence": 0.6,
+                                             "reason": "分支", "strategy": "按分支"})
+    loaded = svc.load_structure("proj_0123456789ab")
+    assert loaded is not None
+    assert loaded["type"] == "tree"
+    # 覆盖保存 / 未保存的返回 None
+    assert svc.load_structure("proj_000000000000") is None
+
+
+def test_llm_extract_chunk_injects_structure_and_thread_hints():
+    seen = {}
+
+    class _Ok:
+        def chat(self, **kw):
+            seen["user"] = kw["messages"][1]["content"]
+            return ('[{"summary":"事件A","time_text":"三年后","ev_type":"milestone",'
+                    '"location_text":"罗德岛","confidence":0.8,"thread_name":"龙门线"}]')
+
+    events = svc._llm_extract_chunk(_Ok(), "正文段", thread_hint="HINT_THREAD",
+                                    structure_hint="STRUCT_HINT")
+    assert len(events) == 1
+    assert "STRUCT_HINT" in seen["user"]
+    assert "HINT_THREAD" in seen["user"]
+
+
+def test_dedupe_threads_removes_junk_and_dupes():
+    threads = [
+        {"id": "乌萨斯", "name": "乌萨斯线", "dimension": "main", "description": "A"},
+        {"id": "乌萨斯", "name": "乌萨斯线", "dimension": "main"},   # 重复
+        {"id": "未知", "name": "未知", "dimension": "main"},          # 占位
+        {"id": "-", "name": "-", "dimension": "main"},                # 垃圾
+        {"id": "", "name": "", "dimension": "main"},                  # 空
+        {"id": "龙门", "name": "龙门线", "dimension": "main"},
+        {"id": "龙国", "name": "龙国线", "dimension": "main"},         # 合法 2 字保留
+    ]
+    out = svc._dedupe_threads(threads)
+    names = [t["name"] for t in out]
+    assert "乌萨斯线" in names
+    assert "龙门线" in names
+    assert "龙国线" in names
+    assert "未知" not in names
+    assert "-" not in names
+    assert "" not in names
+    # 去重后乌萨斯只有一个
+    assert names.count("乌萨斯线") == 1
+    # 保留更完整 description
+    usas = next(t for t in out if t["name"] == "乌萨斯线")
+    assert usas["description"] == "A"

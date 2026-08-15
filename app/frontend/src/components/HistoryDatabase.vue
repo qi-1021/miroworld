@@ -4,10 +4,14 @@
     :class="{ 'no-projects': projects.length === 0 && !loading }"
     ref="historyContainer"
   >
-    <!-- 背景装饰：技术网格线（只在有项目时显示） -->
+    <!-- 背景装饰：技术网格线 + 彩色光晕（Liquid Glass 模糊源） -->
     <div v-if="projects.length > 0 || loading" class="tech-grid-bg">
       <div class="grid-pattern"></div>
       <div class="gradient-overlay"></div>
+      <div class="glass-glow glow-1"></div>
+      <div class="glass-glow glow-2"></div>
+      <div class="glass-glow glow-3"></div>
+      <div class="glass-glow glow-4"></div>
     </div>
 
     <!-- 标题区域 -->
@@ -90,9 +94,15 @@
         <!-- 卡片描述（模拟需求完整展示） -->
         <p class="card-desc">{{ truncateText(project.simulation_requirement, 55) }}</p>
 
-        <!-- 卡片操作区（hover 时显现：世界标识 / 重试失败 / 删除） -->
+        <!-- 卡片操作区（hover 时显现：世界标识 / 删除空模拟 / 重试失败 / 删除） -->
         <div class="card-actions">
           <span v-if="isWorldProject(project)" class="world-tag" title="世界模拟">◈ WORLD</span>
+          <button
+            v-if="isEmptySimulation(project)"
+            class="card-action-btn empty"
+            :title="$t('history.deleteEmptyHint')"
+            @click="handleDeleteEmpty(project, $event)"
+          >🗑 {{ $t('history.deleteEmpty') }}</button>
           <button
             v-if="isFailedProject(project)"
             class="card-action-btn retry"
@@ -208,6 +218,11 @@
             <!-- 数据管理 -->
             <div class="modal-manage">
               <button
+                v-if="selectedProject && isEmptySimulation(selectedProject)"
+                class="modal-manage-btn empty"
+                @click="handleDeleteEmpty(selectedProject, $event)"
+              >{{ $t('history.deleteEmpty') }}</button>
+              <button
                 class="modal-manage-btn danger"
                 @click="handleDeleteProject(selectedProject, $event)"
               >{{ $t('history.delete') }}</button>
@@ -223,7 +238,7 @@
 import { ref, computed, onMounted, onUnmounted, onActivated, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { getSimulationHistory } from '../api/simulation'
+import { getSimulationHistory, deleteSimulation } from '../api/simulation'
 import { deleteProject, resetProject } from '../api/graph'
 
 const router = useRouter()
@@ -488,6 +503,53 @@ const isWorldProject = (project) => {
   return false
 }
 
+// 判断是否为「空模拟」：有 simulation_id（或 world_ 伪 id）但没有实际数据——
+// 即没有项目容器、没有文件、没有需求、也没有世界正文的孤立运行记录。
+// 前端据此显示「删除空模拟」入口，清理 data/world-sim 下未命名/无归属的残留。
+const isEmptySimulation = (project) => {
+  if (!project) return false
+  const sid = project.simulation_id
+  if (!sid) return false
+  // 有真实项目容器或已挂靠世界数据 → 不是空模拟
+  if (project.project_id) return false
+  if (project.files && project.files.length > 0) return false
+  if (project.simulation_requirement && String(project.simulation_requirement).trim()) return false
+  if (project.has_world_data) return false
+  // 其余情况（无项目、无文件、无需求）：视为空模拟
+  return true
+}
+
+// 删除空模拟：优先调用模拟级删除接口；失败时回退到项目级删除
+const handleDeleteEmpty = async (project, event) => {
+  if (event) event.stopPropagation()
+  const id = project && (project.simulation_id || project.id)
+  if (!id) return
+  if (!window.confirm(t('history.deleteEmptyConfirm'))) return
+  try {
+    await deleteSimulation(id)
+  } catch (e) {
+    // 模拟级删除 404/不可用：尝试项目级删除兜底
+    const pid = project && (project.project_id || project.id)
+    if (pid) {
+      try {
+        await deleteProject(pid)
+      } catch (e2) {
+        alert(e2?.message || t('history.deleteError'))
+        return
+      }
+    } else {
+      alert(e?.message || t('history.deleteError'))
+      return
+    }
+  }
+  // 从列表移除
+  const idx = projects.value.findIndex(p => p === project)
+  if (idx >= 0) projects.value.splice(idx, 1)
+  if (selectedProject.value && selectedProject.value === project) {
+    selectedProject.value = null
+  }
+}
+
 // 根据项目身份判定重试后的跳转路由
 const retryTarget = (project) => {
   const id = project && (project.project_id || project.id)
@@ -500,7 +562,11 @@ const retryTarget = (project) => {
 // 删除项目
 const handleDeleteProject = async (project, event) => {
   if (event) event.stopPropagation()
-  const id = project && (project.project_id || project.id || project.simulation_id)
+  // 空模拟（无项目容器）走模拟级删除，普通项目走项目级删除
+  if (isEmptySimulation(project)) {
+    return handleDeleteEmpty(project)
+  }
+  const id = project && (project.project_id || project.id)
   if (!id) return
   if (!window.confirm(t('history.deleteConfirm'))) return
   try {
@@ -646,10 +712,18 @@ watch(() => route.path, (newPath) => {
   }
 })
 
+// 向外暴露 reload：供其它页面（如世界设定页导入后）触发首页历史刷新
+defineExpose({ reload: loadHistory })
+const reloadHistoryListener = () => { loadHistory() }
+
 onMounted(async () => {
   // 确保 DOM 渲染完成后再加载数据
   await nextTick()
   await loadHistory()
+
+  // 事件驱动的刷新：其它页面（例如世界设定页导入新项目后）派发
+  // 'mirofish:history-reload' 即可让首页历史列表即时更新。
+  window.addEventListener('mirofish:history-reload', reloadHistoryListener)
 
   // 等待 DOM 渲染后初始化观察器
   setTimeout(() => {
@@ -668,6 +742,8 @@ onUnmounted(() => {
     observer.disconnect()
     observer = null
   }
+  // 清理 event 监听
+  window.removeEventListener('mirofish:history-reload', reloadHistoryListener)
   // 清理防抖定时器
   if (expandDebounceTimer) {
     clearTimeout(expandDebounceTimer)
@@ -731,6 +807,22 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
+/* 彩色光晕：为 backdrop-filter 提供可模糊的彩色内容（Liquid Glass 模糊源） */
+.glass-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
+  pointer-events: none;
+}
+.glow-1 { width: 420px; height: 420px; left: -120px; top: -100px;
+  background: radial-gradient(circle, rgba(255,183,107,0.55), transparent 70%); }
+.glow-2 { width: 500px; height: 500px; right: -160px; top: 10%;
+  background: radial-gradient(circle, rgba(158,167,255,0.5), transparent 70%); }
+.glow-3 { width: 380px; height: 380px; left: 20%; bottom: -140px;
+  background: radial-gradient(circle, rgba(107,240,198,0.45), transparent 70%); }
+.glow-4 { width: 360px; height: 360px; right: 12%; bottom: -120px;
+  background: radial-gradient(circle, rgba(255,143,208,0.4), transparent 70%); }
+
 /* 标题区域 */
 .section-header {
   position: relative;
@@ -770,22 +862,36 @@ onUnmounted(() => {
   /* min-height 由 JS 动态计算，根据卡片数量自适应 */
 }
 
-/* 项目卡片 */
+/* 项目卡片 —— Liquid Glass 质感：半透明白 + 毛玻璃模糊 + 顶亮边 */
 .project-card {
   position: absolute;
   width: 280px;
-  background: #FFFFFF;
-  border: 1px solid #E5E7EB;
-  border-radius: 0;
+  background: rgba(255, 255, 255, 0.52);
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 14px;
   padding: 14px;
   cursor: pointer;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  transition: box-shadow 0.3s ease, border-color 0.3s ease, transform 700ms cubic-bezier(0.23, 1, 0.32, 1), opacity 700ms cubic-bezier(0.23, 1, 0.32, 1);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255,255,255,0.7);
+  backdrop-filter: saturate(190%) blur(22px);
+  -webkit-backdrop-filter: saturate(190%) blur(22px);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease, transform 700ms cubic-bezier(0.23, 1, 0.32, 1), opacity 700ms cubic-bezier(0.23, 1, 0.32, 1), background 0.3s ease;
+  overflow: hidden;
+}
+.project-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 6%;
+  right: 6%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.95), transparent);
+  pointer-events: none;
 }
 
 .project-card:hover {
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-  border-color: rgba(0, 0, 0, 0.4);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255,255,255,0.8);
+  border-color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.66);
   z-index: 1000 !important;
 }
 
@@ -1109,6 +1215,18 @@ onUnmounted(() => {
   border-color: #BFDBFE;
   background: #EFF6FF;
   margin-left: 0;
+}
+
+.card-action-btn.empty {
+  color: #B45309;
+  border-color: #FCD9A5;
+  background: #FFF7E6;
+  margin-left: 0;
+}
+
+.card-action-btn.empty:hover {
+  background: #FEE9C7;
+  border-color: #F5B861;
 }
 
 .card-action-btn.retry:hover {
@@ -1585,5 +1703,17 @@ onUnmounted(() => {
 .modal-manage-btn.danger:hover {
   border-color: #B91C1C;
   background: #FEF2F2;
+}
+
+.modal-manage-btn.empty {
+  color: #B45309;
+  border: 1px solid #FCD9A5;
+  background: #FFFFFF;
+  margin-right: 8px;
+}
+
+.modal-manage-btn.empty:hover {
+  border-color: #F5B861;
+  background: #FFF7E6;
 }
 </style>

@@ -105,3 +105,29 @@ def test_export_import_roundtrip():
 def test_import_rejects_bad_snapshot():
     with pytest.raises(ValueError):
         import_project_snapshot({"foo": 1})
+
+
+def test_imported_world_project_appears_in_history():
+    """导入含世界设定库的项目后，/api/simulation/history 应出现其 world 条目。"""
+    from app import create_app
+    from app.services.project_snapshot import import_project_snapshot
+
+    src = _make_source_project()
+    snapshot = export_project_snapshot(src.project_id)
+    imported = import_project_snapshot(snapshot)
+    new_pid = imported["project_id"]
+
+    app = create_app()
+    app.config["TESTING"] = True
+    with app.test_client() as c:
+        rv = c.get("/api/simulation/history")
+        assert rv.status_code == 200
+        entries = rv.get_json()["data"]
+        # 导入项目应作为世界中项目出现在历史列表（world 条目）
+        world_hits = [e for e in entries
+                      if e.get("kind") == "world" and e.get("project_id") == new_pid]
+        assert world_hits, f"导入项目 {new_pid} 未出现在首页历史列表"
+        hit = world_hits[0]
+        assert hit["has_world_data"] is True
+        # 前端 HistoryDatabase.isWorldProject → 可导航到 WorldSetup
+        assert hit["history_type"] == "world"

@@ -493,6 +493,9 @@
     "delete": "Delete",
     "deleteConfirm": "Delete this project? This cannot be undone.",
     "deleteError": "Delete failed",
+    "deleteEmpty": "Delete empty sim",
+    "deleteEmptyConfirm": "Delete this empty simulation record? It has no linked project or content and can be safely cleaned up.",
+    "deleteEmptyHint": "Remove an empty simulation not linked to any project or content",
     "retryConfirm": "Reset this project and rebuild its graph?",
     "retryError": "Reset failed"
   },
@@ -1055,7 +1058,19 @@
     "structureLinks": "Network Links",
     "structureParallel": "Parallel Threads",
     "structureMeta": "Meta / Outside World",
-    "structureEmpty": "No data"
+    "structureEmpty": "No data",
+    "typeSelectHint": "Choose timeline type (affects extraction strategy)",
+    "type": {
+      "auto": "Auto Detect"
+    },
+    "typeDesc": {
+      "auto": "Let AI auto-detect the timeline structure",
+      "linear": "A single linear story",
+      "parallel": "Multiple parallel threads",
+      "tree": "Branching tree from a single point",
+      "network": "Events connected in a network",
+      "meta": "Includes meta/outside-world narration"
+    }
   },
   "fork": {
     "forkBtn": "Fork here",

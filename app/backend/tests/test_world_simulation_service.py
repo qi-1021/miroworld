@@ -543,3 +543,93 @@ def test_simulate_whatif_invalid_steps(world_root):
     _make_base_sim(world_root, "ws_base")
     with pytest.raises(ValueError, match="steps"):
         WorldSimulationService.simulate_whatif("ws_base", "问", steps=0)
+
+
+# ---------------- 删除与孤儿清理 ----------------
+
+def test_delete_simulation(world_root):
+    """删除单条模拟：目录被移除、内存状态清空、空项目目录被清理。"""
+    import app.services.world_simulation as ws
+    _make_base_sim(world_root, "ws1")
+    sim_dir = os.path.join(ws.WORLD_SIM_ROOT, "p1", "ws1")
+    assert os.path.isdir(sim_dir)
+    assert WorldSimulationService.get_state("ws1") is not None
+
+    ok = WorldSimulationService.delete_simulation("p1", "ws1")
+    assert ok is True
+    assert not os.path.exists(sim_dir)
+    assert WorldSimulationService.get_state("ws1") is None
+
+    # 不存在时返回 False
+    assert WorldSimulationService.delete_simulation("p1", "nope") is False
+
+
+def test_delete_simulation_leaves_empty_project_dir_removed(world_root):
+    """删除该目录下最后一条模拟后，空的 data/world-sim/<p> 壳目录也被移除。"""
+    import app.services.world_simulation as ws
+    _make_base_sim(world_root, "ws_only")
+    WorldSimulationService.delete_simulation("p1", "ws_only")
+    proj_dir = os.path.join(ws.WORLD_SIM_ROOT, "p1")
+    assert not os.path.isdir(proj_dir) or not os.listdir(proj_dir)
+
+
+def test_find_simulation_json(world_root):
+    """按 simulation_id 全盘定位（含 state.json 与目录归属）。"""
+    import app.services.world_simulation as ws
+    _make_base_sim(world_root, "ws_find")
+    found = WorldSimulationService._find_simulation_json("ws_find")
+    assert found is not None
+    assert found["simulation_id"] == "ws_find"
+    assert found["project_id"] == "p1"
+    # state.json 归属优先于目录名
+    assert found["state"]["project_id"] == "p1"
+    assert WorldSimulationService._find_simulation_json("missing_zzz") is None
+
+
+def test_list_orphan_simulations(world_root, monkeypatch):
+    """孤儿=归属项目不存在的模拟（此处 p1 不是真实 ProjectManager 项目）。"""
+    import app.services.world_simulation as ws
+    _make_base_sim(world_root, "ws_orphan")
+    # 人为让 get_project 判定项目不存在 → 视为孤儿
+    assert WorldSimulationService._is_orphan_project_dir("p1") is True
+    orphans = WorldSimulationService.list_orphan_simulations()
+    ids = [o["simulation_id"] for o in orphans]
+    assert "ws_orphan" in ids
+    entry = next(o for o in orphans if o["simulation_id"] == "ws_orphan")
+    assert entry["project_id"] == "p1"
+    assert entry["has_events"] is True
+
+
+def test_orphan_detected_by_real_project_existence(world_root, monkeypatch):
+    """若项目真实存在（get_project 返回对象），其模拟不被列为孤儿。"""
+    import app.services.world_simulation as ws
+
+    class _FakeProject:
+        project_id = "p1"
+
+    monkeypatch.setattr(
+        "app.models.project.ProjectManager.get_project",
+        lambda pid: _FakeProject() if pid == "p1" else None,
+    )
+    _make_base_sim(world_root, "ws_real")
+    assert WorldSimulationService._is_orphan_project_dir("p1") is False
+    orphans = WorldSimulationService.list_orphan_simulations()
+    assert "ws_real" not in [o["simulation_id"] for o in orphans]
+
+
+def test_cleanup_orphans(world_root):
+    """清理孤儿：dry_run 不删，正式运行删除并返回统计。"""
+    import app.services.world_simulation as ws
+    _make_base_sim(world_root, "ws_a")
+    _make_base_sim(world_root, "ws_b")
+
+    dry = WorldSimulationService.cleanup_orphans(dry_run=True)
+    assert dry["removed"] == 0
+    assert dry["skipped"] == 2
+    # 仍存在
+    assert os.path.isdir(os.path.join(ws.WORLD_SIM_ROOT, "p1"))
+
+    res = WorldSimulationService.cleanup_orphans(dry_run=False)
+    assert res["removed"] == 2
+    assert not os.path.exists(os.path.join(ws.WORLD_SIM_ROOT, "p1"))
+

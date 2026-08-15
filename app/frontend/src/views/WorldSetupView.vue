@@ -1124,6 +1124,8 @@ async function onImportSnapshot(e) {
     const newId = res && res.data && res.data.project_id
     if (!newId) throw new Error(t('world.snapshotImportFailed'))
     saveMsg.value = t('world.snapshotImported', { id: newId })
+    // 通知首页历史数据库刷新（若首页保持挂载则立即刷新）
+    window.dispatchEvent(new CustomEvent('mirofish:history-reload'))
     // 路由参数变化时组件复用不会刷新 projectId，直接整页跳转
     setTimeout(() => { window.location.href = '/world/' + newId }, 800)
   } catch (err) {

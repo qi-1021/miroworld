@@ -659,3 +659,164 @@ def test_simulate_passes_from_event_id(client, monkeypatch):
     rv = client.post("/api/world/p1/simulate", json={"from_event_id": "tl_evt_abc"})
     assert rv.status_code == 200
     assert captured["from_event_id"] == "tl_evt_abc"
+
+
+def test_world_sim_delete_endpoint(client, tmp_path, monkeypatch):
+    """DELETE /api/world/<pid>/simulation/<sid> 删除单条世界模拟。"""
+    from app.services import world_simulation as ws
+
+    # 隔离世界模拟目录
+    original_ws = ws.WORLD_SIM_ROOT
+    ws.WORLD_SIM_ROOT = str(tmp_path / "world-sim")
+    try:
+        sim_dir = os.path.join(ws.WORLD_SIM_ROOT, "p1", "ws_del")
+        os.makedirs(sim_dir, exist_ok=True)
+        state = ws.WorldSimulationState(
+            simulation_id="ws_del", project_id="p1", status="completed",
+        )
+        ws.WorldSimulationService._save_state(state)
+
+        rv = client.delete("/api/world/p1/simulation/ws_del")
+        assert rv.status_code == 200
+        assert rv.get_json()["success"] is True
+        assert not os.path.exists(sim_dir)
+
+        rv2 = client.delete("/api/world/p1/simulation/missing")
+        assert rv2.status_code == 404
+    finally:
+        ws.WORLD_SIM_ROOT = original_ws
+
+
+def test_orphan_world_sim_list_and_cleanup(client, tmp_path):
+    """GET /api/world/simulations/orphans 与 POST .../cleanup 隔离目录往返。"""
+    from app.services import world_simulation as ws
+
+    original_ws = ws.WORLD_SIM_ROOT
+    ws.WORLD_SIM_ROOT = str(tmp_path / "world-sim")
+    try:
+        o_dir = os.path.join(ws.WORLD_SIM_ROOT, "p_orphan")
+        os.makedirs(o_dir, exist_ok=True)
+        state = ws.WorldSimulationState(
+            simulation_id="ws_o1", project_id="p_orphan", status="failed",
+        )
+        ws.WorldSimulationService._save_state(state)
+
+        rv = client.get("/api/world/simulations/orphans")
+        assert rv.status_code == 200
+        body = rv.get_json()
+        assert body["success"] is True
+        ids = [o["simulation_id"] for o in body["orphans"]]
+        assert "ws_o1" in ids
+
+        # dry_run 不删
+        rv_dry = client.post("/api/world/simulations/cleanup", json={"dry_run": True})
+        assert rv_dry.status_code == 200
+        assert os.path.isdir(o_dir)
+
+        # 正式清理
+        rv_clean = client.post("/api/world/simulations/cleanup", json={})
+        assert rv_clean.status_code == 200
+        assert rv_clean.get_json()["removed"] >= 1
+        assert not os.path.exists(o_dir)
+    finally:
+        ws.WORLD_SIM_ROOT = original_ws
+
+
+def test_delete_simulation_endpoint_world(client, tmp_path):
+    """DELETE /api/simulation/worldsim_xxx 应定位并删除 data/world-sim 下的世界模拟。"""
+    from app.services import world_simulation as ws
+    from app.services.simulation_manager import SimulationManager
+
+    original_ws = ws.WORLD_SIM_ROOT
+    original_sim = SimulationManager.SIMULATION_DATA_DIR
+    ws.WORLD_SIM_ROOT = str(tmp_path / "world-sim")
+    SimulationManager.SIMULATION_DATA_DIR = str(tmp_path / "uploads-sim")
+    try:
+        sim_dir = os.path.join(ws.WORLD_SIM_ROOT, "p1", "worldsim_20260101000000_a0522c")
+        os.makedirs(sim_dir, exist_ok=True)
+        state = ws.WorldSimulationState(
+            simulation_id="worldsim_20260101000000_a0522c", project_id="p1", status="completed",
+        )
+        ws.WorldSimulationService._save_state(state)
+
+        rv = client.delete("/api/simulation/worldsim_20260101000000_a0522c")
+        assert rv.status_code == 200
+        body = rv.get_json()
+        assert body["success"] is True
+        assert not os.path.exists(sim_dir)
+
+        rv2 = client.delete("/api/simulation/does_not_exist_zzz")
+        assert rv2.status_code == 404
+    finally:
+        ws.WORLD_SIM_ROOT = original_ws
+        SimulationManager.SIMULATION_DATA_DIR = original_sim
+
+
+def test_delete_simulation_endpoint_media(client, tmp_path):
+    """DELETE /api/simulation/sim_xxx 应删除 uploads/simulations 下的媒体模拟。"""
+    from app.services.simulation_manager import SimulationManager
+
+    original_sim = SimulationManager.SIMULATION_DATA_DIR
+    SimulationManager.SIMULATION_DATA_DIR = str(tmp_path / "uploads-sim")
+    try:
+        sim_dir = os.path.join(SimulationManager.SIMULATION_DATA_DIR, "sim_abc123")
+        os.makedirs(sim_dir, exist_ok=True)
+        import json as _json
+        with open(os.path.join(sim_dir, "state.json"), "w", encoding="utf-8") as f:
+            _json.dump({"simulation_id": "sim_abc123", "project_id": "proj_x",
+                        "status": "created"}, f)
+
+        rv = client.delete("/api/simulation/sim_abc123")
+        assert rv.status_code == 200
+        assert not os.path.exists(sim_dir)
+    finally:
+        SimulationManager.SIMULATION_DATA_DIR = original_sim
+
+
+def test_delete_simulation_endpoint_world_placeholder(client, tmp_path):
+    """DELETE /api/simulation/world_<pid> 应删除整项目世界模拟数据目录。"""
+    from app.services import world_simulation as ws
+
+    original_ws = ws.WORLD_SIM_ROOT
+    ws.WORLD_SIM_ROOT = str(tmp_path / "world-sim")
+    try:
+        proj_dir = os.path.join(ws.WORLD_SIM_ROOT, "proj_abc123")
+        os.makedirs(os.path.join(proj_dir, "worldsim_1"), exist_ok=True)
+
+        rv = client.delete("/api/simulation/world_proj_abc123")
+        assert rv.status_code == 200
+        assert rv.get_json()["success"] is True
+        assert not os.path.exists(proj_dir)
+    finally:
+        ws.WORLD_SIM_ROOT = original_ws
+
+
+def test_history_includes_orphan_world_sim(client, tmp_path):
+    """GET /api/simulation/history 应将孤儿世界模拟列为可删除条目。"""
+    from app.services import world_simulation as ws
+
+    original_ws = ws.WORLD_SIM_ROOT
+    ws.WORLD_SIM_ROOT = str(tmp_path / "world-sim")
+    try:
+        o_dir = os.path.join(ws.WORLD_SIM_ROOT, "p_orphan")
+        os.makedirs(o_dir, exist_ok=True)
+        state = ws.WorldSimulationState(
+            simulation_id="ws_orphan_hist", project_id="p_orphan", status="failed",
+        )
+        ws.WorldSimulationService._save_state(state)
+
+        rv = client.get("/api/simulation/history")
+        assert rv.status_code == 200
+        body = rv.get_json()
+        entries = body["data"]
+        hits = [e for e in entries if e.get("simulation_id") == "ws_orphan_hist"]
+        assert hits, "历史列表应包含孤儿世界模拟条目"
+        hit = hits[0]
+        # 前端 isEmptySimulation 依赖的字段：无 project_id、无 files、无 requirement、无 world 数据
+        assert hit.get("project_id") is None
+        assert hit.get("files") == []
+        assert not hit.get("simulation_requirement")
+        assert hit.get("has_world_data") is False
+        assert hit.get("kind") == "orphan"
+    finally:
+        ws.WORLD_SIM_ROOT = original_ws
