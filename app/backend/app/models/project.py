@@ -46,8 +46,9 @@ class Project:
 
     # 配置
     simulation_requirement: Optional[str] = None
-    chunk_size: int = 500
-    chunk_overlap: int = 50
+    # 与 Config.DEFAULT_CHUNK_SIZE 保持一致（1500 字符，减少 episode 数与 LLM 调用）
+    chunk_size: int = 1500
+    chunk_overlap: int = 150
 
     # 错误信息
     error: Optional[str] = None
@@ -92,8 +93,8 @@ class Project:
             graph_id=data.get('graph_id'),
             graph_build_task_id=data.get('graph_build_task_id'),
             simulation_requirement=data.get('simulation_requirement'),
-            chunk_size=data.get('chunk_size', 500),
-            chunk_overlap=data.get('chunk_overlap', 50),
+            chunk_size=data.get('chunk_size', 1500),
+            chunk_overlap=data.get('chunk_overlap', 150),
             error=data.get('error')
         )
 

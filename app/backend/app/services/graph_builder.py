@@ -351,8 +351,9 @@ class GraphBuilderService:
                 )
                 episode_uuids.extend(batch_uuids)
 
-                # 避免请求过快
-                time.sleep(1)
+                # 说明：episode 在适配器内逐条串行处理（每条本身就要数秒
+                # 的 LLM 调用），批次间无需再 sleep 限速，直接进入下一批。
+                # （旧版 time.sleep(1) 每批白白多等 1 秒，已移除）
 
             except Exception as e:
                 if progress_callback:

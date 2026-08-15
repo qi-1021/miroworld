@@ -1,6 +1,19 @@
 import service, { requestWithRetry } from './index'
 
 /**
+ * 创建空项目（世界模拟等独立模式的入口容器）
+ * @param {Object} data - { project_name: String }
+ * @returns {Promise} 返回 { success, data: { project_id } }
+ */
+export function createProject(data) {
+  return service({
+    url: '/api/graph/project',
+    method: 'post',
+    data
+  })
+}
+
+/**
  * 生成本体（上传文档和模拟需求）
  * @param {Object} data - 包含files, simulation_requirement, project_name等
  * @returns {Promise}

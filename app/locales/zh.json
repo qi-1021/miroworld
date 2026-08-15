@@ -173,7 +173,18 @@
     "promptPlaceholder": "// 用自然语言输入模拟或预测需求（例.武大若发布撤销肖某处分的公告，会引发什么舆情走向）",
     "engineBadge": "引擎: MiroFish-V1.0",
     "startEngine": "启动引擎",
-    "initializing": "初始化中..."
+    "initializing": "初始化中...",
+    "modeMedia": "媒体分析",
+    "modeWorld": "世界模拟",
+    "worldBgLabel": "01 / 背景世界资料",
+    "worldStoryLabel": "02 / 章节正文",
+    "worldBgUpload": "拖拽上传背景资料（可多个）",
+    "worldStoryUpload": "拖拽上传章节正文（可多个）",
+    "worldBgTextPlaceholder": "// 可选：直接粘贴背景设定（世界观 / 势力 / 人物 / 规则）",
+    "worldStoryTextPlaceholder": "// 可选：直接粘贴小说正文片段",
+    "worldDivider": "正文与背景可只填其一，也可两者都传",
+    "createWorld": "创建世界",
+    "creatingWorld": "创建中..."
   },
   "main": {
     "layoutGraph": "图谱",

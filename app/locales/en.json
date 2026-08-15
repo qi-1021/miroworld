@@ -173,7 +173,18 @@
     "promptPlaceholder": "// Describe your simulation or prediction requirement in natural language",
     "engineBadge": "Engine: MiroFish-V1.0",
     "startEngine": "Start Engine",
-    "initializing": "Initializing..."
+    "initializing": "Initializing...",
+    "modeMedia": "Media Analysis",
+    "modeWorld": "World Simulation",
+    "worldBgLabel": "01 / Background World",
+    "worldStoryLabel": "02 / Story Chapters",
+    "worldBgUpload": "Drop background files (multi)",
+    "worldStoryUpload": "Drop chapter files (multi)",
+    "worldBgTextPlaceholder": "// Optional: paste world background (lore / factions / characters / rules)",
+    "worldStoryTextPlaceholder": "// Optional: paste novel excerpts",
+    "worldDivider": "Background and story: at least one required",
+    "createWorld": "Create World",
+    "creatingWorld": "Creating..."
   },
   "main": {
     "layoutGraph": "Graph",

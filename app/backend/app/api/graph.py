@@ -161,6 +161,33 @@ def reset_project(project_id: str):
     })
 
 
+@graph_bp.route('/project', methods=['POST'])
+def create_project_endpoint():
+    """
+    创建一个空项目（不执行本体生成/图谱构建）。
+
+    用途：世界模拟等独立模式在首页直接进入时，需要先拿到 project_id
+    作为设定库与模拟记录的容器，再调用 /api/world/<project_id>/input 上传资料。
+
+    请求（JSON，可选）：
+        project_name: 项目名称（默认 "Unnamed Project"）
+
+    返回：
+        {
+            "success": true,
+            "data": { "project_id": "proj_xxx", ... }
+        }
+    """
+    data = request.get_json(silent=True) or {}
+    name = str(data.get('project_name') or 'Unnamed Project').strip() or 'Unnamed Project'
+    project = ProjectManager.create_project(name=name)
+    logger.info(f"创建空项目（世界模式入口）: {project.project_id}")
+    return jsonify({
+        "success": True,
+        "data": project.to_dict()
+    })
+
+
 # ============== 接口1：上传文件并生成本体 ==============
 
 @graph_bp.route('/ontology/generate', methods=['POST'])

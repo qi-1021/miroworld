@@ -104,7 +104,9 @@ def save_world_input(project_id: str):
         file_manifest = []
 
         # ---------------- multipart 多文件上传 ----------------
-        if request.files:
+        # 注意：request.files 在"只填文本、不上传文件"时为空，
+        # 必须同时检查 request.form，否则纯文本 multipart 请求会落到 JSON 分支。
+        if request.files or request.form:
             bg_files = request.files.getlist('background_files')
             st_files = request.files.getlist('story_files')
             all_files = bg_files + st_files

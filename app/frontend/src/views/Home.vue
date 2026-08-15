@@ -126,81 +126,222 @@
         <!-- 右栏：交互控制台 -->
         <div class="right-panel">
           <div class="console-box">
-            <!-- 上传区域 -->
-            <div class="console-section">
-              <div class="console-header">
-                <span class="console-label">{{ $t('home.realitySeed') }}</span>
-                <span class="console-meta">{{ $t('home.supportedFormats') }}</span>
-              </div>
-
-              <div
-                class="upload-zone"
-                :class="{ 'drag-over': isDragOver, 'has-files': files.length > 0 }"
-                @dragover.prevent="handleDragOver"
-                @dragleave.prevent="handleDragLeave"
-                @drop.prevent="handleDrop"
-                @click="triggerFileInput"
+            <!-- 模式选择：媒体分析 / 世界模拟 -->
+            <div class="mode-tabs">
+              <button
+                class="mode-tab"
+                :class="{ active: activeMode === 'media' }"
+                @click="activeMode = 'media'"
               >
-                <input
-                  ref="fileInput"
-                  type="file"
-                  multiple
-                  accept=".pdf,.md,.txt"
-                  @change="handleFileSelect"
-                  style="display: none"
-                  :disabled="loading"
-                />
+                <span class="mode-icon">◉</span>{{ $t('home.modeMedia') }}
+              </button>
+              <button
+                class="mode-tab"
+                :class="{ active: activeMode === 'world' }"
+                @click="activeMode = 'world'"
+              >
+                <span class="mode-icon">◈</span>{{ $t('home.modeWorld') }}
+              </button>
+            </div>
 
-                <div v-if="files.length === 0" class="upload-placeholder">
-                  <div class="upload-icon">↑</div>
-                  <div class="upload-title">{{ $t('home.dragToUpload') }}</div>
-                  <div class="upload-hint">{{ $t('home.orBrowse') }}</div>
+            <!-- ============ 模式一：媒体分析（原首页流程） ============ -->
+            <template v-if="activeMode === 'media'">
+              <!-- 上传区域 -->
+              <div class="console-section">
+                <div class="console-header">
+                  <span class="console-label">{{ $t('home.realitySeed') }}</span>
+                  <span class="console-meta">{{ $t('home.supportedFormats') }}</span>
                 </div>
 
-                <div v-else class="file-list">
-                  <div v-for="(file, index) in files" :key="index" class="file-item">
-                    <span class="file-icon">📄</span>
-                    <span class="file-name">{{ file.name }}</span>
-                    <button @click.stop="removeFile(index)" class="remove-btn">×</button>
+                <div
+                  class="upload-zone"
+                  :class="{ 'drag-over': isDragOver, 'has-files': files.length > 0 }"
+                  @dragover.prevent="handleDragOver"
+                  @dragleave.prevent="handleDragLeave"
+                  @drop.prevent="handleDrop"
+                  @click="triggerFileInput"
+                >
+                  <input
+                    ref="fileInput"
+                    type="file"
+                    multiple
+                    accept=".pdf,.md,.txt"
+                    @change="handleFileSelect"
+                    style="display: none"
+                    :disabled="loading"
+                  />
+
+                  <div v-if="files.length === 0" class="upload-placeholder">
+                    <div class="upload-icon">↑</div>
+                    <div class="upload-title">{{ $t('home.dragToUpload') }}</div>
+                    <div class="upload-hint">{{ $t('home.orBrowse') }}</div>
+                  </div>
+
+                  <div v-else class="file-list">
+                    <div v-for="(file, index) in files" :key="index" class="file-item">
+                      <span class="file-icon">📄</span>
+                      <span class="file-name">{{ file.name }}</span>
+                      <button @click.stop="removeFile(index)" class="remove-btn">×</button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <!-- 分割线 -->
-            <div class="console-divider">
-              <span>{{ $t('home.inputParams') }}</span>
-            </div>
-
-            <!-- 输入区域 -->
-            <div class="console-section">
-              <div class="console-header">
-                <span class="console-label">{{ $t('home.simulationPrompt') }}</span>
+              <!-- 分割线 -->
+              <div class="console-divider">
+                <span>{{ $t('home.inputParams') }}</span>
               </div>
-              <div class="input-wrapper">
-                <textarea
-                  v-model="formData.simulationRequirement"
-                  class="code-input"
-                  :placeholder="$t('home.promptPlaceholder')"
-                  rows="6"
-                  :disabled="loading"
-                ></textarea>
-                <div class="model-badge">{{ $t('home.engineBadge') }}</div>
-              </div>
-            </div>
 
-            <!-- 启动按钮 -->
-            <div class="console-section btn-section">
-              <button
-                class="start-engine-btn"
-                @click="startSimulation"
-                :disabled="!canSubmit || loading"
-              >
-                <span v-if="!loading">{{ $t('home.startEngine') }}</span>
-                <span v-else>{{ $t('home.initializing') }}</span>
-                <span class="btn-arrow">→</span>
-              </button>
-            </div>
+              <!-- 输入区域 -->
+              <div class="console-section">
+                <div class="console-header">
+                  <span class="console-label">{{ $t('home.simulationPrompt') }}</span>
+                </div>
+                <div class="input-wrapper">
+                  <textarea
+                    v-model="formData.simulationRequirement"
+                    class="code-input"
+                    :placeholder="$t('home.promptPlaceholder')"
+                    rows="6"
+                    :disabled="loading"
+                  ></textarea>
+                  <div class="model-badge">{{ $t('home.engineBadge') }}</div>
+                </div>
+              </div>
+
+              <!-- 启动按钮 -->
+              <div class="console-section btn-section">
+                <button
+                  class="start-engine-btn"
+                  @click="startSimulation"
+                  :disabled="!canSubmit || loading"
+                >
+                  <span v-if="!loading">{{ $t('home.startEngine') }}</span>
+                  <span v-else>{{ $t('home.initializing') }}</span>
+                  <span class="btn-arrow">→</span>
+                </button>
+              </div>
+            </template>
+
+            <!-- ============ 模式二：世界模拟（独立模式，首页直达） ============ -->
+            <template v-else>
+              <!-- 背景世界资料 -->
+              <div class="console-section">
+                <div class="console-header">
+                  <span class="console-label">{{ $t('home.worldBgLabel') }}</span>
+                  <span class="console-meta">{{ $t('home.supportedFormats') }}</span>
+                </div>
+
+                <div
+                  class="upload-zone compact"
+                  :class="{ 'drag-over': bgDragOver, 'has-files': worldBgFiles.length > 0 }"
+                  @dragover.prevent="bgDragOver = true"
+                  @dragleave.prevent="bgDragOver = false"
+                  @drop.prevent="handleWorldDrop($event, 'bg')"
+                  @click="triggerWorldInput('bg')"
+                >
+                  <input
+                    ref="bgFileInput"
+                    type="file"
+                    multiple
+                    accept=".pdf,.md,.txt"
+                    @change="handleWorldFiles($event, 'bg')"
+                    style="display: none"
+                    :disabled="loading"
+                  />
+                  <div v-if="worldBgFiles.length === 0" class="upload-placeholder">
+                    <div class="upload-icon">↑</div>
+                    <div class="upload-title">{{ $t('home.worldBgUpload') }}</div>
+                    <div class="upload-hint">{{ $t('home.orBrowse') }}</div>
+                  </div>
+                  <div v-else class="file-list">
+                    <div v-for="(file, index) in worldBgFiles" :key="index" class="file-item">
+                      <span class="file-icon">📄</span>
+                      <span class="file-name">{{ file.name }}</span>
+                      <button @click.stop="removeWorldFile(index, 'bg')" class="remove-btn">×</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="input-wrapper world-text">
+                  <textarea
+                    v-model="worldBgText"
+                    class="code-input"
+                    :placeholder="$t('home.worldBgTextPlaceholder')"
+                    rows="3"
+                    :disabled="loading"
+                  ></textarea>
+                </div>
+              </div>
+
+              <!-- 分割线 -->
+              <div class="console-divider">
+                <span>{{ $t('home.worldDivider') }}</span>
+              </div>
+
+              <!-- 章节正文 -->
+              <div class="console-section">
+                <div class="console-header">
+                  <span class="console-label">{{ $t('home.worldStoryLabel') }}</span>
+                  <span class="console-meta">{{ $t('home.supportedFormats') }}</span>
+                </div>
+
+                <div
+                  class="upload-zone compact"
+                  :class="{ 'drag-over': storyDragOver, 'has-files': worldStoryFiles.length > 0 }"
+                  @dragover.prevent="storyDragOver = true"
+                  @dragleave.prevent="storyDragOver = false"
+                  @drop.prevent="handleWorldDrop($event, 'story')"
+                  @click="triggerWorldInput('story')"
+                >
+                  <input
+                    ref="storyFileInput"
+                    type="file"
+                    multiple
+                    accept=".pdf,.md,.txt"
+                    @change="handleWorldFiles($event, 'story')"
+                    style="display: none"
+                    :disabled="loading"
+                  />
+                  <div v-if="worldStoryFiles.length === 0" class="upload-placeholder">
+                    <div class="upload-icon">↑</div>
+                    <div class="upload-title">{{ $t('home.worldStoryUpload') }}</div>
+                    <div class="upload-hint">{{ $t('home.orBrowse') }}</div>
+                  </div>
+                  <div v-else class="file-list">
+                    <div v-for="(file, index) in worldStoryFiles" :key="index" class="file-item">
+                      <span class="file-icon">📄</span>
+                      <span class="file-name">{{ file.name }}</span>
+                      <button @click.stop="removeWorldFile(index, 'story')" class="remove-btn">×</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="input-wrapper world-text">
+                  <textarea
+                    v-model="worldStoryText"
+                    class="code-input"
+                    :placeholder="$t('home.worldStoryTextPlaceholder')"
+                    rows="3"
+                    :disabled="loading"
+                  ></textarea>
+                </div>
+              </div>
+
+              <!-- 创建世界按钮 -->
+              <div class="console-section btn-section">
+                <div v-if="worldError" class="world-error">{{ worldError }}</div>
+                <button
+                  class="start-engine-btn"
+                  @click="createWorldProject"
+                  :disabled="!canCreateWorld || loading"
+                >
+                  <span v-if="!loading">{{ $t('home.createWorld') }}</span>
+                  <span v-else>{{ $t('home.creatingWorld') }}</span>
+                  <span class="btn-arrow">→</span>
+                </button>
+              </div>
+            </template>
           </div>
         </div>
       </section>
@@ -216,6 +357,8 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import HistoryDatabase from '../components/HistoryDatabase.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+import { createProject } from '../api/graph'
+import { saveWorldInputMultipart } from '../api/world'
 
 const router = useRouter()
 
@@ -232,12 +375,36 @@ const loading = ref(false)
 const error = ref('')
 const isDragOver = ref(false)
 
+// ============ 模式选择：媒体分析 / 世界模拟 ============
+const activeMode = ref('media')
+
+// 世界模拟：背景资料 / 章节正文（各支持多文件 + 直接文本）
+const worldBgFiles = ref([])
+const worldStoryFiles = ref([])
+const worldBgText = ref('')
+const worldStoryText = ref('')
+const worldError = ref('')
+const bgDragOver = ref(false)
+const storyDragOver = ref(false)
+const bgFileInput = ref(null)
+const storyFileInput = ref(null)
+
 // 文件输入引用
 const fileInput = ref(null)
 
-// 计算属性:是否可以提交
+// 计算属性:是否可以提交（媒体分析）
 const canSubmit = computed(() => {
   return formData.value.simulationRequirement.trim() !== '' && files.value.length > 0
+})
+
+// 计算属性：是否可以创建世界（背景/正文至少一项非空）
+const canCreateWorld = computed(() => {
+  return (
+    worldBgFiles.value.length > 0 ||
+    worldStoryFiles.value.length > 0 ||
+    worldBgText.value.trim() !== '' ||
+    worldStoryText.value.trim() !== ''
+  )
 })
 
 // 触发文件选择
@@ -284,6 +451,70 @@ const addFiles = (newFiles) => {
 // 移除文件
 const removeFile = (index) => {
   files.value.splice(index, 1)
+}
+
+// ============ 世界模拟模式：资料上传 ============
+const triggerWorldInput = (kind) => {
+  if (!loading.value) {
+    if (kind === 'bg') bgFileInput.value?.click()
+    else storyFileInput.value?.click()
+  }
+}
+
+const handleWorldFiles = (event, kind) => {
+  const target = kind === 'bg' ? worldBgFiles : worldStoryFiles
+  const selected = Array.from(event.target.files).filter(file => {
+    const ext = file.name.split('.').pop().toLowerCase()
+    return ['pdf', 'md', 'txt', 'markdown'].includes(ext)
+  })
+  target.value.push(...selected)
+  // 允许再次选择同一文件
+  event.target.value = ''
+}
+
+const handleWorldDrop = (e, kind) => {
+  if (kind === 'bg') bgDragOver.value = false
+  else storyDragOver.value = false
+  if (loading.value) return
+  const droppedFiles = Array.from(e.dataTransfer.files).filter(file => {
+    const ext = file.name.split('.').pop().toLowerCase()
+    return ['pdf', 'md', 'txt', 'markdown'].includes(ext)
+  })
+  const target = kind === 'bg' ? worldBgFiles : worldStoryFiles
+  target.value.push(...droppedFiles)
+}
+
+const removeWorldFile = (index, kind) => {
+  const target = kind === 'bg' ? worldBgFiles : worldStoryFiles
+  target.value.splice(index, 1)
+}
+
+// 创建世界项目：建项目 → 上传资料 → 进入世界设定页
+const createWorldProject = async () => {
+  if (!canCreateWorld.value || loading.value) return
+
+  loading.value = true
+  worldError.value = ''
+  try {
+    const created = await createProject({ project_name: '世界模拟' })
+    const pid = created?.data?.project_id
+    if (!pid) throw new Error('项目创建失败')
+
+    const formData = new FormData()
+    worldBgFiles.value.forEach(f => formData.append('background_files', f))
+    worldStoryFiles.value.forEach(f => formData.append('story_files', f))
+    if (worldBgText.value.trim()) formData.append('background_text', worldBgText.value)
+    if (worldStoryText.value.trim()) formData.append('story_text', worldStoryText.value)
+
+    await saveWorldInputMultipart(pid, formData)
+
+    // 直达世界设定页（不再需要经过媒体分析流程）
+    router.push(`/world/${pid}`)
+  } catch (err) {
+    worldError.value = err.message || String(err)
+  } finally {
+    loading.value = false
+  }
 }
 
 // 滚动到底部
@@ -675,6 +906,59 @@ const startSimulation = () => {
 .console-box {
   border: 1px solid #CCC; /* 外部实线 */
   padding: 8px; /* 内边距形成双重边框感 */
+}
+
+/* 模式选择标签 */
+.mode-tabs {
+  display: flex;
+  border-bottom: 1px solid #EEE;
+  padding: 0 10px;
+  margin-bottom: 4px;
+}
+
+.mode-tab {
+  background: none;
+  border: none;
+  padding: 14px 18px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: #999;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  letter-spacing: 1px;
+  transition: all 0.2s;
+}
+
+.mode-tab:hover {
+  color: var(--black);
+}
+
+.mode-tab.active {
+  color: var(--black);
+  border-bottom-color: var(--orange);
+  font-weight: 700;
+}
+
+.mode-icon {
+  margin-right: 6px;
+  font-size: 0.7rem;
+}
+
+/* 世界模式：紧凑上传区与文本输入 */
+.upload-zone.compact {
+  height: 120px;
+}
+
+.world-text {
+  margin-top: 10px;
+}
+
+.world-error {
+  color: #D32F2F;
+  font-size: 0.8rem;
+  margin-bottom: 10px;
+  font-family: var(--font-mono);
+  line-height: 1.5;
 }
 
 .console-section {

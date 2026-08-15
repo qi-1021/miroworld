@@ -79,8 +79,11 @@ class Config:
     ALLOWED_EXTENSIONS = {'pdf', 'md', 'txt', 'markdown'}
 
     # 文本处理配置
-    DEFAULT_CHUNK_SIZE = 500  # 默认切块大小
-    DEFAULT_CHUNK_OVERLAP = 50  # 默认重叠大小
+    # 说明：500 字符/块 会导致长文档拆出大量 episode，每个 episode 要串行
+    # 打多次 LLM（实体提取/消歧/关系/摘要），建图时间随块数线性膨胀。
+    # 提高默认块大小可减少 3 倍 episode 数；graphiti 对高密度内容会内部再切分。
+    DEFAULT_CHUNK_SIZE = 1500  # 默认切块大小
+    DEFAULT_CHUNK_OVERLAP = 150  # 默认重叠大小
 
     # OASIS模拟配置
     OASIS_DEFAULT_MAX_ROUNDS = int(os.environ.get('OASIS_DEFAULT_MAX_ROUNDS', '10'))

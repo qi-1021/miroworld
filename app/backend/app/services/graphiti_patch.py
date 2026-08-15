@@ -318,6 +318,58 @@ def _apply_response_normalization_patch() -> bool:
     return True
 
 
+def _apply_new_node_only_attributes_patch() -> bool:
+    """
+    Patch extract_attributes_from_nodes：只对"新节点"（尚无摘要）提取属性/摘要。
+
+    背景：graphiti 每处理一个 episode，都会对本次提取出的【所有】节点
+    重新跑一遍属性提取 + 摘要生成（每节点 1-2 次 LLM 调用）。长文档建图时
+    同一批实体在后续 chunk 中反复出现，造成大量重复 LLM 调用——这是建图
+    慢的最大单一来源（实测单 episode 8 实体 → 约 16+ 次 LLM 调用）。
+
+    这里注入默认的 should_summarize_node 过滤：节点已有非空摘要
+    （即已在图谱中存在）→ 跳过属性/摘要；仅全新节点做一次提取。
+    """
+    try:
+        import graphiti_core.graphiti as _graphiti_module
+        from graphiti_core.utils.maintenance import node_operations as _node_ops
+    except ImportError:
+        return False
+
+    original = _graphiti_module.extract_attributes_from_nodes
+
+    @functools.wraps(original)
+    async def patched(
+        clients,
+        nodes,
+        episode=None,
+        previous_episodes=None,
+        entity_types=None,
+        should_summarize_node=None,
+    ):
+        def _only_new(node):
+            summary = (node.summary or "").strip()
+            return len(summary) < 10
+
+        return await original(
+            clients,
+            nodes,
+            episode,
+            previous_episodes,
+            entity_types,
+            should_summarize_node if should_summarize_node is not None else _only_new,
+        )
+
+    # graphiti.py 以 `from ... import extract_attributes_from_nodes` 绑定名字，
+    # 必须在 graphiti 模块命名空间上替换才生效（模块全局按调用时查找）。
+    _graphiti_module.extract_attributes_from_nodes = patched
+    # 源模块一并替换，覆盖其它调用点（维护任务等）
+    if hasattr(_node_ops, "extract_attributes_from_nodes"):
+        _node_ops.extract_attributes_from_nodes = patched
+    logger.info("Graphiti 新节点优先属性/摘要 patch 应用成功（跳过已有节点的重复 LLM 调用）")
+    return True
+
+
 def apply_patch() -> bool:
     """
     应用 monkey-patch 到 graphiti-core
@@ -379,6 +431,9 @@ def apply_patch() -> bool:
 
         # 响应规范化 patch（兼容裸数组等非标准 JSON 结构）
         _apply_response_normalization_patch()
+
+        # 新节点优先属性/摘要 patch（跳过已有节点的重复 LLM 调用，显著加速建图）
+        _apply_new_node_only_attributes_patch()
 
         # 并发限制 patch：OpenCode/DeepSeek 等网关在并发 LLM 请求下
         # 会返回空内容或断开连接（实测 3 并发全部失败、串行全部成功）。
