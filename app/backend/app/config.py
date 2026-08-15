@@ -73,13 +73,27 @@ class Config:
     NEO4J_USER = os.environ.get('NEO4J_USER', 'neo4j')
     NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD', 'password')
 
-    # Graphiti 边提取模式：'skip-first' | 'always'
-    # - 'skip-first'：当目标 group_id 在图谱中还没有任何 EntityNode 时，
-    #   直接跳过本次边提取（返回空边列表）。首个 episode 建图时实体尚未落库，
-    #   边提取只会对"前序 episode"做无意义的配对搜索/LLM 推理而稳定失败，
-    #   跳过可显著加速首个 chunk 并提升稳定性。
-    # - 'always'：保持 graphiti 原生行为，不跳过。
-    GRAPHITI_EDGE_MODE = os.environ.get('GRAPHITI_EDGE_MODE', 'skip-first')
+    # Graphiti 边提取模式：
+    # - 'skip'（默认）：建图阶段完全跳过边提取。实测 OpenCode 网关对 10+ 实体的
+    #   边提取 0% 成功、每次烧 2×100s+，全跳过是净收益；边由"补边队列"
+    #   （POST /api/world/<pid>/graph/refill_edges）后续补充。
+    # - 'skip-first'：仅首个 episode 跳过（历史遗留选项，保留兼容）。
+    # - 'always'：graphiti 原生行为。补边重放时由 GraphitiClient 在事件循环
+    #   线程内临时切换使用，不通过本环境变量修改。
+    GRAPHITI_EDGE_MODE = os.environ.get('GRAPHITI_EDGE_MODE', 'skip')
+    # graphiti 建图 LLM 并发上限：1=串行（最稳）；2-3=并发处理短小的
+    # 属性/摘要调用（边提取已跳过，网关压力大减）。env 可覆盖。
+    GRAPHITI_MAX_CONCURRENCY = int(os.environ.get('GRAPHITI_MAX_CONCURRENCY', '1') or '1')
+
+    # Graphiti LLM 断路器配置（仅 graphiti 建图路径生效，不碰 LLMClient）
+    # 连续失败达到阈值则熔断该模型，熔断窗口内换用回退链中的下一个模型。
+    # 默认阈值较高，平时零感知；用 0 关闭断路器。
+    GRAPHITI_CIRCUIT_BREAKER_THRESHOLD = int(
+        os.environ.get('GRAPHITI_CIRCUIT_BREAKER_THRESHOLD', '5')
+    )
+    GRAPHITI_CIRCUIT_BREAKER_SECONDS = int(
+        os.environ.get('GRAPHITI_CIRCUIT_BREAKER_SECONDS', '120')
+    )
 
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB

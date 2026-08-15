@@ -279,3 +279,39 @@ def test_entity_extraction_no_retry_when_enough():
     results = asyncio.run(g.extract_nodes(None, _Ep(), []))
     assert calls["n"] == 1, "实体足够时不应重试"
     assert len(results) == 4
+
+
+def test_edge_skip_patch_binds_graphiti_namespace():
+    """edge-skip patch 必须同时替换 graphiti.py 模块命名空间的 extract_edges。
+
+    回归：此前只替换 edge_operations.extract_edges，graphiti.py 在导入时
+    已绑定原函数，线上 _extract_and_resolve_edges 仍走原版边提取，
+    skip-first 形同虚设（实测每次烧 2×119s）。
+    """
+    import graphiti_core.graphiti as g
+    from app.services.graphiti_patch import apply_patch
+    apply_patch()
+    src = g.extract_edges.__code__.co_filename
+    assert "graphiti_patch" in src, f"graphiti.extract_edges 未指向 patch 版本: {src}"
+
+
+def test_compact_extraction_prompt_via_wrapper():
+    """精简提取提示词必须通过 prompt_library 包装器路径生效（回归）。
+
+    此前补丁只替换了 extract_nodes 模块的函数，而 node_operations 实际
+    走 prompt_library.extract_nodes.extract_text（VersionWrapper 捕获了
+    原函数），导致线上提取提示词仍为 3872 字符、网关 120s+ 慢调用。
+    """
+    from app.services.graphiti_patch import apply_patch
+    apply_patch()
+    from graphiti_core.prompts import prompt_library
+
+    content = "大陆名唤苍澜界，由三大帝国鼎立。" * 60
+    ctx = {
+        "entity_types": '[{"entity_type_id": 0, "entity_type_name": "Entity"}]',
+        "episode_content": content,
+        "custom_extraction_instructions": "",
+    }
+    msgs = prompt_library.extract_nodes.extract_text(ctx)
+    total = len(msgs[0].content) + len(msgs[1].content)
+    assert total < 2500, f"提示词未精简: {total}"

@@ -356,6 +356,12 @@ def build_world_graph(project_id: str):
             # 3. 分块并添加 episode
             chunks = TextProcessor.split_text(text, chunk_size=chunk_size, overlap=overlap)
             total_chunks = len(chunks)
+            # 缓存 episode 文本，供后续"补边"重放（低频；失败仅警告，不影响建图）
+            try:
+                from ..services.world_graph_refill import save_episodes_cache
+                save_episodes_cache(project_id, chunks)
+            except Exception:
+                logger.warning("缓存世界图谱 episodes 失败（忽略）")
             task_manager.update_task(
                 task_id, progress=30,
                 message=f"设定文本已分割为 {total_chunks} 个块，开始写入图谱..."
@@ -443,6 +449,39 @@ def get_world_graph(project_id: str):
     except Exception as e:
         logger.error(f"读取世界图谱失败: {e}")
         return jsonify({"success": False, "error": f"读取世界图谱失败: {e}"}), 500
+
+
+@world_bp.route('/<project_id>/graph/refill_edges', methods=['POST'])
+def refill_world_graph_edges(project_id: str):
+    """
+    补边：把建图时缓存的 episode 重新 add_episode，以提取此前被
+    skip-first 跳过的边。临时用 GRAPHITI_EDGE_MODE=always + MAX_NODES=4，
+    单条有界重试，失败跳过该条。后台异步任务，返回 task_id 供前端轮询。
+
+    请求（JSON，可选）：
+        { "force": false }   // 预留：未来可选强制清空重放
+
+    返回：
+        { "success": true, "task_id": "..." }
+    """
+    try:
+        from ..models.project import ProjectManager
+        from ..services.world_graph_refill import start_edge_refill
+
+        project = ProjectManager.get_project(project_id)
+        graph_id = project.graph_id if project else None
+        task_id = start_edge_refill(
+            project_id=project_id,
+            graph_id=graph_id,
+            task_manager=task_manager,
+        )
+        return jsonify({"success": True, "task_id": task_id,
+                        "message": "补边任务已启动，请通过 /task/{task_id} 查询进度"})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"启动补边失败: {e}")
+        return jsonify({"success": False, "error": f"启动补边失败: {e}"}), 500
 
 
 @world_bp.route('/<project_id>/chunks', methods=['GET'])

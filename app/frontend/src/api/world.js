@@ -148,6 +148,19 @@ export function getWorldGraph(projectId) {
     method: 'get'
   })
 }
+/**
+ * 补边：为已有世界图谱补充缺失的关联边（异步任务）
+ * @param {String} projectId
+ * @param {Object} [data] - { force? }（可选，预留）
+ * @returns {Promise} { success, task_id | message, ... }
+ */
+export function refillWorldGraphEdges(projectId, data = {}) {
+  return service({
+    url: `/api/world/${projectId}/graph/refill_edges`,
+    method: 'post',
+    data
+  })
+}
 
 /**
  * 列出项目的世界模拟记录

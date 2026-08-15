@@ -7,12 +7,12 @@
         <div class="step-divider"></div>
         <div class="workflow-step">
           <span class="step-num">WORLD</span>
-          <span class="step-name">世界设定库</span>
+          <span class="step-name">{{ $t('world.headerTitle') }}</span>
         </div>
       </div>
       <div class="header-right">
         <span class="project-id">{{ projectId }}</span>
-        <button class="back-btn" @click="goBack">← 返回项目</button>
+        <button class="back-btn" @click="goBack">← {{ $t('world.backProject') }}</button>
       </div>
     </header>
 
@@ -22,18 +22,18 @@
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">01</span>
-            <span class="step-title">输入世界资料</span>
+            <span class="step-title">{{ $t('world.inputTitle') }}</span>
           </div>
           <div class="step-status">
-            <span class="badge hint">背景 / 正文至少一个</span>
+            <span class="badge hint">{{ $t('world.inputRequiredHint') }}</span>
           </div>
         </div>
 
         <div class="input-grid">
           <div class="input-col">
             <div class="input-label">
-              背景设定文档
-              <span class="char-count">{{ background.length }} 字</span>
+              {{ $t('world.bgLabel') }}
+              <span class="char-count">{{ background.length }} {{ $t('world.charCountUnit') }}</span>
             </div>
             <div
               class="drop-zone"
@@ -45,9 +45,9 @@
             >
               <span class="drop-icon">📄</span>
               <span class="drop-text">
-                {{ bgFiles.length ? `已选 ${bgFiles.length} 个文件` : '点击或拖拽上传背景文件' }}
+                {{ bgFiles.length ? $t('world.filesSelected', { count: bgFiles.length }) : $t('world.bgDropText') }}
               </span>
-              <span class="drop-hint">支持 txt / md / pdf，可多选</span>
+              <span class="drop-hint">{{ $t('world.dropHint') }}</span>
               <input
                 ref="bgFileInput"
                 type="file"
@@ -67,14 +67,14 @@
             <textarea
               v-model="background"
               class="world-textarea"
-              placeholder="或直接粘贴背景设定文本：世界观、地理、历史、力量体系、规则、政治格局……"
+              :placeholder="$t('world.bgTextPlaceholder')"
               rows="10"
             ></textarea>
           </div>
           <div class="input-col">
             <div class="input-label">
-              小说正文段落
-              <span class="char-count">{{ story.length }} 字</span>
+              {{ $t('world.storyLabel') }}
+              <span class="char-count">{{ story.length }} {{ $t('world.charCountUnit') }}</span>
             </div>
             <div
               class="drop-zone"
@@ -86,9 +86,9 @@
             >
               <span class="drop-icon">📖</span>
               <span class="drop-text">
-                {{ stFiles.length ? `已选 ${stFiles.length} 个文件` : '点击或拖拽上传章节文件' }}
+                {{ stFiles.length ? $t('world.filesSelected', { count: stFiles.length }) : $t('world.stDropText') }}
               </span>
-              <span class="drop-hint">支持 txt / md / pdf，可多选</span>
+              <span class="drop-hint">{{ $t('world.dropHint') }}</span>
               <input
                 ref="stFileInput"
                 type="file"
@@ -108,7 +108,7 @@
             <textarea
               v-model="story"
               class="world-textarea"
-              placeholder="或直接粘贴小说正文：故事当前进展、人物现状、正在发生的事件……"
+              :placeholder="$t('world.storyTextPlaceholder')"
               rows="10"
             ></textarea>
           </div>
@@ -117,7 +117,7 @@
         <div class="btn-row">
           <button class="action-btn" :disabled="saving || !hasAnyInput" @click="handleSave">
             <span v-if="saving" class="spinner-sm"></span>
-            {{ saving ? '保存中...' : '保存到设定库' }}
+            {{ saving ? $t('world.saving') : $t('world.save') }}
           </button>
           <button
             class="action-btn"
@@ -126,7 +126,7 @@
             @click="handleDetect"
           >
             <span v-if="detecting" class="spinner-sm"></span>
-            {{ detecting ? '检测中...' : '检测背景与正文冲突' }}
+            {{ detecting ? $t('world.detecting') : $t('world.detect') }}
           </button>
         </div>
 
@@ -136,23 +136,23 @@
         <div v-if="stats" class="stats-row">
           <div class="stat-item">
             <span class="stat-value">{{ stats.background_chunks }}</span>
-            <span class="stat-label">背景分块</span>
+            <span class="stat-label">{{ $t('world.bgChunks') }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-value">{{ stats.story_chunks }}</span>
-            <span class="stat-label">正文分块</span>
+            <span class="stat-label">{{ $t('world.storyChunks') }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-value">{{ stats.total_chunks }}</span>
-            <span class="stat-label">分块总数</span>
+            <span class="stat-label">{{ $t('world.totalChunks') }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-value">{{ stats.background_chars }}</span>
-            <span class="stat-label">背景字符</span>
+            <span class="stat-label">{{ $t('world.bgChars') }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-value">{{ stats.story_chars }}</span>
-            <span class="stat-label">正文字符</span>
+            <span class="stat-label">{{ $t('world.storyChars') }}</span>
           </div>
         </div>
       </div>
@@ -162,30 +162,30 @@
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">02</span>
-            <span class="step-title">冲突检测报告</span>
+            <span class="step-title">{{ $t('world.conflictTitle') }}</span>
           </div>
           <div class="step-status">
             <span v-if="report.conflicts.length" class="badge processing">
-              {{ report.conflicts.length }} 处冲突
+              {{ $t('world.conflictCount', { count: report.conflicts.length }) }}
             </span>
-            <span v-else class="badge success">无冲突</span>
+            <span v-else class="badge success">{{ $t('world.noConflict') }}</span>
           </div>
         </div>
 
         <div class="report-meta">
           <template v-if="report.meta">
-            检测于 {{ formatTime(report.created_at) }} ·
-            背景事实 {{ report.meta.background_facts }} 条 / 正文事实 {{ report.meta.story_facts }} 条
+            {{ $t('world.detectedAt') }} {{ formatTime(report.created_at) }} ·
+            {{ $t('world.bgFacts', { count: report.meta.background_facts }) }} / {{ $t('world.storyFacts', { count: report.meta.story_facts }) }}
           </template>
           <template v-else>
-            检测于 {{ formatTime(report.created_at) }}
+            {{ $t('world.detectedAt') }} {{ formatTime(report.created_at) }}
           </template>
         </div>
 
         <div v-if="report.error" class="msg-line error">{{ report.error }}</div>
 
         <div v-if="!report.conflicts.length && report.status === 'completed'" class="empty-note">
-          ✓ 背景与正文未发现矛盾
+          {{ $t('world.noConflictNote') }}
         </div>
 
         <div v-else class="conflict-list">
@@ -199,20 +199,20 @@
 
             <div class="conflict-compare">
               <div class="side-box">
-                <div class="side-label bg">背景设定</div>
+                <div class="side-label bg">{{ $t('world.bgSide') }}</div>
                 <div class="side-fact">{{ c.background_fact }}</div>
                 <div v-if="c.background_quote" class="side-quote">"{{ c.background_quote }}"</div>
               </div>
               <div class="vs-mark">⇄</div>
               <div class="side-box">
-                <div class="side-label st">小说正文</div>
+                <div class="side-label st">{{ $t('world.storySide') }}</div>
                 <div class="side-fact">{{ c.story_fact }}</div>
                 <div v-if="c.story_quote" class="side-quote">"{{ c.story_quote }}"</div>
               </div>
             </div>
 
-            <div v-if="c.reason" class="conflict-reason">原因：{{ c.reason }}</div>
-            <div v-if="c.suggestion" class="conflict-suggestion">建议：{{ c.suggestion }}</div>
+            <div v-if="c.reason" class="conflict-reason">{{ $t('world.reason') }}{{ c.reason }}</div>
+            <div v-if="c.suggestion" class="conflict-suggestion">{{ $t('world.suggestion') }}{{ c.suggestion }}</div>
 
             <div class="conflict-actions">
               <button
@@ -223,7 +223,7 @@
                 :disabled="c.status === s"
                 @click="setConflictStatus(c, s)"
               >
-                {{ s === 'accepted' ? '以背景为准' : '忽略此冲突' }}
+                {{ s === 'accepted' ? $t('world.acceptBg') : $t('world.dismissConflict') }}
               </button>
             </div>
           </div>
@@ -235,41 +235,41 @@
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">03</span>
-            <span class="step-title">世界模拟</span>
+            <span class="step-title">{{ $t('world.simTitle') }}</span>
           </div>
           <div class="step-status">
-            <span v-if="simStatus === 'running'" class="badge processing">模拟中</span>
-            <span v-else-if="simStatus === 'completed'" class="badge success">已完成</span>
-            <span v-else-if="simStatus === 'failed'" class="badge processing">失败</span>
-            <span v-else class="badge hint">独立模式 · 非社交平台</span>
+            <span v-if="simStatus === 'running'" class="badge processing">{{ $t('world.simStatusRunning') }}</span>
+            <span v-else-if="simStatus === 'completed'" class="badge success">{{ $t('world.simStatusCompleted') }}</span>
+            <span v-else-if="simStatus === 'failed'" class="badge processing">{{ $t('world.simStatusFailed') }}</span>
+            <span v-else class="badge hint">{{ $t('world.simStatusHint') }}</span>
           </div>
         </div>
 
         <p class="description">
-          从设定库自动提取角色/地点/规则，在独立世界中按时间步运行。与社交媒体模拟无关。
+          {{ $t('world.simDesc') }}
         </p>
 
         <div class="sim-controls">
           <div class="sim-field sim-field-wide">
-            <label class="sim-label">任务目标（可选 · 决定推演走向）</label>
+            <label class="sim-label">{{ $t('world.simGoalLabel') }}</label>
             <textarea
               v-model="simGoal"
               class="sim-goal-input"
               rows="2"
-              placeholder="例：推演三年后谁将统一大陆？不填则按设定自然推演"
+              :placeholder="$t('world.simGoalPlaceholder')"
             ></textarea>
           </div>
           <div class="sim-field">
-            <label class="sim-label">模拟步数</label>
+            <label class="sim-label">{{ $t('world.simStepsLabel') }}</label>
             <input v-model.number="simSteps" type="number" min="1" max="30" class="sim-input" />
           </div>
           <div class="sim-field">
-            <label class="sim-label">每步分钟数</label>
+            <label class="sim-label">{{ $t('world.simStepMinLabel') }}</label>
             <input v-model.number="simStepMin" type="number" min="1" max="1440" class="sim-input" />
           </div>
           <button class="action-btn sim-start" :disabled="simStarting || simStatus === 'running'" @click="handleStartSim">
             <span v-if="simStarting" class="spinner-sm"></span>
-            {{ simStarting ? '启动中...' : simStatus === 'running' ? '模拟运行中...' : '启动世界模拟' }}
+            {{ simStarting ? $t('world.simStarting') : simStatus === 'running' ? $t('world.simRunning') : $t('world.simStartBtn') }}
           </button>
         </div>
 
@@ -277,7 +277,7 @@
 
         <!-- 事件流 -->
         <div v-if="simEvents.length" class="sim-events">
-          <div class="sim-events-title">事件流</div>
+          <div class="sim-events-title">{{ $t('world.eventStream') }}</div>
           <div v-for="(e, i) in simEvents" :key="i" class="sim-event">
             <span class="sim-event-time">{{ e.time }}</span>
             <span class="sim-event-who">{{ e.character_name }}</span>
@@ -289,27 +289,27 @@
 
         <!-- 运行中控制（IPC） -->
         <div v-if="simStatus === 'running' || simStatus === 'paused'" class="sim-ctl">
-          <div class="sim-ctl-title">运行控制</div>
+          <div class="sim-ctl-title">{{ $t('world.runControl') }}</div>
           <div class="sim-ctl-btns">
             <button
               class="mini-btn"
               :disabled="simStatus === 'paused'"
               @click="handleControl('pause')"
-            >暂停</button>
+            >{{ $t('world.pause') }}</button>
             <button
               class="mini-btn"
               :disabled="simStatus !== 'paused'"
               @click="handleControl('resume')"
-            >继续</button>
-            <button class="mini-btn danger" @click="handleControl('stop')">停止</button>
+            >{{ $t('world.resume') }}</button>
+            <button class="mini-btn danger" @click="handleControl('stop')">{{ $t('world.stop') }}</button>
           </div>
           <div v-if="simCtlMsg" class="msg-line" :class="{ error: simCtlMsgError }">{{ simCtlMsg }}</div>
         </div>
 
         <!-- 角色采访 -->
         <div v-if="characters.length" class="sim-interview">
-          <div class="sim-interview-title">角色采访</div>
-          <p class="sim-interview-hint">选择角色后输入采访问题，让世界中的角色直接回答。</p>
+          <div class="sim-interview-title">{{ $t('world.interviewTitle') }}</div>
+          <p class="sim-interview-hint">{{ $t('world.interviewHint') }}</p>
           <div class="sim-char-list">
             <button
               v-for="c in characters"
@@ -320,12 +320,12 @@
             >{{ c }}</button>
           </div>
           <div v-if="interviewCharacter" class="interview-box">
-            <div class="interview-char">采访对象：{{ interviewCharacter }}</div>
+            <div class="interview-char">{{ $t('world.interviewWith') }}{{ interviewCharacter }}</div>
             <textarea
               v-model="interviewPrompt"
               class="interview-input"
               rows="2"
-              placeholder="输入你的采访问题，如：你对即将到来的战争怎么看？"
+              :placeholder="$t('world.interviewPlaceholder')"
             ></textarea>
             <button
               class="mini-btn active"
@@ -333,10 +333,10 @@
               @click="handleInterview"
             >
               <span v-if="interviewing" class="spinner-xs"></span>
-              {{ interviewing ? '采访中...' : '发送采访' }}
+              {{ interviewing ? $t('world.interviewing') : $t('world.sendInterview') }}
             </button>
             <div v-if="interviewAnswer" class="interview-answer">
-              <div class="interview-answer-label">角色回答</div>
+              <div class="interview-answer-label">{{ $t('world.interviewAnswerLabel') }}</div>
               <div class="interview-answer-text">{{ interviewAnswer }}</div>
             </div>
             <div v-if="interviewMsgError" class="msg-line error">{{ interviewMsg }}</div>
@@ -347,7 +347,7 @@
         <div v-if="reportSimulationId" class="sim-report">
           <div class="sim-report-head">
             <div class="sim-report-title">
-              <span>世界编年史报告</span>
+              <span>{{ $t('world.reportTitle') }}</span>
               <span v-if="reportSimulationLabel" class="sim-report-sub">{{ reportSimulationLabel }}</span>
             </div>
             <button
@@ -356,7 +356,7 @@
               @click="handleGenerateReport"
             >
               <span v-if="reportGenerating" class="spinner-xs"></span>
-              {{ reportGenerating ? '生成中...' : reportText ? '重新生成报告' : '生成世界报告' }}
+              {{ reportGenerating ? $t('world.reportGenerating') : reportText ? $t('world.reportRegenerate') : $t('world.reportGenerate') }}
             </button>
           </div>
           <div v-if="reportText" class="report-body">
@@ -370,45 +370,45 @@
         </div>
 
         <div v-if="simHistory.length" class="sim-history">
-          <div class="sim-history-title">历史模拟记录</div>
+          <div class="sim-history-title">{{ $t('world.reportHistoryTitle') }}</div>
           <div v-for="(h, i) in simHistory" :key="i" class="sim-history-item">
             <span class="sim-history-time">{{ formatTime(h.created_at) }}</span>
             <span class="sim-history-status" :class="h.status">{{ statusLabel(h.status) }}</span>
-            <span class="sim-history-count">{{ (h.result || {}).event_count || 0 }} 事件</span>
-            <span v-if="(h.result || {}).meta && (h.result || {}).meta.whatif_question" class="sim-history-flag">推演</span>
+            <span class="sim-history-count">{{ $t('world.eventCount', { count: (h.result || {}).event_count || 0 }) }}</span>
+            <span v-if="(h.result || {}).meta && (h.result || {}).meta.whatif_question" class="sim-history-flag">{{ $t('world.whatifFlag') }}</span>
             <template v-if="h.status === 'completed' && !((h.result || {}).meta || {}).whatif_question">
               <button class="mini-btn" :disabled="whatIfing === h.simulation_id" @click="startWhatIf(h)">
                 <span v-if="whatIfing === h.simulation_id" class="spinner-xs"></span>
-                推演
+                {{ $t('world.whatifBtn') }}
               </button>
-              <button class="mini-btn ghost" @click="openChartRecord(h)">编年史</button>
+              <button class="mini-btn ghost" @click="openChartRecord(h)">{{ $t('world.chronicleBtn') }}</button>
             </template>
           </div>
           <!-- 当前模拟的 what-if 推演对话框 -->
           <div v-if="whatIfBaseId" class="whatif-box">
             <div class="whatif-title">
-              基于「{{ whatIfBaseLabel }}」的假设推演
+              {{ $t('world.whatifBaseTitle', { label: whatIfBaseLabel }) }}
             </div>
             <input
               v-model="whatIfQuestion"
               class="whatif-input"
-              placeholder="输入假设前提，如：若魔法需要付出生命代价？"
+              :placeholder="$t('world.whatifPlaceholder')"
               @keyup.enter="confirmWhatIf"
             />
             <div class="whatif-btns">
               <button class="mini-btn active" :disabled="whatIfStarting || !whatIfQuestion.trim()" @click="confirmWhatIf">
                 <span v-if="whatIfStarting" class="spinner-xs"></span>
-                {{ whatIfStarting ? '推演中...' : '开始推演' }}
+                {{ whatIfStarting ? $t('world.whatifStarting') : $t('world.startWhatif') }}
               </button>
-              <button class="mini-btn" @click="cancelWhatIf">取消</button>
+              <button class="mini-btn" @click="cancelWhatIf">{{ $t('world.cancel') }}</button>
             </div>
             <div v-if="whatIfMsgError" class="msg-line error">{{ whatIfMsg }}</div>
           </div>
           <!-- what-if 推演结果 -->
           <div v-if="whatIfActive" class="whatif-result">
-            <div class="whatif-result-title">推演结果（{{ whatIfQuestionAsked }}）</div>
+            <div class="whatif-result-title">{{ $t('world.whatifResultTitle', { question: whatIfQuestionAsked }) }}</div>
             <div v-if="whatIfEvents.length" class="sim-events">
-              <div class="sim-events-title">推演事件流</div>
+              <div class="sim-events-title">{{ $t('world.whatifEventStream') }}</div>
               <div v-for="(e, i) in whatIfEvents" :key="i" class="sim-event">
                 <span class="sim-event-time">{{ e.time }}</span>
                 <span class="sim-event-who">{{ e.character_name }}</span>
@@ -426,10 +426,10 @@
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">04</span>
-            <span class="step-title">设定检索</span>
+            <span class="step-title">{{ $t('world.searchTitle') }}</span>
           </div>
           <div class="step-status">
-            <span class="badge hint">按需筛选 · 不整本加载</span>
+            <span class="badge hint">{{ $t('world.searchHint') }}</span>
           </div>
         </div>
 
@@ -437,25 +437,25 @@
           <input
             v-model="searchQuery"
             class="search-input"
-            placeholder="输入检索内容，如：龙脊城、魔法规则……"
+            :placeholder="$t('world.searchPlaceholder')"
             @keyup.enter="handleSearch"
           />
           <button class="search-btn" :disabled="!searchQuery.trim()" @click="handleSearch">
-            {{ searching ? '检索中...' : '检索' }}
+            {{ searching ? $t('world.searching') : $t('world.searchBtn') }}
           </button>
         </div>
 
         <label class="semantic-toggle">
           <input v-model="searchSemantic" type="checkbox" class="semantic-check" />
           <span class="semantic-mark"></span>
-          <span class="semantic-label">语义检索（bge-m3，按语义相关度召回）</span>
+          <span class="semantic-label">{{ $t('world.semanticLabel') }}</span>
         </label>
 
         <div v-if="searchResults.length" class="search-results">
           <div v-for="r in searchResults" :key="r.chunk_id" class="search-item">
-            <span class="search-src" :class="r.source">{{ r.source === 'background' ? '背景' : '正文' }}</span>
+            <span class="search-src" :class="r.source">{{ r.source === 'background' ? $t('world.sourceBg') : $t('world.sourceStory') }}</span>
             <span class="search-text">{{ r.text }}</span>
-            <span class="search-score">相关度 {{ r.score }}</span>
+            <span class="search-score">{{ $t('world.relevance', { score: r.score }) }}</span>
           </div>
         </div>
       </div>
@@ -465,24 +465,31 @@
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">05</span>
-            <span class="step-title">世界图谱</span>
+            <span class="step-title">{{ $t('world.graphTitle') }}</span>
           </div>
           <div class="step-status">
-            <span v-if="graphBuilding" class="badge processing">构建中...</span>
-            <span v-else-if="graphInfo && graphInfo.node_count" class="badge success">{{ graphInfo.node_count }} 节点 · {{ graphInfo.edge_count }} 边</span>
-            <span v-else class="badge hint">GraphRAG · Neo4j</span>
+            <span v-if="graphBuilding" class="badge processing">{{ $t('world.graphBuilding') }}</span>
+            <span v-else-if="graphInfo && graphInfo.node_count" class="badge success">{{ $t('world.graphCount', { nodes: graphInfo.node_count, edges: graphInfo.edge_count }) }}</span>
+            <span v-else class="badge hint">{{ $t('world.graphHint') }}</span>
           </div>
         </div>
 
         <p class="description">
-          将设定库（背景+正文）自动构建为知识图谱：实体/关系抽取、语义检索、社区发现。
-          世界模拟产生的事件也会持续回写到这张图谱，推演过程可见、可查。
+          {{ $t('world.graphDesc') }}
         </p>
 
         <div class="graph-actions">
           <button class="action-btn" :disabled="graphBuilding" @click="handleBuildGraph">
             <span v-if="graphBuilding" class="spinner-sm"></span>
-            {{ graphBuilding ? (graphProgressMsg || '构建中...') : graphInfo ? '重新构建图谱' : '构建世界图谱' }}
+            {{ graphBuilding ? (graphProgressMsg || $t('world.graphBuilding')) : graphInfo ? $t('world.graphRebuild') : $t('world.graphBuild') }}
+          </button>
+          <button
+            class="action-btn btn-ghost"
+            :disabled="refillEdgesRunning || !graphInfo || !graphInfo.node_count"
+            @click="handleRefillEdges"
+          >
+            <span v-if="refillEdgesRunning" class="spinner-sm"></span>
+            {{ refillEdgesRunning ? $t('world.refillEdgesRunning') : $t('world.refillEdges') }}
           </button>
           <span v-if="graphMsg" class="msg-line" :class="{ error: graphMsgError }">{{ graphMsg }}</span>
         </div>
@@ -532,7 +539,7 @@
             </div>
           </div>
         </div>
-        <div v-else-if="graphInfo" class="empty-note">图谱为空（设定库可能过短，未提取到实体）</div>
+        <div v-else-if="graphInfo" class="empty-note">{{ $t('world.graphEmpty') }}</div>
       </div>
     </div>
   </div>
@@ -541,6 +548,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import {
   saveWorldInput,
   saveWorldInputMultipart,
@@ -557,12 +565,14 @@ import {
   generateWorldReport,
   getWorldReport,
   buildWorldGraph,
-  getWorldGraph
+  getWorldGraph,
+  refillWorldGraphEdges
 } from '../api/world'
 import { getTaskStatus } from '../api/graph'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 const projectId = route.params.projectId
 
 const background = ref('')
@@ -605,6 +615,8 @@ const graphInfo = ref(null)          // { nodes, edges, node_count, edge_count }
 const graphPos = ref({})             // uuid -> {x, y}（力导向布局结果）
 const graphBuilding = ref(false)
 const graphProgressMsg = ref('')
+const refillEdgesRunning = ref(false)
+let refillPollTimerId = null
 const graphMsg = ref('')
 const graphMsgError = ref(false)
 const selectedGraphNode = ref(null)
@@ -624,7 +636,7 @@ const GRAPH_COLORS = ['#FF5722', '#2196F3', '#4CAF50', '#9C27B0', '#FF9800', '#0
 
 function graphNodeType(n) {
   const labels = (n.labels || []).filter(l => l !== 'Entity')
-  return labels.join(' / ') || '实体'
+  return labels.join(' / ') || t('world.graphNodeEntity')
 }
 
 function graphNodeColor(n) {
@@ -737,7 +749,7 @@ async function fetchGraph() {
       graphPos.value = layoutGraph(graphInfo.value.nodes, edges)
     }
   } catch (e) {
-    graphMsg.value = e.message || '读取图谱失败'
+    graphMsg.value = e.message || t('world.msgReadGraphFailed')
     graphMsgError.value = true
   }
 }
@@ -753,17 +765,17 @@ function pollGraphTask(taskId) {
         graphPollTimer = null
         graphBuilding.value = false
         graphProgressMsg.value = ''
-        graphMsg.value = task.message || (status === 'completed' ? '世界图谱构建完成' : '构建失败')
+        graphMsg.value = task.message || (status === 'completed' ? t('world.msgGraphBuilt') : t('world.msgGraphBuildFailed'))
         graphMsgError.value = !(status === 'completed' || status === 'COMPLETED')
         await fetchGraph()
       } else {
-        graphProgressMsg.value = task.message || '构建中...'
+        graphProgressMsg.value = task.message || t('world.msgGraphBuilding')
       }
     } catch (e) {
       clearInterval(graphPollTimer)
       graphPollTimer = null
       graphBuilding.value = false
-      graphMsg.value = e.message || '构建状态查询失败'
+      graphMsg.value = e.message || t('world.msgGraphStatusQueryFailed')
       graphMsgError.value = true
     }
   }, 3000)
@@ -780,11 +792,63 @@ async function handleBuildGraph() {
       goal: simGoal.value.trim() || undefined,
       force: !!graphInfo.value
     })
-    graphMsg.value = res.message || '构建已启动'
+    graphMsg.value = res.message || t('world.msgGraphStarted')
     pollGraphTask(res.task_id)
   } catch (e) {
     graphBuilding.value = false
-    graphMsg.value = (e.message || '启动构建失败') + '（请检查模型配置）'
+    graphMsg.value = (e.message || t('world.msgGraphStartFailed')) + t('world.checkModelConfig')
+    graphMsgError.value = true
+  }
+}
+
+// 补边：为已有世界图谱补充缺失的关联边（复用任务轮询）
+function pollRefillEdgesTask(taskId) {
+  if (refillPollTimerId) clearInterval(refillPollTimerId)
+  refillPollTimerId = setInterval(async () => {
+    try {
+      const res = await getTaskStatus(taskId)
+      const task = res.task || res.data || res
+      const status = task.status
+      if (status === 'completed' || status === 'failed' || status === 'COMPLETED' || status === 'FAILED') {
+        clearInterval(refillPollTimerId)
+        refillPollTimerId = null
+        refillEdgesRunning.value = false
+        graphMsg.value = task.message || (status === 'completed' ? t('world.msgRefillEdgesDone') : t('world.msgRefillEdgesFailed'))
+        graphMsgError.value = !(status === 'completed' || status === 'COMPLETED')
+        await fetchGraph()
+      } else {
+        graphMsg.value = task.message || t('world.msgRefillEdgesRunning')
+        graphMsgError.value = false
+      }
+    } catch (e) {
+      clearInterval(refillPollTimerId)
+      refillPollTimerId = null
+      refillEdgesRunning.value = false
+      graphMsg.value = e.message || t('world.msgRefillEdgesStatusFailed')
+      graphMsgError.value = true
+    }
+  }, 3000)
+}
+
+async function handleRefillEdges() {
+  if (refillEdgesRunning.value || !graphInfo.value || !graphInfo.value.node_count) return
+  refillEdgesRunning.value = true
+  graphMsg.value = ''
+  graphMsgError.value = false
+  try {
+    // 补边是对已建图谱的重放，无需 goal 参数（与后端契约一致）
+    const res = await refillWorldGraphEdges(projectId)
+    if (res && res.task_id) {
+      graphMsg.value = res.message || t('world.msgRefillEdgesStarted')
+      pollRefillEdgesTask(res.task_id)
+    } else {
+      graphMsg.value = res.message || t('world.msgRefillEdgesDone')
+      await fetchGraph()
+      refillEdgesRunning.value = false
+    }
+  } catch (e) {
+    refillEdgesRunning.value = false
+    graphMsg.value = e.message || t('world.msgRefillEdgesStartFailed')
     graphMsgError.value = true
   }
 }
@@ -848,20 +912,9 @@ const reportBlocks = computed(() => {
   return blocks
 })
 
-const TYPE_LABELS = {
-  fact_contradiction: '事实矛盾',
-  rule_violation: '规则违反',
-  time_conflict: '时间冲突',
-  character_mismatch: '人物设定不符',
-  location_conflict: '地点矛盾',
-  other: '其他'
-}
-const SEV_LABELS = { high: '严重', medium: '中等', low: '轻微' }
-const STATUS_LABELS = { open: '待处理', accepted: '已采纳背景', dismissed: '已忽略' }
-
-const typeLabel = t => TYPE_LABELS[t] || t
-const sevLabel = s => SEV_LABELS[s] || s
-const statusLabel = s => STATUS_LABELS[s] || s
+const typeLabel = key => t(`world.conflictTypes.${key}`)
+const sevLabel = key => t(`world.severity.${key}`)
+const statusLabel = key => t(`world.status.${key}`)
 
 function formatSize(bytes) {
   if (!bytes) return ''
@@ -943,17 +996,21 @@ async function handleSave() {
       const res = await saveWorldInputMultipart(projectId, formData)
       stats.value = res.stats
       const files = res.stats.files || []
-      saveMsg.value = `已保存：${files.length} 个文件 + 文本，共 ${res.stats.total_chunks} 个分块`
+      saveMsg.value = t('world.msgSavedFiles', { files: files.length, chunks: res.stats.total_chunks })
     } else {
       const res = await saveWorldInput(projectId, {
         background: background.value,
         story: story.value
       })
       stats.value = res.stats
-      saveMsg.value = `已保存：共 ${res.stats.total_chunks} 个分块（背景 ${res.stats.background_chunks} / 正文 ${res.stats.story_chunks}）`
+      saveMsg.value = t('world.msgSavedChunks', {
+        chunks: res.stats.total_chunks,
+        bg: res.stats.background_chunks,
+        st: res.stats.story_chunks
+      })
     }
   } catch (e) {
-    saveMsg.value = e.message || '保存失败'
+    saveMsg.value = e.message || t('world.msgSaveFailed')
     saveMsgError.value = true
   } finally {
     saving.value = false
@@ -972,10 +1029,10 @@ async function handleDetect() {
       await new Promise(r => setTimeout(r, 2000))
       const task = await getTaskStatus(res.task_id)
       if (task.status === 'completed') {
-        saveMsg.value = `冲突检测完成：发现 ${task.result?.conflict_count ?? 0} 处冲突`
+        saveMsg.value = t('world.msgConflictDone', { count: task.result?.conflict_count ?? 0 })
         finished = true
       } else if (task.status === 'failed') {
-        saveMsg.value = `冲突检测失败：${task.error || '未知错误'}`
+        saveMsg.value = t('world.msgConflictFailed', { err: task.error || t('world.msgUnknownError') })
         saveMsgError.value = true
         finished = true
       }
@@ -983,7 +1040,7 @@ async function handleDetect() {
     const conflictsRes = await getWorldConflicts(projectId)
     report.value = conflictsRes.report || null
   } catch (e) {
-    saveMsg.value = e.message || '检测失败'
+    saveMsg.value = e.message || t('world.msgDetectFailed')
     saveMsgError.value = true
   } finally {
     detecting.value = false
@@ -1066,7 +1123,7 @@ function startSimPolling(simulationId) {
         simPollTimer = null
         simEvents.value = (sim.result || {}).events || []
         characters.value = extractCharacters(simEvents.value)
-        simMsg.value = `模拟完成：${(sim.result || {}).event_count || 0} 个事件`
+        simMsg.value = t('world.msgSimDone', { count: (sim.result || {}).event_count || 0 })
         simMsgError.value = false
         // 完成后打开该模拟的报告（若有则直接显示）
         openChartRecord(sim)
@@ -1074,7 +1131,9 @@ function startSimPolling(simulationId) {
       } else if (sim.status === 'failed' || sim.status === 'stopped') {
         clearInterval(simPollTimer)
         simPollTimer = null
-        simMsg.value = sim.status === 'failed' ? `模拟失败：${sim.error || '未知错误'}（请检查模型配置）` : '模拟已停止'
+        simMsg.value = sim.status === 'failed'
+          ? t('world.msgSimFailed', { err: sim.error || t('world.msgUnknownError') })
+          : t('world.msgSimStopped')
         simMsgError.value = sim.status === 'failed'
         loadSimHistory()
       }
@@ -1099,7 +1158,7 @@ async function handleStartSim() {
     })
     const sim = res.simulation
     simStatus.value = 'running'
-    simMsg.value = `模拟已启动（${sim.simulation_id}），运行中...`
+    simMsg.value = t('world.msgSimStarted', { id: sim.simulation_id })
     simEvents.value = []
     characters.value = []
     reportSimulationId.value = ''
@@ -1108,7 +1167,7 @@ async function handleStartSim() {
     simPollingId = sim.simulation_id
     startSimPolling(sim.simulation_id)
   } catch (e) {
-    simMsg.value = (e.message || '启动失败') + '（请检查模型配置）'
+    simMsg.value = (e.message || t('world.msgSimStartFailed')) + t('world.checkModelConfig')
     simMsgError.value = true
     simStatus.value = 'idle'
   } finally {
@@ -1126,20 +1185,20 @@ async function handleControl(action) {
     const res = await controlWorldSimulation(projectId, simPollingId, { action })
     if (action === 'pause') {
       simStatus.value = 'paused'
-      simCtlMsg.value = '已暂停模拟'
+      simCtlMsg.value = t('world.msgCtlPaused')
     } else if (action === 'resume') {
       simStatus.value = 'running'
-      simCtlMsg.value = '已恢复模拟'
+      simCtlMsg.value = t('world.msgCtlResumed')
     } else if (action === 'stop') {
       clearInterval(simPollTimer)
       simPollTimer = null
       simStatus.value = 'stopped'
-      simCtlMsg.value = `已发出停止指令（命令 ${res.command_id}）`
+      simCtlMsg.value = t('world.msgCtlStopped', { cmd: res.command_id })
       // 刷新历史
       setTimeout(() => loadSimHistory(), 1500)
     }
   } catch (e) {
-    simCtlMsg.value = e.message || '控制失败'
+    simCtlMsg.value = e.message || t('world.msgCtlFailed')
     simCtlMsgError.value = true
   }
 }
@@ -1170,7 +1229,7 @@ async function handleInterview() {
       ? result
       : (result.answer || result.text || result.response || result.content || JSON.stringify(result, null, 2))
   } catch (e) {
-    interviewMsg.value = e.message || '采访失败'
+    interviewMsg.value = e.message || t('world.msgInterviewFailed')
     interviewMsgError.value = true
   } finally {
     interviewing.value = false
@@ -1210,10 +1269,10 @@ async function handleGenerateReport() {
     if (res.report && res.report.text) {
       reportText.value = res.report.text
     } else {
-      reportEmptyNote.value = '报告生成完成，暂无文本内容'
+      reportEmptyNote.value = t('world.msgReportEmpty')
     }
   } catch (e) {
-    reportEmptyNote.value = e.message || '报告生成失败'
+    reportEmptyNote.value = e.message || t('world.msgReportFailed')
   } finally {
     reportGenerating.value = false
   }
@@ -1261,7 +1320,7 @@ async function confirmWhatIf() {
     // 刷新历史，把新推演记录加入
     loadSimHistory()
   } catch (e) {
-    whatIfMsg.value = e.message || '推演启动失败'
+    whatIfMsg.value = e.message || t('world.msgWhatifStartFailed')
     whatIfMsgError.value = true
   } finally {
     whatIfStarting.value = false
@@ -1278,11 +1337,11 @@ function pollWhatIf(simulationId, question) {
       if (sim.status === 'completed') {
         clearInterval(timer)
         whatIfEvents.value = (sim.result || {}).events || []
-        whatIfMsg.value = `推演完成：${(sim.result || {}).event_count || 0} 个事件`
+        whatIfMsg.value = t('world.msgWhatifDone', { count: (sim.result || {}).event_count || 0 })
         whatIfMsgError.value = false
       } else if (sim.status === 'failed' || tries > 120) {
         clearInterval(timer)
-        whatIfMsg.value = sim.status === 'failed' ? `推演失败：${sim.error || '未知错误'}` : '推演超时'
+        whatIfMsg.value = sim.status === 'failed' ? t('world.msgWhatifFailed', { err: sim.error || t('world.msgUnknownError') }) : t('world.msgWhatifTimeout')
         whatIfMsgError.value = true
       }
     } catch (e) {

@@ -24,6 +24,217 @@ logger = get_logger('mirofish.graphiti_patch')
 _patch_applied = False
 
 
+# =====================================================================
+# GRAPHITI_LLM 断路器（Circuit Breaker）
+#
+# 只作用于 graphiti 建图路径：当某模型连续 LLM 调用失败达到阈值时熔断，
+# 熔断窗口内把该模型加入"不可用"名单，调用方（zep_graphiti_impl）
+# 在重建客户端时走到回退链（GRAPHITI_LLM → PRIMARY → 第一个已验证 chat）
+# 的下一个模型。连续失败会因成功调用重置。阈值/窗口可由环境变量覆盖。
+# =====================================================================
+
+import threading
+import time as _time
+
+
+class CircuitBreaker:
+    """按模型名计数的断路器状态机（线程安全）。"""
+
+    def __init__(
+        self,
+        threshold: int | None = None,
+        seconds: int | None = None,
+    ):
+        self._threshold = threshold if threshold is not None else max(
+            0, int(getattr(Config, "GRAPHITI_CIRCUIT_BREAKER_THRESHOLD", 5) or 0)
+        )
+        self._seconds = seconds if seconds is not None else max(
+            0, int(getattr(Config, "GRAPHITI_CIRCUIT_BREAKER_SECONDS", 120) or 0)
+        )
+        self._failures = 0
+        self._breached_model: str | None = None
+        self._open_until = 0.0
+        self._lock = threading.Lock()
+
+    @property
+    def enabled(self) -> bool:
+        return self._threshold > 0 and self._seconds > 0
+
+    def report_failure(self, model: str) -> bool:
+        """记录一次失败；返回 True 表示本次调用恰好触发了熔断。"""
+        if not self.enabled:
+            return False
+        with self._lock:
+            self._failures += 1
+            if self._failures >= self._threshold:
+                self._breached_model = model
+                self._open_until = _time.time() + self._seconds
+                return True
+            return False
+
+    def report_success(self, model: str) -> None:
+        """记录一次成功：连续失败计数清零；若正是熔断中的模型成功，则立即闭合。"""
+        if not self.enabled:
+            return
+        with self._lock:
+            self._failures = 0
+            if self._breached_model == model:
+                self._breached_model = None
+                self._open_until = 0.0
+
+    def reset(self) -> None:
+        with self._lock:
+            self._failures = 0
+            self._breached_model = None
+            self._open_until = 0.0
+
+    def breached_model(self) -> str | None:
+        """当前熔断中的模型名；熔断窗口已过则返回 None 并自动复位计数。"""
+        now = _time.time()
+        with self._lock:
+            if self._open_until and now >= self._open_until:
+                self._open_until = 0.0
+                self._failures = 0
+                self._breached_model = None
+                return None
+            return self._breached_model
+
+    def is_open_for(self, model: str) -> bool:
+        bm = self.breached_model()
+        return bool(bm) and bm == model
+
+
+# 模块级单例（graphiti 建图路径使用）
+_circuit_breaker = CircuitBreaker()
+
+
+def get_circuit_breaker() -> CircuitBreaker:
+    return _circuit_breaker
+
+
+def report_llm_failure(model: str) -> bool:
+    """graphiti 建图路径的 LLM 失败上报。返回 True 表示刚触发熔断。"""
+    return _circuit_breaker.report_failure(model)
+
+
+def report_llm_success(model: str) -> None:
+    _circuit_breaker.report_success(model)
+
+
+def reset_circuit_breaker() -> None:
+    _circuit_breaker.reset()
+
+
+def iter_chat_model_candidates():
+    """
+    返回 graphiti 建图 LLM 的回退候选列表，顺序：
+        GRAPHITI_LLM 绑定 → PRIMARY 绑定 → 第一个已验证 chat 模型
+    每项为 (api_key, base_url, model_id)；解析失败/无候选时返回空列表。
+    复用 zep_graphiti_impl._resolve_registry_chat_model 的解析思路与
+    model_resolver.ROLE_FALLBACKS[GRAPHITI_LLM] = (PRIMARY,)。
+    """
+    try:
+        from ..models.model_config import ModelRole
+        from .model_registry import ModelRegistryService
+
+        registry = ModelRegistryService()
+        state = registry.get_redacted_registry()
+        models = state.get("models", [])
+        chat_models = [
+            m for m in models
+            if m.get("verified") and "chat" in m.get("capabilities", [])
+        ]
+
+        def _entry(role_keys):
+            # 从项目绑定/预设中按角色取 model id
+            found = None
+            for binding in state.get("project_bindings", []):
+                roles = binding.get("roles") or {}
+                for k in role_keys:
+                    mid = roles.get(k)
+                    if mid:
+                        match = next((m for m in chat_models if m["id"] == mid), None)
+                        if match:
+                            found = match
+                            break
+                if found:
+                    break
+            if found is None:
+                for preset in state.get("presets", []):
+                    roles = preset.get("roles") or {}
+                    for k in role_keys:
+                        mid = roles.get(k)
+                        if mid:
+                            match = next((m for m in chat_models if m["id"] == mid), None)
+                            if match:
+                                found = match
+                                break
+                    if found:
+                        break
+            return found
+
+        def _to_tuple(m):
+            if m is None:
+                return None
+            connection_id = m.get("connection_id")
+            if not connection_id:
+                return None
+            try:
+                api_key = registry.resolve_connection_secret(connection_id)
+                conn = registry.get_connection(connection_id)
+                return api_key, conn.get("endpoint"), m.get("model_id")
+            except Exception:
+                return None
+
+        candidates = []
+        # 1) GRAPHITI_LLM
+        gl = _entry([ModelRole.GRAPHITI_LLM.value, ModelRole.PRIMARY.value])
+        if gl:
+            t = _to_tuple(gl)
+            if t:
+                candidates.append(t)
+        # 2) PRIMARY（显式，若上一项已是 PRIMARY 则跳过重复）
+        pr = _entry([ModelRole.PRIMARY.value])
+        if pr and _distinct_from_candidates(pr, candidates):
+            t = _to_tuple(pr)
+            if t:
+                candidates.append(t)
+        # 3) 第一个已验证 chat 模型（兜底）
+        if chat_models and _distinct_from_candidates(chat_models[0], candidates):
+            t = _to_tuple(chat_models[0])
+            if t:
+                candidates.append(t)
+        return candidates
+    except Exception as exc:
+        logger.warning(f"解析 graphiti 回退模型候选失败: {exc}")
+        return []
+
+
+def _distinct_from_candidates(m, candidates):
+    """判断候选 m 是否与已收集候选的 model_id 都不同（去重）。"""
+    if m is None:
+        return False
+    existing = {c[2] for c in candidates}
+    return m.get("model_id") not in existing
+
+
+def pick_fallback_model():
+    """
+    依据断路器返回应使用的模型：跳过当前熔断中的模型，
+    返回 (api_key, base_url, model_id) 或 None。
+    若首选（通常为 GRAPHITI_LLM）未熔断，则返回首选。
+    """
+    candidates = iter_chat_model_candidates()
+    if not candidates:
+        return None
+    breached = _circuit_breaker.breached_model()
+    for cand in candidates:
+        if breached is not None and cand[2] == breached:
+            continue
+        return cand
+    return None
+
+
 def sanitize_for_neo4j(value: Any, path: str = "") -> Any:
     """
     递归 sanitize 值以适配 Neo4j 属性限制
@@ -280,7 +491,7 @@ async def _normalize_and_validate(
         )
         import time as _time
         try:
-            _time.sleep(1.5)
+            _time.sleep(0.5)
             retry_result = await call_llm_once()
             retry_parsed = (
                 _extract_json_from_markdown(retry_result) if retry_result else None
@@ -341,7 +552,8 @@ def _apply_response_normalization_patch() -> bool:
         try:
             import time as _time
             _t0 = _time.time()
-            logger.info(f'LLM 调用开始: model={self.model or DEFAULT_MODEL}, messages={len(openai_messages)}, prompt_len={sum(len(m.get("content","")) for m in openai_messages)}')
+            _model = self.model or DEFAULT_MODEL
+            logger.info(f'LLM 调用开始: model={_model}, messages={len(openai_messages)}, prompt_len={sum(len(m.get("content","")) for m in openai_messages)}')
             logger.info(f'LLM 调用 system 前80字: {openai_messages[0]["content"][:80] if openai_messages else "无"}')
             response = await self.client.chat.completions.create(
                 model=self.model or DEFAULT_MODEL,
@@ -357,7 +569,7 @@ def _apply_response_normalization_patch() -> bool:
                 # （宁可丢失该次提取，也不让重试拖垮整个构建）。
                 import time as _time
                 try:
-                    _time.sleep(1.5)
+                    _time.sleep(0.5)
                     response = await self.client.chat.completions.create(
                         model=self.model or DEFAULT_MODEL,
                         messages=openai_messages,
@@ -372,6 +584,7 @@ def _apply_response_normalization_patch() -> bool:
                     result = ''
                 if not result.strip():
                     logger.warning('LLM 返回空响应，返回空 dict（构建继续）')
+                    report_llm_failure(_model)
                     if _is_edge_extraction(response_model):
                         # edge 提取空响应 → 降级为空边列表（ExtractedEdges 必需字段）
                         return {"edges": []}
@@ -381,8 +594,10 @@ def _apply_response_normalization_patch() -> bool:
                 # 纯文本响应：若 response_model 是单字符串字段，直接包装
                 wrapped = _wrap_plain_text_as_response(result, response_model)
                 if wrapped is not None:
+                    report_llm_success(_model)
                     return wrapped
                 logger.error(f'LLM 响应无法解析为 JSON: {result[:500]}')
+                report_llm_failure(_model)
                 if _is_edge_extraction(response_model):
                     return {"edges": []}
                 return {}
@@ -396,8 +611,10 @@ def _apply_response_normalization_patch() -> bool:
                 )
                 return resp.choices[0].message.content or ''
 
+            report_llm_success(_model)
             return await _normalize_and_validate(parsed, response_model, _llm_call_once)
         except _openai.RateLimitError as e:
+            report_llm_failure(_model)
             raise e
         except Exception as e:
             # 连接类错误（OpenCode 等网关在高频调用下偶发断开）：
@@ -408,7 +625,7 @@ def _apply_response_normalization_patch() -> bool:
             # 其他调用重试 2 次。
             max_retry = 1 if _is_edge_extraction(response_model) else 2
             for attempt in range(max_retry):
-                _time.sleep(2.0 * (attempt + 1))  # 2s, 4s 退避
+                _time.sleep(0.5 * (attempt + 1))  # 0.5s, 1s 退避（网关恢复快）
                 try:
                     response = await self.client.chat.completions.create(
                         model=self.model or DEFAULT_MODEL,
@@ -428,6 +645,7 @@ def _apply_response_normalization_patch() -> bool:
                         logger.warning(f'LLM 重试 {attempt+1} 次响应无法解析为 JSON')
                         continue
                     logger.info(f'LLM 连接错误重试成功（第 {attempt+1} 次）')
+                    report_llm_success(_model)
 
                     async def _llm_call_once():
                         resp = await self.client.chat.completions.create(
@@ -448,6 +666,7 @@ def _apply_response_normalization_patch() -> bool:
             # edge 提取降级：OpenCode 等网关对"大实体列表+大文本"的边提取
             # 请求稳定失败（空响应/断连）。节点已提取成功，缺边不影响图谱
             # 主体；这里把 edge 提取失败降级为"空边列表"，让构建继续。
+            report_llm_failure(_model)
             if _is_edge_extraction(response_model):
                 logger.warning('edge 提取连续失败，降级返回空边列表，构建继续')
                 return {"edges": []}
@@ -581,7 +800,13 @@ def _apply_edge_skip_patch() -> bool:
         edge_types=None,
         custom_extraction_instructions=None,
     ):
-        # 仅 skip-first 模式启用跳过逻辑
+        # skip：无条件跳过（建图阶段完全不提取边，边由补边队列补充）；
+        # skip-first：仅当图谱尚无任何节点时跳过。
+        if Config.GRAPHITI_EDGE_MODE == 'skip':
+            logger.info(
+                f"GRAPHITI_EDGE_MODE=skip，跳过本次边提取（group_id={group_id}）"
+            )
+            return []
         if Config.GRAPHITI_EDGE_MODE == 'skip-first':
             should_skip = False
             try:
@@ -619,7 +844,92 @@ def _apply_edge_skip_patch() -> bool:
         )
 
     _edge_ops.extract_edges = patched_extract_edges
+    # graphiti.py 以 `from ... import extract_edges` 绑定名字，必须在 graphiti
+    # 模块命名空间上同步替换才生效（模块全局按调用时查找）——否则线上
+    # _extract_and_resolve_edges 仍走原版边提取，skip-first 形同虚设。
+    try:
+        import graphiti_core.graphiti as _g
+        _g.extract_edges = patched_extract_edges
+    except Exception:
+        pass
     logger.info(f"Graphiti 边提取跳过 patch 应用成功（GRAPHITI_EDGE_MODE={Config.GRAPHITI_EDGE_MODE}）")
+    return True
+
+
+def _apply_compact_extraction_prompt_patch() -> bool:
+    """
+    Patch prompt_library.extract_nodes.extract_text：用精简中文提示词替换
+    英文冗长模板。
+
+    背景：实体提取提示词原始模板约 1700 字符（英文说明书式），加实体类型与
+    文本后总长 3872 字符，OpenCode 网关对此需要 60-190s 且约半数连接错误；
+    而 2500 字符以内的调用 3-10s 稳定成功。输出契约（extracted_entities JSON）
+    保持不变，仅压缩指令文本。
+
+    注意：node_operations 通过 prompt_library.extract_nodes.extract_text 调用，
+    该对象是 VersionWrapper（构造时已捕获原函数），必须替换其 .func 属性。
+    """
+    try:
+        from graphiti_core.prompts import prompt_library
+    except ImportError:
+        return False
+
+    wrapper = prompt_library.extract_nodes.extract_text
+    original = wrapper.func if hasattr(wrapper, 'func') else wrapper
+
+    def patched(context):
+        msgs = original(context)
+        entity_types = context.get('entity_types', '') or ''
+        content = context.get('episode_content', '') or ''
+        custom = (context.get('custom_extraction_instructions') or '').strip()
+        msgs[0].content = ('你是实体抽取器。从文本中抽取所有重要实体（人物/组织/地点/物品/概念等），'
+                           '并严格按实体类型列表分类。')
+        user = '实体类型列表：' + chr(10) + str(entity_types)
+        user += chr(10) + chr(10) + '文本：' + chr(10) + str(content)
+        if custom:
+            user += chr(10) + chr(10) + '附加要求：' + custom
+        user += (chr(10) + chr(10)
+                 + '输出要求：只输出 JSON，格式为 {"extracted_entities": [{"name": "实体名", "entity_type_id": 数字}]}。'
+                 + '规则：实体名使用文本中的完整名称；不要抽取关系、动作或时间信息。')
+        msgs[1].content = user
+        return msgs
+
+    if hasattr(wrapper, 'func'):
+        wrapper.func = patched
+    else:
+        from graphiti_core.prompts import extract_nodes as _en
+        _en.extract_text = patched
+    logger.info("Graphiti 精简提取提示词 patch 应用成功（英文模板→中文精简版）")
+    return True
+
+
+def _apply_entity_type_prompt_trim_patch() -> bool:
+    """
+    Patch _build_entity_types_context：截断实体类型描述，压缩提取提示词。
+
+    背景：建图慢的主因之一是实体提取/边提取提示词过大（实测 3892 字符，
+    其中实体类型上下文约占 1400+ 字符，包含 LLM 生成的超长 __doc__ 描述）。
+    OpenCode 网关对 3.9K 提示词需要 60-190s，对 2.6K 则快得多。把每个类型
+    描述截断到 80 字符，可在不影响提取质量的前提下显著缩小提示词。
+    """
+    try:
+        from graphiti_core.utils.maintenance import node_operations as _node_ops
+    except ImportError:
+        return False
+
+    original = _node_ops._build_entity_types_context
+
+    @functools.wraps(original)
+    def patched(entity_types):
+        ctx = original(entity_types) if original is not None else []
+        for item in ctx:
+            desc = item.get('entity_type_description') or ''
+            if len(desc) > 80:
+                item['entity_type_description'] = desc[:80] + '...'
+        return ctx
+
+    _node_ops._build_entity_types_context = patched
+    logger.info("Graphiti 实体类型描述截断 patch 应用成功（提示词瘦身）")
     return True
 
 
@@ -756,6 +1066,12 @@ def apply_patch() -> bool:
         # 实体提取过少自动重试（应对网关"敷衍式"低质量提取）
         _apply_entity_extraction_retry_patch()
 
+        # 精简提取提示词（提示词瘦身，降低网关延迟）
+        _apply_compact_extraction_prompt_patch()
+
+        # 实体类型描述截断（提示词瘦身，降低网关延迟）
+        _apply_entity_type_prompt_trim_patch()
+
         # 边提取分块 patch：graphiti 默认 MAX_NODES=15，一次边提取要推理
         # 15 实体 × 105 对组合，OpenCode 等网关对此稳定超时/断连（实测
         # 118s 后 Connection error），导致图谱只有节点没有边。
@@ -787,12 +1103,19 @@ def apply_patch() -> bool:
             # 我们把它钳制到 [1, 上限]。未显式指定时默认 1（完全串行，
             # 与旧行为一致），让兼容网关保持最高稳定性。
             def _clamp_concurrency(max_coroutines: int | None) -> int:
-                if max_coroutines is None:
-                    return 1
+                # 默认上限来自 Config（GRAPHITI_MAX_CONCURRENCY，默认 1=串行）；
+                # 显式 max_coroutines 也被钳制到配置上限，防止 graphiti 内部
+                # 传 20 时突破配置。
                 try:
-                    return max(1, int(max_coroutines or 1))
+                    cfg_limit = max(1, int(getattr(Config, 'GRAPHITI_MAX_CONCURRENCY', 1) or 1))
                 except (TypeError, ValueError):
-                    return 1
+                    cfg_limit = 1
+                if max_coroutines is None:
+                    return cfg_limit
+                try:
+                    return max(1, min(int(max_coroutines or 1), cfg_limit))
+                except (TypeError, ValueError):
+                    return cfg_limit
 
             @functools.wraps(_graphiti_helpers.semaphore_gather)
             async def _serial_semaphore_gather(*coroutines, max_coroutines=None):

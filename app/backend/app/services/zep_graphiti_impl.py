@@ -42,6 +42,11 @@ logger = logging.getLogger('mirofish.graphiti_client')
 _async_loop: Optional[asyncio.AbstractEventLoop] = None
 _async_thread: Optional[threading.Thread] = None
 _init_lock = threading.Lock()
+# episode 提交互斥锁：建图与补边重放共用。补边在事件循环线程内临时把
+# 边提取环境切换为 always+小块，持锁保证并发建图 episode 不会读到该环境、
+# 补边也不会被建图的 skip 模式干扰。所有 acquire 都发生在专用循环线程上
+# （asyncio 协作式锁，await 不会阻塞线程，无死锁风险）。
+_episode_lock: Optional[asyncio.Lock] = None
 
 
 def _start_async_loop():
@@ -69,6 +74,10 @@ def _ensure_async_loop():
                 while _async_loop is None:
                     import time
                     time.sleep(0.01)
+                # 循环就绪后创建互斥锁（首次 acquire 发生在该循环线程上）
+                global _episode_lock
+                if _episode_lock is None:
+                    _episode_lock = asyncio.Lock()
 
 
 def _run_async(coro):
@@ -259,9 +268,24 @@ class GraphitiClient(ZepClientAdapter):
 
         # 1) 模型注册表优先（已验证的聊天模型 + 连接密钥）
         registry_entry = self._resolve_registry_chat_model()
+        used_fallback = False
         if registry_entry is not None:
             api_key, base_url, model = registry_entry
-            logger.info("Graphiti LLM 使用模型注册表配置: %s (%s)", model, base_url)
+            # 断路器：若当前注册表模型正被熔断，换用回退链（GRAPHITI_LLM →
+            # PRIMARY → 第一个已验证 chat）中的下一个可用模型重建客户端。
+            from .graphiti_patch import get_circuit_breaker, pick_fallback_model
+            breaker = get_circuit_breaker()
+            if breaker.is_open_for(model):
+                alt = pick_fallback_model()
+                if alt is not None:
+                    api_key, base_url, model = alt
+                    used_fallback = True
+                    logger.warning(
+                        "Detected model %s is circuit-broken, switch to fallback model %s (%s)",
+                        registry_entry[2], model, base_url,
+                    )
+            if not used_fallback:
+                logger.info("Graphiti LLM 使用模型注册表配置: %s (%s)", model, base_url)
         else:
             # 2) 回退到环境变量
             api_key = os.environ.get('OPENAI_API_KEY')
@@ -613,35 +637,80 @@ class GraphitiClient(ZepClientAdapter):
 
         return entity_types, edge_types
 
-    def add_episode(self, graph_id: str, data: str, episode_type: str = "text") -> str:
-        """添加单条 episode"""
-        self._ensure_initialized()
-
+    def _build_source_type(self, episode_type: str):
+        """映射 episode_type 到 graphiti EpisodeType。"""
         from graphiti_core.nodes import EpisodeType
-
-        # 映射 episode_type
-        source_type = EpisodeType.text
         if episode_type == "message":
-            source_type = EpisodeType.message
-        elif episode_type == "json":
-            source_type = EpisodeType.json
+            return EpisodeType.message
+        if episode_type == "json":
+            return EpisodeType.json
+        return EpisodeType.text
 
+    async def _add_episode_coro(
+        self, graph_id: str, data: str, source_type, entity_types, edge_types
+    ) -> str:
+        """真实 episode 提交协程（在专用事件循环线程上运行）。"""
+        result = await self._graphiti.add_episode(
+            name=f"episode_{graph_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            episode_body=data,
+            source=source_type,
+            source_description="mirofish_simulation",
+            reference_time=datetime.now(timezone.utc),
+            group_id=graph_id,
+            entity_types=entity_types or None,
+            edge_types=edge_types or None,
+        )
+        return result.episode.uuid if result and result.episode else ""
+
+    def add_episode(self, graph_id: str, data: str, episode_type: str = "text") -> str:
+        """添加单条 episode（与补边重放共用 _episode_lock 互斥）。"""
+        self._ensure_initialized()
+        source_type = self._build_source_type(episode_type)
         entity_types, edge_types = self._build_graphiti_type_models(graph_id)
 
-        async def _add():
-            result = await self._graphiti.add_episode(
-                name=f"episode_{graph_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                episode_body=data,
-                source=source_type,
-                source_description="mirofish_simulation",
-                reference_time=datetime.now(timezone.utc),
-                group_id=graph_id,
-                entity_types=entity_types or None,
-                edge_types=edge_types or None,
-            )
-            return result.episode.uuid if result and result.episode else ""
+        async def _guarded():
+            async with _episode_lock:
+                return await self._add_episode_coro(
+                    graph_id, data, source_type, entity_types, edge_types)
 
-        return _run_async(_add())
+        return _run_async(_guarded())
+
+    def add_episode_for_edge_refill(
+        self,
+        graph_id: str,
+        data: str,
+        edge_mode: str = "always",
+        max_nodes: int = 4,
+    ) -> str:
+        """
+        补边专用重放：持锁状态下在事件循环线程内临时切换边提取环境。
+
+        - 与 add_episode 共用 _episode_lock：并发建图 episode 不会在补边
+          窗口内读到 always 模式，反之亦然。
+        - 环境改写/恢复都在事件循环线程内逐条完成，不泄漏到调用方线程。
+        """
+        self._ensure_initialized()
+        source_type = self._build_source_type("text")
+        entity_types, edge_types = self._build_graphiti_type_models(graph_id)
+
+        from ..config import Config
+
+        async def _refill():
+            from graphiti_core.utils.maintenance import edge_operations
+            prev_mode = Config.GRAPHITI_EDGE_MODE
+            prev_max = getattr(edge_operations, 'MAX_NODES', None)
+            async with _episode_lock:
+                try:
+                    Config.GRAPHITI_EDGE_MODE = edge_mode
+                    edge_operations.MAX_NODES = max_nodes
+                    return await self._add_episode_coro(
+                        graph_id, data, source_type, entity_types, edge_types)
+                finally:
+                    Config.GRAPHITI_EDGE_MODE = prev_mode
+                    if prev_max is not None:
+                        edge_operations.MAX_NODES = prev_max
+
+        return _run_async(_refill())
 
     def add_episode_batch(
         self,
@@ -683,7 +752,7 @@ class GraphitiClient(ZepClientAdapter):
                 logger.warning(
                     f"episode {i} 添加失败（{str(e)[:120]}），重试 1 次..."
                 )
-                _time.sleep(1.5)
+                _time.sleep(0.5)
                 try:
                     uuid = self.add_episode(
                         graph_id=graph_id,
