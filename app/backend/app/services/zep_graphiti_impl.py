@@ -393,6 +393,10 @@ class GraphitiClient(ZepClientAdapter):
         如果模型库中注册了已验证的本地向量模型（app/models/embeddings/ 下的
         Sentence Transformers 目录），优先使用本地模型，注册即生效。
         """
+        # 云端向量模型（注册表，如 SiliconFlow）优先 → 本地 → 环境变量回退
+        cloud_embedder = self._try_build_registry_cloud_embedder()
+        if cloud_embedder is not None:
+            return cloud_embedder
         local_embedder = self._try_build_local_embedder()
         if local_embedder is not None:
             return local_embedder
@@ -464,6 +468,44 @@ class GraphitiClient(ZepClientAdapter):
                 return await self._inner.create_batch(input_data_list)
 
         return _LocalEmbedderClient(embedder, dimension)
+
+    @staticmethod
+    def _try_build_registry_cloud_embedder() -> Any:
+        """从模型注册表查找已验证的云端向量模型（无 local_path，如 SiliconFlow）并构建 Embedder。
+
+        与本地模型（local_path 非空）互斥：本地模型走 _try_build_local_embedder。
+        返回 None 表示没有可用的云端向量模型。
+        """
+        try:
+            from .cloud_embedding import CloudOpenAIEmbedder
+            from .model_registry import ModelRegistryService
+
+            registry = ModelRegistryService()
+            for entry in registry.get_redacted_registry().get("models", []):
+                if not entry.get("verified"):
+                    continue
+                if "embedding" not in entry.get("capabilities", []):
+                    continue
+                if entry.get("local_path"):
+                    continue  # 本地模型不属于云端路径
+                connection_id = entry.get("connection_id")
+                if not connection_id:
+                    continue
+                api_key = registry.resolve_connection_secret(connection_id)
+                connection = registry.get_connection(connection_id)
+                endpoint = (connection or {}).get("endpoint") or ""
+                model_id = entry.get("model_id")
+                if not api_key or not endpoint or not model_id:
+                    continue
+                dimension = entry.get("metadata", {}).get("dimension")
+                logger.info("使用云端向量模型: %s (%s, dim=%s)", model_id, endpoint, dimension)
+                embedder = CloudOpenAIEmbedder(
+                    endpoint=endpoint, api_key=api_key, model=model_id, dimension=dimension,
+                )
+                return GraphitiClient._wrap_as_embedder_client(embedder, dimension)
+        except Exception as exc:
+            logger.warning("云端向量模型不可用: %s", exc)
+        return None
 
     @staticmethod
     def _try_build_local_embedder() -> Any:

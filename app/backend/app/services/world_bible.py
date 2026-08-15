@@ -152,10 +152,9 @@ class WorldBibleService:
 
     @classmethod
     def _get_embedder(cls) -> Optional[Any]:
-        """懒解析本地向量模型：优先 bge-m3（dim=1024），其次是已就绪的本地模型。
+        """懒解析向量模型：云端（注册表，如 SiliconFlow）→ 本地 → None（关键词检索）。
 
-        运行时（sentence-transformers）未装或本地无就绪模型时返回 None，
-        调用方据此降级为纯关键词检索。进程内只解析一次并复用。
+        进程内只解析一次并复用（_reset_embedder_cache 可重置）。
         """
         if cls._embedder_attempted:
             return cls._embedder_cache
@@ -164,6 +163,13 @@ class WorldBibleService:
                 return cls._embedder_cache
             cls._embedder_attempted = True
             try:
+                # 1) 云端向量模型（注册表 verified embedding、无 local_path）
+                embedder = cls._try_cloud_embedder()
+                if embedder is not None:
+                    cls._embedder_cache = embedder
+                    return cls._embedder_cache
+
+                # 2) 本地向量模型：优先 bge-m3（名字含 bge + m3），其次是已就绪模型
                 from .local_embedding import (
                     scan_local_models,
                     LocalSentenceTransformerEmbedder,
@@ -171,7 +177,6 @@ class WorldBibleService:
                 models = scan_local_models()
                 ready = [m for m in models if m.get("ready")]
                 pick = None
-                # 优先 bge-m3（名字含 bge + m3，维度 1024）
                 for m in ready:
                     name = (m.get("name") or "").lower()
                     if "bge" in name and "m3" in name:
@@ -180,7 +185,7 @@ class WorldBibleService:
                 if pick is None and ready:
                     pick = ready[0]
                 if pick is None:
-                    logger.warning("未找到本地向量模型，设定库将使用纯关键词检索")
+                    logger.warning("未找到向量模型，设定库将使用纯关键词检索")
                     cls._embedder_cache = None
                     return None
                 cls._embedder_cache = LocalSentenceTransformerEmbedder(
@@ -191,9 +196,42 @@ class WorldBibleService:
                     pick.get("name"), pick.get("dimension"),
                 )
             except Exception as exc:
-                logger.warning("本地向量模型不可用，降级为关键词检索: %s", exc)
+                logger.warning("向量模型不可用，降级为关键词检索: %s", exc)
                 cls._embedder_cache = None
             return cls._embedder_cache
+
+    @classmethod
+    def _try_cloud_embedder(cls) -> Optional[Any]:
+        """从模型注册表解析已验证的云端向量模型（无 local_path，如 SiliconFlow）。"""
+        try:
+            from .cloud_embedding import CloudOpenAIEmbedder
+            from .model_registry import ModelRegistryService
+
+            registry = ModelRegistryService()
+            for entry in registry.get_redacted_registry().get("models", []):
+                if not entry.get("verified"):
+                    continue
+                if "embedding" not in entry.get("capabilities", []):
+                    continue
+                if entry.get("local_path"):
+                    continue
+                connection_id = entry.get("connection_id")
+                if not connection_id:
+                    continue
+                api_key = registry.resolve_connection_secret(connection_id)
+                connection = registry.get_connection(connection_id)
+                endpoint = (connection or {}).get("endpoint") or ""
+                model_id = entry.get("model_id")
+                if not api_key or not endpoint or not model_id:
+                    continue
+                dimension = entry.get("metadata", {}).get("dimension")
+                logger.info("设定库启用云端向量模型: %s (%s, dim=%s)", model_id, endpoint, dimension)
+                return CloudOpenAIEmbedder(
+                    endpoint=endpoint, api_key=api_key, model=model_id, dimension=dimension,
+                )
+        except Exception as exc:
+            logger.warning("云端向量模型解析失败: %s", exc)
+        return None
 
     @classmethod
     def _reset_embedder_cache(cls) -> None:
