@@ -104,16 +104,27 @@ if not exist "backend\.venv" (
     call npm run setup:backend
 )
 
-REM 创建模拟环境
-if not exist "backend\.venv-simulation" (
+REM 创建模拟环境（OASIS 与 Graphiti 依赖隔离）
+if not exist "backend\.venv-simulation\Scripts\python.exe" (
     echo [INFO] 创建模拟环境...
     cd /d "%APP_DIR%\backend"
-    call uv venv .venv-simulation --python 3.11
-    call .venv-simulation\Scripts\activate.bat
-    call uv pip install camel-oasis==0.2.5 openai python-dotenv
-    call .venv-simulation\Scripts\deactivate.bat
-    cd /d "%APP_DIR%"
+    call uv venv .venv-simulation
+    if errorlevel 1 exit /b 1
 )
+if not exist "backend\.venv-simulation\Scripts\python.exe" (
+    echo [ERROR] 模拟环境创建失败
+    pause
+    exit /b 1
+)
+echo [INFO] 检查/安装 OASIS 模拟依赖...
+"%APP_DIR%\backend\.venv-simulation\Scripts\python.exe" -m pip install --upgrade pip >nul 2>nul
+"%APP_DIR%\backend\.venv-simulation\Scripts\python.exe" -m pip install -r "%APP_DIR%\backend\requirements-oasis.txt"
+if errorlevel 1 (
+    echo [ERROR] OASIS 模拟依赖安装失败
+    pause
+    exit /b 1
+)
+cd /d "%APP_DIR%"
 
 REM 初始化模型配置（导入旧 .env、检查模型库状态）
 if exist "%SCRIPT_DIR%init-models.bat" (

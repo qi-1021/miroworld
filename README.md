@@ -22,7 +22,10 @@ chmod +x scripts/*.sh
 ### Windows
 ```cmd
 cd mirofish-portable
+scripts\setup-env.bat   REM 首次/更新：主环境 Graphiti + OASIS 隔离环境
 scripts\start.bat
+scripts\smoke.bat       REM 可选：全流程冒烟
+scripts\stop.bat --all  REM 停止前端/后端/Neo4j
 ```
 
 ---
