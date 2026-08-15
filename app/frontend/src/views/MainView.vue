@@ -124,6 +124,8 @@ const systemLogs = ref([])
 // Polling timers
 let pollTimer = null
 let graphPollTimer = null
+let pollFailCount = 0
+const MAX_POLL_FAILURES = 5
 
 // --- Computed Layout Styles ---
 const leftPanelStyle = computed(() => {
@@ -345,6 +347,7 @@ const pollTaskStatus = async (taskId) => {
   try {
     const res = await getTaskStatus(taskId)
     if (res.success) {
+      pollFailCount = 0
       const task = res.data
 
       // Log progress message if it changed
@@ -374,7 +377,24 @@ const pollTaskStatus = async (taskId) => {
       }
     }
   } catch (e) {
-    console.error(e)
+    const isGone = e?.response?.status === 404 ||
+      /不存在|not found|404|任务不存在/i.test(e?.message || '')
+    if (isGone) {
+      // 任务已不存在（例如后端重启后 TaskManager 内存任务丢失）→ 立即停止轮询
+      stopPolling()
+      stopGraphPolling()
+      error.value = e.message || 'Graph build task no longer exists'
+      addLog(`Graph build task not found: ${e.message || taskId}`)
+      return
+    }
+    pollFailCount += 1
+    console.error('轮询任务状态失败:', e)
+    if (pollFailCount >= MAX_POLL_FAILURES) {
+      stopPolling()
+      stopGraphPolling()
+      error.value = e.message || 'Failed to query graph build task'
+      addLog(`Graph build task polling failed: ${e.message}`)
+    }
   }
 }
 

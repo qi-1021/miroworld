@@ -17,6 +17,12 @@
     </header>
 
     <div class="world-body">
+      <!-- 加载失败提示 + 重试（设定库读取失败时不至于页面空白无解释） -->
+      <div v-if="loadError" class="load-error-bar">
+        <span>⚠ {{ loadError }}</span>
+        <button class="action-btn" @click="retryLoad">{{ $t('world.retry') }}</button>
+      </div>
+
       <!-- 输入区 -->
       <div class="step-card">
         <div class="card-header">
@@ -609,6 +615,7 @@ const saving = ref(false)
 const detecting = ref(false)
 const saveMsg = ref('')
 const saveMsgError = ref(false)
+const loadError = ref('')
 const stats = ref(null)
 const report = ref(null)
 const searchQuery = ref('')
@@ -999,6 +1006,7 @@ function onStDrop(e) {
 }
 
 async function loadAll() {
+  loadError.value = ''
   try {
     const [statsRes, conflictsRes] = await Promise.all([
       getWorldSettings(projectId),
@@ -1014,7 +1022,12 @@ async function loadAll() {
     await fetchGraph()
   } catch (e) {
     console.error('加载世界设定失败', e)
+    loadError.value = e.message || t('world.loadFailed')
   }
+}
+
+function retryLoad() {
+  loadAll()
 }
 
 async function handleSave() {
@@ -1500,6 +1513,29 @@ onUnmounted(() => {
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
+}
+.load-error-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-left: 3px solid #D32F2F;
+  background: #FFF0EF;
+  color: #8C211C;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.load-error-bar .action-btn {
+  flex-shrink: 0;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid #8C211C;
+  background: #fff;
+  color: #8C211C;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 /* 卡片（与 Step1 的 step-card 一致） */

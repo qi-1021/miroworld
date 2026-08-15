@@ -936,7 +936,9 @@
     "msgRefillEdgesFailed": "补边失败",
     "msgRefillEdgesStartFailed": "启动补边失败",
     "msgRefillEdgesStatusFailed": "补边状态查询失败",
-    "savedFilesTitle": "已保存 {count} 个文件（来自首页）"
+    "savedFilesTitle": "已保存 {count} 个文件（来自首页）",
+    "loadFailed": "加载世界设定失败",
+    "retry": "重试"
   },
   "timeline": {
     "tab": "时间线",

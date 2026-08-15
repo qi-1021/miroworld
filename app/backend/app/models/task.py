@@ -96,7 +96,33 @@ class TaskManager:
         with self._task_lock:
             self._tasks[task_id] = task
 
+        # 创建新任务时顺带清理最旧的已完成/失败任务，避免长期运行内存无限增长
+        self._prune_tasks()
+
         return task_id
+
+    def _prune_tasks(self, max_keep: int = 200) -> int:
+        """清理最旧的已完成/失败任务，保留运行/等待任务。
+
+        Args:
+            max_keep: 最多保留多少个已完成/失败任务（默认 200）
+
+        Returns:
+            本次清理数量
+        """
+        with self._task_lock:
+            done = [
+                (tid, task.updated_at)
+                for tid, task in self._tasks.items()
+                if task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED)
+            ]
+            if len(done) <= max_keep:
+                return 0
+            done.sort(key=lambda item: item[1])
+            removed = len(done) - max_keep
+            for tid, _ in done[:removed]:
+                self._tasks.pop(tid, None)
+            return removed
 
     def get_task(self, task_id: str) -> Optional[Task]:
         """获取任务"""
