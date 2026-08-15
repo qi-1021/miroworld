@@ -146,6 +146,7 @@
     "visitGithub": "访问我们的Github主页"
   },
   "home": {
+    "openWorldLibrary": "世界设定库",
     "tagline": "简洁通用的群体智能引擎",
     "version": "/ v0.1-预览版",
     "heroTitle1": "把任何故事，",
@@ -825,6 +826,12 @@
     "suggestion": "建议：",
     "acceptBg": "以背景为准",
     "dismissConflict": "忽略此冲突",
+    "justifyConflict": "自定义辩解",
+    "justifyCancel": "取消辩解",
+    "justifyPlaceholder": "说明为什么这里的矛盾可以成立，或如何调整设定……",
+    "justifySubmit": "保存辩解",
+    "justifying": "保存中...",
+    "justifyNoteLabel": "辩解/裁定：",
     "conflictTypes": {
       "fact_contradiction": "事实矛盾",
       "rule_violation": "规则违反",
@@ -841,7 +848,8 @@
     "status": {
       "open": "待处理",
       "accepted": "已采纳背景",
-      "dismissed": "已忽略"
+      "dismissed": "已忽略",
+      "justified": "已辩解"
     },
     "simTitle": "世界模拟",
     "simStatusRunning": "模拟中",
@@ -932,6 +940,7 @@
     "msgGraphBuildFailed": "构建失败",
     "msgGraphBuilding": "构建中...",
     "msgGraphStatusQueryFailed": "构建状态查询失败",
+    "msgGraphTaskLost": "构建任务不存在或已丢失，请重新构建",
     "msgGraphStarted": "构建已启动",
     "msgGraphStartFailed": "启动构建失败",
     "msgReadGraphFailed": "读取图谱失败",
@@ -941,6 +950,7 @@
     "msgRefillEdgesFailed": "补边失败",
     "msgRefillEdgesStartFailed": "启动补边失败",
     "msgRefillEdgesStatusFailed": "补边状态查询失败",
+    "msgRefillTaskLost": "补边任务不存在或已丢失，请重新补边",
     "savedFilesTitle": "已保存 {count} 个文件（来自首页）",
     "loadFailed": "加载世界设定失败",
     "retry": "重试"
@@ -1107,5 +1117,17 @@
   "drag": {
     "reordered": "事件顺序已更新",
     "reorderFailed": "重排保存失败"
+  },
+  "batch": {
+    "select": "批量选择",
+    "exitSelect": "退出批量",
+    "selectedCount": "已选 {n} 项",
+    "deleteSelected": "删除选中",
+    "deleteAfterNow": "删除当前时间点之后",
+    "clear": "清空选择",
+    "confirmDeleteSelected": "确定删除选中的 {n} 条事件？此操作不可恢复。",
+    "confirmDeleteAfter": "确定删除当前时间点之后的 {n} 条事件？此操作不可恢复。",
+    "deletedCount": "已删除 {n} 条事件",
+    "failed": "批量操作失败"
   }
 }

@@ -126,6 +126,31 @@ def fork_guidance():
         return jsonify({"success": False, "error": f"注入失败: {e}"}), 500
 
 
+@timeline_bp.route('/<project_id>/batch', methods=['POST'])
+def batch_events(project_id):
+    """批量操作时间线事件。
+
+    body: { action: "delete"|"update", event_ids: [...], patch?: {...} }
+    - delete: 删除指定事件（不级联删分支）
+    - update: 用 patch 批量更新（白名单字段：summary/source/kind/ev_type/
+      location_name/location_text/time_text/time_kind/age/year/characters/confidence/sort_lower）
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        action = str(data.get('action') or '').strip()
+        event_ids = data.get('event_ids') or []
+        if not isinstance(event_ids, list):
+            return jsonify({"success": False, "error": "event_ids 必须是数组"}), 400
+        patch = data.get('patch')
+        result = timeline_service.batch_events(project_id, action, event_ids, patch)
+        return jsonify({"success": True, "data": result})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"批量操作时间线失败: {e}")
+        return jsonify({"success": False, "error": f"批量操作失败: {e}"}), 500
+
+
 # ---------------------------------------------------------------------------
 # 动态路由
 # ---------------------------------------------------------------------------

@@ -196,6 +196,20 @@ export function mergeTimelineEvents(projectId, targetId, sourceIds) {
 }
 
 /**
+ * 批量操作时间线事件（删除 / 批量更新）
+ * @param {String} projectId
+ * @param {Object} payload - { action: 'delete'|'update', event_ids: [], patch?: {} }
+ * @returns {Promise} { success, data: { action, deleted, updated } }
+ */
+export function batchTimelineEvents(projectId, payload) {
+  return service({
+    url: '/api/timeline/' + projectId + '/batch',
+    method: 'post',
+    data: payload
+  })
+}
+
+/**
  * 一键生成人物设定初稿（后台任务，复用 /api/timeline/status 轮询）
  * @param {String} projectId
  * @returns {Promise} { success, data: { task_id } }

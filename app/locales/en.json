@@ -146,6 +146,7 @@
     "visitGithub": "Visit our Github page"
   },
   "home": {
+    "openWorldLibrary": "World Library",
     "tagline": "Concise & Universal Swarm Intelligence Engine",
     "version": "/ v0.1-Preview",
     "heroTitle1": "Any story can become",
@@ -825,6 +826,12 @@
     "suggestion": "Suggestion: ",
     "acceptBg": "Use Background",
     "dismissConflict": "Ignore Conflict",
+    "justifyConflict": "Custom Justification",
+    "justifyCancel": "Cancel",
+    "justifyPlaceholder": "Explain why this contradiction can stand, or how the setting should be adjusted…",
+    "justifySubmit": "Save Justification",
+    "justifying": "Saving...",
+    "justifyNoteLabel": "Justification/Ruling: ",
     "conflictTypes": {
       "fact_contradiction": "Fact Contradiction",
       "rule_violation": "Rule Violation",
@@ -841,7 +848,8 @@
     "status": {
       "open": "Pending",
       "accepted": "Background Accepted",
-      "dismissed": "Ignored"
+      "dismissed": "Ignored",
+      "justified": "Justified"
     },
     "simTitle": "World Simulation",
     "simStatusRunning": "Running",
@@ -932,6 +940,7 @@
     "msgGraphBuildFailed": "Build failed",
     "msgGraphBuilding": "Building...",
     "msgGraphStatusQueryFailed": "Failed to query build status",
+    "msgGraphTaskLost": "Build task is missing or was lost; please rebuild",
     "msgGraphStarted": "Build started",
     "msgGraphStartFailed": "Start build failed",
     "msgReadGraphFailed": "Failed to read graph",
@@ -941,6 +950,7 @@
     "msgRefillEdgesFailed": "Edge refill failed",
     "msgRefillEdgesStartFailed": "Start edge refill failed",
     "msgRefillEdgesStatusFailed": "Failed to query edge refill status",
+    "msgRefillTaskLost": "Edge refill task is missing or was lost; please retry",
     "savedFilesTitle": "{count} saved file(s) from Home",
     "loadFailed": "Failed to load world settings",
     "retry": "Retry"
@@ -1107,5 +1117,17 @@
   "drag": {
     "reordered": "Event order updated",
     "reorderFailed": "Failed to save reorder"
+  },
+  "batch": {
+    "select": "Batch Select",
+    "exitSelect": "Exit Batch",
+    "selectedCount": "{n} selected",
+    "deleteSelected": "Delete Selected",
+    "deleteAfterNow": "Delete After Now",
+    "clear": "Clear",
+    "confirmDeleteSelected": "Delete {n} selected events? This cannot be undone.",
+    "confirmDeleteAfter": "Delete {n} events after the current time point? This cannot be undone.",
+    "deletedCount": "Deleted {n} events",
+    "failed": "Batch operation failed"
   }
 }

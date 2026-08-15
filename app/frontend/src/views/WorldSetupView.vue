@@ -242,11 +242,38 @@
                 :key="s"
                 class="mini-btn"
                 :class="{ active: c.status === s }"
-                :disabled="c.status === s"
+                :disabled="c.status === s || justifyingId === c.conflict_id"
                 @click="setConflictStatus(c, s)"
               >
                 {{ s === 'accepted' ? $t('world.acceptBg') : $t('world.dismissConflict') }}
               </button>
+              <button
+                class="mini-btn"
+                :class="{ active: c.status === 'justified' }"
+                :disabled="justifyingId === c.conflict_id"
+                @click="toggleJustify(c)"
+              >
+                {{ c.justifyOpen ? $t('world.justifyCancel') : $t('world.justifyConflict') }}
+              </button>
+            </div>
+            <div v-if="c.justifyOpen" class="conflict-justify">
+              <textarea
+                v-model="c.justifyNote"
+                class="justify-input"
+                rows="2"
+                :placeholder="$t('world.justifyPlaceholder')"
+              ></textarea>
+              <button
+                class="mini-btn primary"
+                :disabled="justifyingId === c.conflict_id || !(c.justifyNote || '').trim()"
+                @click="submitJustify(c)"
+              >
+                {{ justifyingId === c.conflict_id ? $t('world.justifying') : $t('world.justifySubmit') }}
+              </button>
+            </div>
+            <div v-if="c.resolution_note" class="conflict-resolution-note">
+              <span class="crn-label">{{ $t('world.justifyNoteLabel') }}</span>
+              <span class="crn-text">{{ c.resolution_note }}</span>
             </div>
           </div>
         </div>
@@ -618,6 +645,7 @@ const saveMsgError = ref(false)
 const loadError = ref('')
 const stats = ref(null)
 const report = ref(null)
+const justifyingId = ref('')
 const searchQuery = ref('')
 const searching = ref(false)
 const searchResults = ref([])
@@ -816,7 +844,9 @@ function pollGraphTask(taskId) {
       clearInterval(graphPollTimer)
       graphPollTimer = null
       graphBuilding.value = false
-      graphMsg.value = e.message || t('world.msgGraphStatusQueryFailed')
+      graphProgressMsg.value = ''
+      const lost = e?.response?.status === 404 || /任务不存在|not found|404/i.test(e?.message || '')
+      graphMsg.value = lost ? t('world.msgGraphTaskLost') : (e.message || t('world.msgGraphStatusQueryFailed'))
       graphMsgError.value = true
     }
   }, 3000)
@@ -865,7 +895,8 @@ function pollRefillEdgesTask(taskId) {
       clearInterval(refillPollTimerId)
       refillPollTimerId = null
       refillEdgesRunning.value = false
-      graphMsg.value = e.message || t('world.msgRefillEdgesStatusFailed')
+      const lost = e?.response?.status === 404 || /任务不存在|not found|404/i.test(e?.message || '')
+      graphMsg.value = lost ? t('world.msgRefillTaskLost') : (e.message || t('world.msgRefillEdgesStatusFailed'))
       graphMsgError.value = true
     }
   }, 3000)
@@ -1101,10 +1132,35 @@ async function handleDetect() {
 
 async function setConflictStatus(conflict, status) {
   try {
-    await updateConflictStatus(projectId, conflict.conflict_id, status)
+    await updateConflictStatus(projectId, conflict.conflict_id, status, conflict.resolution_note || '')
     conflict.status = status
   } catch (e) {
     console.error('更新冲突状态失败', e)
+  }
+}
+
+function toggleJustify(conflict) {
+  if (conflict.justifyOpen) {
+    conflict.justifyOpen = false
+    return
+  }
+  conflict.justifyOpen = true
+  conflict.justifyNote = conflict.resolution_note || ''
+}
+
+async function submitJustify(conflict) {
+  const note = (conflict.justifyNote || '').trim()
+  if (!note) return
+  justifyingId.value = conflict.conflict_id
+  try {
+    await updateConflictStatus(projectId, conflict.conflict_id, 'justified', note)
+    conflict.status = 'justified'
+    conflict.resolution_note = note
+    conflict.justifyOpen = false
+  } catch (e) {
+    console.error('提交自定义辩解失败', e)
+  } finally {
+    justifyingId.value = ''
   }
 }
 
@@ -2133,6 +2189,49 @@ onUnmounted(() => {
 .mini-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.mini-btn.primary {
+  background: #000;
+  border-color: #000;
+  color: #FFF;
+}
+.mini-btn.primary:hover:not(:disabled) {
+  background: #333;
+  border-color: #333;
+}
+.conflict-justify {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.justify-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #E0E0E0;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 12px;
+  resize: vertical;
+  font-family: inherit;
+  color: #000;
+}
+.conflict-resolution-note {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #F3E8FF;
+  border: 1px solid #E9D5FF;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.crn-label {
+  font-weight: 700;
+  color: #6B21A8;
+  margin-right: 6px;
+}
+.crn-text {
+  color: #4A044E;
 }
 
 /* 检索 */

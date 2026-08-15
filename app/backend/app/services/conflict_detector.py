@@ -104,7 +104,8 @@ class ConflictItem:
     reason: str = ""
     severity: str = "medium"
     suggestion: str = ""
-    status: str = "open"  # open | accepted | dismissed
+    status: str = "open"  # open | accepted | dismissed | justified
+    resolution_note: str = ""  # 用户自定义辩解/裁定说明（justified 时必填）
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

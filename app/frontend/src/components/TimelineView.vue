@@ -30,6 +30,20 @@
       <button class="tl-play-btn" @click="togglePlay">{{ playing ? $t('timeline.pause') : $t('timeline.play') }}</button>
     </div>
 
+    <!-- 批量操作条 -->
+    <div class="tl-batch-bar">
+      <button class="tl-btn ghost" :class="{ active: selectionMode }" @click="toggleSelectionMode">
+        {{ selectionMode ? $t('batch.exitSelect') : $t('batch.select') }}
+      </button>
+      <template v-if="selectionMode">
+        <span class="batch-count">{{ $t('batch.selectedCount', { n: selectedIds.length }) }}</span>
+        <button class="tl-btn ghost" :disabled="!selectedIds.length || batchBusy" @click="runBatchDeleteSelected">{{ $t('batch.deleteSelected') }}</button>
+        <button class="tl-btn ghost" :disabled="batchBusy || !filteredEvents.length" @click="runBatchDeleteAfterScrub">{{ $t('batch.deleteAfterNow') }}</button>
+        <button class="tl-btn ghost" @click="clearSelection">{{ $t('batch.clear') }}</button>
+      </template>
+      <span v-if="batchMsg" class="tl-status" :class="{ error: batchMsgError }">{{ batchMsg }}</span>
+    </div>
+
     <!-- 人物设定（可折叠） -->
     <div class="tl-char-panel">
       <button class="tl-char-toggle" @click="toggleCharacters">
@@ -192,6 +206,13 @@
           @click="selectEvent(ev)"
         >
           <div class="tl-card-head">
+            <input
+              v-if="selectionMode"
+              type="checkbox"
+              class="tl-card-check"
+              :checked="isSelected(ev.event_id)"
+              @click.stop="toggleSelect(ev.event_id)"
+            />
             <span class="tl-card-type" :class="'et-' + (ev.ev_type || 'other')">{{ evTypeLabel(ev.ev_type) }}</span>
             <span v-if="ev.kind === 'future'" class="tl-card-kind">{{ $t('timeline.kindFuture') }}</span>
             <span v-if="isBranchEvent(ev)" class="tl-card-fork" :style="branchStyle(ev.branch_id)">{{ $t('fork.forkBadge') }}</span>
@@ -428,7 +449,8 @@ import {
   getBranchCompare,
   deleteTimelineEvent,
   mergeTimelineEvents,
-  generateTimelineCharacters
+  generateTimelineCharacters,
+  batchTimelineEvents
 } from '../api/timeline'
 
 const props = defineProps({ projectId: { type: String, required: true } })
@@ -452,6 +474,11 @@ const deleteMsgError = ref(false)
 const mergeTarget = ref('')
 const mergeMsg = ref('')
 const mergeMsgError = ref(false)
+// 批量操作
+const selectionMode = ref(false)
+const selectedIds = ref([])
+const batchMsg = ref('')
+const batchMsgError = ref(false)
 // 拖拽重排持久化
 const dragReorder = ref(null)
 const dragOrigSort = ref(0)
@@ -1177,6 +1204,56 @@ async function runDelete() {
   } finally { deletingEvent.value = false; }
 }
 
+// ===== 批量操作 =====
+const batchBusy = ref(false)
+function isSelected(id) { return selectedIds.value.includes(id); }
+function toggleSelect(id) {
+  const i = selectedIds.value.indexOf(id);
+  if (i >= 0) selectedIds.value.splice(i, 1);
+  else selectedIds.value.push(id);
+}
+function clearSelection() { selectedIds.value = []; }
+function toggleSelectionMode() {
+  selectionMode.value = !selectionMode.value;
+  if (!selectionMode.value) clearSelection();
+  batchMsg.value = '';
+}
+async function runBatchDeleteSelected() {
+  const ids = selectedIds.value.slice();
+  if (!ids.length || batchBusy.value) return;
+  if (!window.confirm(t('batch.confirmDeleteSelected', { n: ids.length }))) return;
+  batchBusy.value = true; batchMsg.value = ''; batchMsgError.value = false;
+  try {
+    const res = await batchTimelineEvents(props.projectId, { action: 'delete', event_ids: ids });
+    const deleted = res?.data?.deleted != null ? res.data.deleted : ids.length;
+    batchMsg.value = t('batch.deletedCount', { n: deleted });
+    clearSelection();
+    await loadEvents(true);
+  } catch (e) {
+    batchMsg.value = backendErrorMessage(e) || e?.message || t('batch.failed');
+    batchMsgError.value = true;
+  } finally { batchBusy.value = false; }
+}
+async function runBatchDeleteAfterScrub() {
+  const ids = filteredEvents.value
+    .filter(ev => sortNum(ev) > scrubT.value)
+    .map(ev => ev.event_id)
+    .filter(Boolean);
+  if (!ids.length || batchBusy.value) return;
+  if (!window.confirm(t('batch.confirmDeleteAfter', { n: ids.length }))) return;
+  batchBusy.value = true; batchMsg.value = ''; batchMsgError.value = false;
+  try {
+    const res = await batchTimelineEvents(props.projectId, { action: 'delete', event_ids: ids });
+    const deleted = res?.data?.deleted != null ? res.data.deleted : ids.length;
+    batchMsg.value = t('batch.deletedCount', { n: deleted });
+    clearSelection();
+    await loadEvents(true);
+  } catch (e) {
+    batchMsg.value = backendErrorMessage(e) || e?.message || t('batch.failed');
+    batchMsgError.value = true;
+  } finally { batchBusy.value = false; }
+}
+
 // ===== 人物设定面板 =====
 async function toggleCharacters() {
   charactersOpen.value = !charactersOpen.value;
@@ -1289,6 +1366,10 @@ onUnmounted(() => {
 .source-tab { border: 1px solid #E0E0E0; background: #FFF; color: #666; padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; }
 .source-tab.active { background: #000; color: #FFF; border-color: #000; }
 .tl-ops { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.tl-batch-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; padding: 8px 10px; background: #F9FAFB; border: 1px solid #EAEAEA; border-radius: 6px; }
+.tl-batch-bar .tl-btn.active { background: #000; color: #FFF; border-color: #000; }
+.batch-count { font-size: 12px; color: #666; font-family: 'JetBrains Mono', monospace; }
+.tl-card-check { width: 14px; height: 14px; accent-color: #FF5722; cursor: pointer; flex-shrink: 0; }
 .future-box { display: flex; gap: 6px; flex: 1; min-width: 240px; }
 .future-input { flex: 1; border: 1px solid #E0E0E0; border-radius: 4px; background: #FAFAFA; font-size: 12px; padding: 8px 10px; color: #000; }
 .future-input:focus { outline: none; border-color: #FF5722; background: #fff; }

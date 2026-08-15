@@ -187,6 +187,22 @@ def test_report_roundtrip_json():
     assert restored.to_dict() == data
 
 
+def test_report_roundtrip_justified_resolution_note():
+    report = ConflictReport(
+        project_id="p1",
+        conflicts=[ConflictItem(
+            conflict_id="abc123", topic="t", conflict_type="other",
+            background_fact="b", story_fact="s", status="justified",
+            resolution_note="正文是寓言层，不与背景时间线同维度，因此不构成矛盾。",
+        )],
+    )
+    data = report.to_dict()
+    restored = ConflictReport.from_dict(data)
+    assert restored.conflicts[0].status == "justified"
+    assert restored.conflicts[0].resolution_note == "正文是寓言层，不与背景时间线同维度，因此不构成矛盾。"
+    assert restored.to_dict() == data
+
+
 def test_detect_with_progress_reports_phases():
     llm = FakeLLM()
     detector = ConflictDetector(llm_client=llm)

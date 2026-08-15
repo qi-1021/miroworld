@@ -1437,6 +1437,84 @@ def delete_event(project_id: str, event_id: str) -> bool:
         return True
 
 
+def _apply_event_patch(target: Dict[str, Any], patch: Dict[str, Any]) -> None:
+    """把 patch 中的白名单字段应用到单个事件（不持久化）。"""
+    for k, v in (patch or {}).items():
+        if k == "sort_lower":
+            target["sort_lower"] = _float_or(v, target.get("sort_lower", 0.0))
+        elif k == "sort_upper":
+            target["sort_upper"] = _float_or(v, target.get("sort_upper", 0.0))
+        elif k == "year":
+            target["year"] = _int_or_none(v)
+            if v is not None and v != "":
+                target["sort_lower"] = float(v) * 10.0
+                target["sort_upper"] = float(v) * 10.0
+        elif k == "age":
+            target["age"] = _int_or_none(v)
+            if v is not None and v != "":
+                target["sort_lower"] = float(v)
+                target["sort_upper"] = float(v)
+        elif k in ("summary", "time_kind", "time_text", "location_text", "location_name",
+                   "location_kind", "ev_type", "raw_source", "source", "extract_method"):
+            if k == "time_kind":
+                target[k] = norm.normalize_time_kind(v)
+            elif k == "ev_type":
+                target[k] = norm.normalize_ev_type(v)
+            else:
+                target[k] = str(v) if v is not None else ""
+        elif k == "characters":
+            target[k] = _str_list(v)
+        elif k == "confidence":
+            target[k] = _float_or(v, 0.5)
+
+
+def batch_events(project_id: str, action: str, event_ids: List[str],
+                 patch: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """批量操作时间线事件。
+
+    action:
+      - "delete": 删除 event_ids 对应事件（不级联删除分支事件）
+      - "update": 用 patch 更新 event_ids 对应事件（白名单字段）
+      - "move": 把 event_ids 事件整体移动到 sort_lower 之后（相对重排）
+
+    返回 {"action", "deleted", "updated": [事件...]}。
+    """
+    action = str(action or "").strip()
+    if action not in ("delete", "update", "move"):
+        raise ValueError("action 必须是 delete/update/move")
+    ids = [str(x).strip() for x in (event_ids or []) if str(x).strip()]
+    if not ids:
+        raise ValueError("event_ids 不能为空")
+    if action == "update" and (not isinstance(patch, dict) or not patch):
+        raise ValueError("update 操作需要 patch 对象")
+    if action == "move":
+        raise ValueError("move 暂未开放，请使用 update 的 sort_lower 批量重排")
+
+    with _timeline_lock_for(project_id):
+        data = load_timeline(project_id, None)
+        events = data.get("events", [])
+        id_set = set(ids)
+        if action == "delete":
+            before = len(events)
+            events = [e for e in events if e.get("id") not in id_set]
+            removed = before - len(events)
+            if removed:
+                events.sort(key=lambda e: e.get("sort_lower") or 0)
+                _save_timeline(project_id, events)
+            return {"action": action, "deleted": removed, "updated": []}
+        # action == "update"
+        updated = []
+        for e in events:
+            if e.get("id") in id_set:
+                _apply_event_patch(e, patch)
+                e["updated_at"] = datetime.now().isoformat(timespec="seconds")
+                updated.append(dict(e))
+        if updated:
+            events.sort(key=lambda e: e.get("sort_lower") or 0)
+            _save_timeline(project_id, events)
+        return {"action": action, "deleted": 0, "updated": updated}
+
+
 def merge_events(project_id: str, target_id: str, source_ids: List[str]) -> Optional[Dict[str, Any]]:
     """项目级锁内合并事件，避免与并行抽取/推演写互相覆盖。"""
     with _timeline_lock_for(project_id):

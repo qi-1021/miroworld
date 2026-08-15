@@ -609,12 +609,22 @@ def get_conflicts(project_id: str):
 
 @world_bp.route('/<project_id>/conflicts/<conflict_id>', methods=['PATCH'])
 def update_conflict_status(project_id: str, conflict_id: str):
-    """更新冲突处理状态（open/accepted/dismissed）"""
+    """更新冲突处理状态（open/accepted/dismissed/justified），可附自定义辩解说明。
+
+    body: { status: str, note?: str }
+    - status=justified 时 note 必填（用户自定义辩解/裁定）。
+    - accepted/dismissed 也可附带 note 作为备注。
+    """
     try:
         data = request.get_json(silent=True) or {}
         status = str(data.get('status', '')).strip()
-        if status not in ('open', 'accepted', 'dismissed'):
-            return jsonify({"success": False, "error": "状态必须是 open/accepted/dismissed"}), 400
+        if status not in ('open', 'accepted', 'dismissed', 'justified'):
+            return jsonify({"success": False, "error": "状态必须是 open/accepted/dismissed/justified"}), 400
+        note = str(data.get('note') or data.get('resolution_note') or '').strip()
+        if status == 'justified' and not note:
+            return jsonify({"success": False, "error": "自定义辩解必须填写说明（note）"}), 400
+        if len(note) > 2000:
+            return jsonify({"success": False, "error": "辩解说明过长（≤2000 字）"}), 400
 
         report = load_conflict_report(project_id)
         if report is None:
@@ -624,6 +634,7 @@ def update_conflict_status(project_id: str, conflict_id: str):
         for c in report.conflicts:
             if c.conflict_id == conflict_id:
                 c.status = status
+                c.resolution_note = note
                 updated = True
                 break
         if not updated:

@@ -11,6 +11,7 @@
       <span class="nav-brand">{{ BRAND.name }}</span>
       <div class="nav-right">
         <LanguageSwitcher />
+        <button class="nav-link nav-btn" @click="openWorldLibrary">{{ $t('home.openWorldLibrary') }}</button>
         <a class="nav-link" :href="BRAND.repo" target="_blank" rel="noopener">{{ $t('nav.visitGithub') }}<span class="arrow">↗</span></a>
       </div>
     </nav>
@@ -463,6 +464,12 @@ const scrollToConsole = () => {
   consoleRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
+// 明确进入"世界设定库"：切到世界模式并滚动到控制台/历史区
+const openWorldLibrary = () => {
+  activeMode.value = 'world'
+  scrollToConsole()
+}
+
 // 开始模拟 - 立即跳转，API调用在Process页面进行
 const startSimulation = async () => {
   if (loading.value) return
@@ -548,6 +555,16 @@ const startSimulation = async () => {
 }
 .nav-link:hover { color: var(--ink); }
 .nav-link .arrow { margin-left: 2px; font-size: 12px; }
+.nav-btn {
+  background: none;
+  border: 1px solid rgba(0,0,0,0.12);
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.2s, color 0.2s;
+}
+.nav-btn:hover { border-color: var(--ink); color: var(--ink); }
 
 /* ---------- Hero ---------- */
 .hero {

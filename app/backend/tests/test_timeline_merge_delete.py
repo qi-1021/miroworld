@@ -106,6 +106,52 @@ def test_merge_missing_target_or_source():
 
 
 # ---------------------------------------------------------------------------
+# batch_events
+# ---------------------------------------------------------------------------
+def test_batch_delete_multiple():
+    _seed(svc)
+    result = svc.batch_events("proj_0123456789ab", "delete", ["t", "s2"])
+    assert result["deleted"] == 2
+    remaining = svc.load_timeline("proj_0123456789ab", None)["events"]
+    ids = [e["id"] for e in remaining]
+    assert "t" not in ids and "s2" not in ids and "s1" in ids
+
+
+def test_batch_update_multiple():
+    _seed(svc)
+    result = svc.batch_events(
+        "proj_0123456789ab", "update", ["t", "s1"],
+        patch={"summary": "批量改后", "location_name": "龙门"},
+    )
+    assert len(result["updated"]) == 2
+    remaining = {e["id"]: e for e in svc.load_timeline("proj_0123456789ab", None)["events"]}
+    assert remaining["t"]["summary"] == "批量改后"
+    assert remaining["t"]["location_name"] == "龙门"
+    assert remaining["s1"]["summary"] == "批量改后"
+    assert remaining["s2"]["summary"] == "待合并乙"  # 未选中不受影响
+
+
+def test_batch_invalid_action():
+    _seed(svc)
+    with pytest.raises(ValueError):
+        svc.batch_events("proj_0123456789ab", "rename", ["t"])
+
+
+def test_batch_endpoint_delete():
+    _seed(svc)
+    app = create_app(); app.config["TESTING"] = True
+    with app.test_client() as c:
+        r = c.post("/api/timeline/proj_0123456789ab/batch",
+                   json={"action": "delete", "event_ids": ["t", "s1"]})
+        assert r.status_code == 200
+        assert r.get_json()["data"]["deleted"] == 2
+        # 空 event_ids → 400
+        r2 = c.post("/api/timeline/proj_0123456789ab/batch",
+                    json={"action": "delete", "event_ids": []})
+        assert r2.status_code == 400
+
+
+# ---------------------------------------------------------------------------
 # 端点
 # ---------------------------------------------------------------------------
 def test_delete_endpoint():

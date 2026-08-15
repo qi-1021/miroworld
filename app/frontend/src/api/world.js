@@ -89,13 +89,14 @@ export function getWorldConflicts(projectId) {
  * 更新冲突处理状态
  * @param {String} projectId
  * @param {String} conflictId
- * @param {String} status - open | accepted | dismissed
+ * @param {String} status - open | accepted | dismissed | justified
+ * @param {String} [note] - 自定义辩解/备注（status=justified 时必填）
  */
-export function updateConflictStatus(projectId, conflictId, status) {
+export function updateConflictStatus(projectId, conflictId, status, note = '') {
   return service({
     url: `/api/world/${projectId}/conflicts/${conflictId}`,
     method: 'patch',
-    data: { status }
+    data: { status, note }
   })
 }
 
