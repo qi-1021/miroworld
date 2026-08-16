@@ -533,6 +533,9 @@
         <!-- 事件流（按 step 分组，更清晰） -->
         <div v-if="simEvents.length" class="sim-events">
           <div class="sim-events-title">{{ $t('world.eventStream') }}</div>
+          <div v-if="simQualityIssues.length" class="sim-quality">
+            <div v-for="(issue, i) in simQualityIssues" :key="i" class="sim-quality-item">⚠ {{ issue }}</div>
+          </div>
           <div class="sim-playback">
             <button class="mini-btn" @click="playbackPrev">⏮</button>
             <button class="mini-btn" @click="playbackToggle">{{ playbackPlaying ? '⏸' : '▶' }}</button>
@@ -1146,6 +1149,41 @@ const stepSummaries = computed(() => {
       .join('；')
       .slice(0, 160),
   }))
+})
+
+// 模拟质量自检：重复动作/原地等待/因果链断裂提示
+const simQualityIssues = computed(() => {
+  const issues = []
+  const events = simEvents.value || []
+  if (!events.length) return issues
+  let prevKey = null
+  let repeat = 0
+  for (const e of events) {
+    const key = `${e.character_name}|${(e.action_desc || '').trim()}`
+    if (key === prevKey) {
+      repeat++
+    } else {
+      if (repeat >= 2 && prevKey) {
+        const [who] = prevKey.split('|')
+        issues.push(t('world.qualityRepeat', { who, count: repeat + 1 }))
+      }
+      repeat = 0
+      prevKey = key
+    }
+  }
+  if (repeat >= 2 && prevKey) {
+    const [who] = prevKey.split('|')
+    issues.push(t('world.qualityRepeat', { who, count: repeat + 1 }))
+  }
+  const waits = events.filter(e => /等待|停下来|wait/i.test(e.action_desc || '')).length
+  if (events.length && waits / events.length > 0.4) {
+    issues.push(t('world.qualityWaits', { count: waits, total: events.length }))
+  }
+  const noLink = events.filter(e => !e.links || !e.links.length).length
+  if (noLink > events.length * 0.6) {
+    issues.push(t('world.qualityNoLinks', { count: noLink, total: events.length }))
+  }
+  return issues
 })
 
 // 事件因果图：根据事件 links 生成节点/边，按 step 分层布局
@@ -3127,6 +3165,16 @@ onUnmounted(() => {
   padding: 8px 12px;
   background: #FAFAFA;
   border-bottom: 1px solid #F0F0F0;
+}
+.sim-quality {
+  padding: 8px 12px;
+  background: #FFF8F0;
+  border-bottom: 1px solid #F0E0D0;
+}
+.sim-quality-item {
+  font-size: 12px;
+  color: #B26A00;
+  line-height: 1.6;
 }
 .sim-playback-info {
   font-size: 11px;
