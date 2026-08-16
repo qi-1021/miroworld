@@ -991,6 +991,7 @@
         <div class="assistant-modal compare-modal">
           <div class="assistant-head">
             <span class="assistant-title">{{ $t('world.compareWorldlines') }}</span>
+            <button class="mini-btn ghost" @click="exportCompareReport">{{ $t('world.exportCompare') }}</button>
             <button class="assistant-close" @click="compareOpen = false">×</button>
           </div>
           <div class="compare-grid">
@@ -1001,11 +1002,14 @@
                 <span>{{ $t('world.eventCount', { count: item.event_count }) }}</span>
               </div>
               <div v-if="item.events.length" class="compare-events">
-                <div v-for="(e, ei) in item.events" :key="ei" class="sim-event">
-                  <span class="sim-event-time">{{ e.time }}</span>
-                  <span class="sim-event-who">{{ e.character_name }}</span>
-                  <span class="sim-event-what">{{ e.action_desc }}</span>
-                  <span class="sim-event-result">{{ e.result }}</span>
+                <div v-for="(g, gi) in groupEventsByStep(item.events)" :key="gi" class="compare-step">
+                  <div class="compare-step-head">{{ $t('world.simStepLabel', { step: g.step }) }} · {{ g.time }}</div>
+                  <div v-for="(e, ei) in g.events" :key="ei" class="sim-event">
+                    <span class="sim-event-who">{{ e.character_name }}</span>
+                    <span class="sim-event-where">{{ e.location }}</span>
+                    <span class="sim-event-what">{{ e.action_desc }}</span>
+                    <span class="sim-event-result">{{ e.result }}</span>
+                  </div>
                 </div>
               </div>
               <div v-else class="empty-note">{{ $t('world.noEvents') }}</div>
@@ -2396,6 +2400,47 @@ async function mergeSelected() {
     simMsg.value = e?.message || t('world.msgUnknownError')
     simMsgError.value = true
   }
+}
+
+function groupEventsByStep(events) {
+  const groups = []
+  const map = new Map()
+  for (const e of events || []) {
+    const key = `${e.step || 0}-${e.time || ''}`
+    if (!map.has(key)) {
+      const g = { step: e.step || 0, time: e.time || '', events: [] }
+      map.set(key, g)
+      groups.push(g)
+    }
+    map.get(key).events.push(e)
+  }
+  return groups
+}
+
+function exportCompareReport() {
+  if (compareData.value.length < 2) return
+  const lines = ['# 世界线对比报告', '']
+  compareData.value.forEach((item, idx) => {
+    lines.push(`## 世界线 ${idx + 1}：${item.simulation_id}`)
+    lines.push(`- 状态：${item.status}`)
+    lines.push(`- 事件数：${item.event_count}`)
+    lines.push('')
+    groupEventsByStep(item.events).forEach(g => {
+      lines.push(`### 第 ${g.step} 步 · ${g.time}`)
+      g.events.forEach(e => {
+        lines.push(`- ${e.character_name} 在 ${e.location}：${e.action_desc} → ${e.result}`)
+      })
+      lines.push('')
+    })
+  })
+  const blob = new Blob([lines.join('\n')], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `worldline-compare-${Date.now()}.md`
+  a.style.display = 'none'
+  document.body.appendChild(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 function extractCharacters(events) {
@@ -4804,6 +4849,19 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.compare-step {
+  border: 1px solid #F0F0F0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.compare-step-head {
+  padding: 5px 8px;
+  background: #FAFAFA;
+  font-size: 11px;
+  font-weight: 700;
+  color: #a1c50a;
+  border-bottom: 1px solid #F0F0F0;
 }
 @media (max-width: 720px) {
   .compare-grid { grid-template-columns: 1fr; }
