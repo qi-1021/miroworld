@@ -619,19 +619,36 @@
         </div>
 
         <div v-if="simHistory.length" class="sim-history">
-          <div class="sim-history-title">{{ $t('world.reportHistoryTitle') }}</div>
+          <div class="sim-history-title">
+            <span>{{ $t('world.reportHistoryTitle') }}</span>
+            <button v-if="simHistory.length >= 2" class="mini-btn ghost" @click="toggleCompareMode">
+              {{ compareMode ? $t('world.cancel') : $t('world.compareWorldlines') }}
+            </button>
+            <button v-if="compareMode && compareSelected.length === 2" class="mini-btn" @click="openCompare">
+              {{ $t('world.compare') }}
+            </button>
+          </div>
           <div v-for="(h, i) in simHistory" :key="i" class="sim-history-item">
-            <span class="sim-history-time">{{ formatTime(h.created_at) }}</span>
-            <span class="sim-history-status" :class="h.status">{{ statusLabel(h.status) }}</span>
-            <span class="sim-history-count">{{ $t('world.eventCount', { count: (h.result || {}).event_count || 0 }) }}</span>
-            <span v-if="(h.result || {}).meta && (h.result || {}).meta.whatif_question" class="sim-history-flag">{{ $t('world.whatifFlag') }}</span>
-            <button class="mini-btn ghost" @click="loadSimulation(h)">{{ $t('world.loadSimulation') }}</button>
-            <template v-if="h.status === 'completed' && !((h.result || {}).meta || {}).whatif_question">
-              <button class="mini-btn" :disabled="whatIfing === h.simulation_id" @click="startWhatIf(h)">
-                <span v-if="whatIfing === h.simulation_id" class="spinner-xs"></span>
-                {{ $t('world.whatifBtn') }}
-              </button>
-              <button class="mini-btn ghost" @click="openChartRecord(h)">{{ $t('world.chronicleBtn') }}</button>
+            <input
+              v-if="compareMode"
+              type="checkbox"
+              class="sim-compare-check"
+              :checked="compareSelected.includes(h.simulation_id)"
+              @change="toggleCompareSelect(h)"
+            />
+            <template v-else>
+              <span class="sim-history-time">{{ formatTime(h.created_at) }}</span>
+              <span class="sim-history-status" :class="h.status">{{ statusLabel(h.status) }}</span>
+              <span class="sim-history-count">{{ $t('world.eventCount', { count: (h.result || {}).event_count || 0 }) }}</span>
+              <span v-if="(h.result || {}).meta && (h.result || {}).meta.whatif_question" class="sim-history-flag">{{ $t('world.whatifFlag') }}</span>
+              <button class="mini-btn ghost" @click="loadSimulation(h)">{{ $t('world.loadSimulation') }}</button>
+              <template v-if="h.status === 'completed' && !((h.result || {}).meta || {}).whatif_question">
+                <button class="mini-btn" :disabled="whatIfing === h.simulation_id" @click="startWhatIf(h)">
+                  <span v-if="whatIfing === h.simulation_id" class="spinner-xs"></span>
+                  {{ $t('world.whatifBtn') }}
+                </button>
+                <button class="mini-btn ghost" @click="openChartRecord(h)">{{ $t('world.chronicleBtn') }}</button>
+              </template>
             </template>
           </div>
           <!-- 当前模拟的 what-if 推演对话框 -->
@@ -850,6 +867,34 @@
           </div>
         </div>
       </div>
+
+      <!-- 世界线对比 -->
+      <div v-if="compareOpen" class="assistant-modal-mask" @click.self="compareOpen = false">
+        <div class="assistant-modal compare-modal">
+          <div class="assistant-head">
+            <span class="assistant-title">{{ $t('world.compareWorldlines') }}</span>
+            <button class="assistant-close" @click="compareOpen = false">×</button>
+          </div>
+          <div class="compare-grid">
+            <div v-for="(item, idx) in compareData" :key="idx" class="compare-col">
+              <div class="compare-col-head">
+                <span>{{ formatTime(item.created_at) }}</span>
+                <span class="badge" :class="item.status">{{ statusLabel(item.status) }}</span>
+                <span>{{ $t('world.eventCount', { count: item.event_count }) }}</span>
+              </div>
+              <div v-if="item.events.length" class="compare-events">
+                <div v-for="(e, ei) in item.events" :key="ei" class="sim-event">
+                  <span class="sim-event-time">{{ e.time }}</span>
+                  <span class="sim-event-who">{{ e.character_name }}</span>
+                  <span class="sim-event-what">{{ e.action_desc }}</span>
+                  <span class="sim-event-result">{{ e.result }}</span>
+                </div>
+              </div>
+              <div v-else class="empty-note">{{ $t('world.noEvents') }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -945,6 +990,10 @@ const simMsgError = ref(false)
 const simEvents = ref([])
 const simHistory = ref([])
 const simProgress = ref({})
+const compareMode = ref(false)
+const compareSelected = ref([])
+const compareOpen = ref(false)
+const compareData = ref([])
 const simSection = ref(null)
 const inputSection = ref(null)
 const timelineSection = ref(null)
@@ -1832,6 +1881,49 @@ async function loadSimulation(sim) {
     }
     simSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   } catch (e) {
+    simMsg.value = e?.message || t('world.msgUnknownError')
+    simMsgError.value = true
+  }
+}
+
+function toggleCompareMode() {
+  compareMode.value = !compareMode.value
+  compareSelected.value = []
+}
+
+function toggleCompareSelect(sim) {
+  const id = sim.simulation_id
+  const idx = compareSelected.value.indexOf(id)
+  if (idx >= 0) {
+    compareSelected.value.splice(idx, 1)
+  } else {
+    if (compareSelected.value.length >= 2) {
+      compareSelected.value.shift()
+    }
+    compareSelected.value.push(id)
+  }
+}
+
+async function openCompare() {
+  if (compareSelected.value.length < 2) return
+  compareOpen.value = true
+  compareData.value = []
+  try {
+    const items = []
+    for (const sid of compareSelected.value) {
+      const res = await getWorldSimulation(projectId, sid)
+      const s = res.simulation
+      items.push({
+        simulation_id: s.simulation_id,
+        status: s.status,
+        created_at: s.created_at,
+        event_count: (s.result || {}).event_count || 0,
+        events: ((s.result || {}).events || []).slice(0, 20),
+      })
+    }
+    compareData.value = items
+  } catch (e) {
+    compareData.value = []
     simMsg.value = e?.message || t('world.msgUnknownError')
     simMsgError.value = true
   }
@@ -4010,6 +4102,47 @@ onUnmounted(() => {
   border: 1px solid #EAEAEA;
   border-radius: 4px;
   padding: 10px 12px;
+}
+
+/* 世界线对比 */
+.sim-compare-check {
+  width: 16px;
+  height: 16px;
+  accent-color: #a1c50a;
+}
+.compare-modal {
+  width: 860px;
+  max-width: 94vw;
+}
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.compare-col {
+  border: 1px solid #EAEAEA;
+  border-radius: 8px;
+  padding: 12px;
+  background: #FBFBFB;
+}
+.compare-col-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.compare-events {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+@media (max-width: 720px) {
+  .compare-grid { grid-template-columns: 1fr; }
 }
 
 /* ================= 手机端响应式 ================= */
