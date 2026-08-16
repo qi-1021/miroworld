@@ -777,6 +777,13 @@ def get_simulation(simulation_id: str):
 
         result = state.to_dict()
 
+        # 附加模拟流向收藏元数据（收藏 / 最佳流向 / 备注）
+        from ..services.simulation_favorite import SimulationFavoriteService
+        fav = SimulationFavoriteService().get(simulation_id)
+        result["favorite"] = fav["favorite"]
+        result["is_best_flow"] = fav["is_best_flow"]
+        result["remark"] = fav["remark"]
+
         # 如果模拟已准备好，附加运行说明
         if state.status == SimulationStatus.READY:
             result["run_instructions"] = manager.get_run_instructions(simulation_id)
@@ -875,6 +882,13 @@ def delete_simulation(simulation_id: str):
                     "error": f"模拟不存在: {sid}",
                 }), 404
 
+        # 模拟已被（部分）删除：顺带清理其收藏元数据，避免残留脏记录
+        try:
+            from ..services.simulation_favorite import SimulationFavoriteService
+            SimulationFavoriteService().remove(sid)
+        except Exception as _fe:
+            logger.warning(f"删除模拟后清理收藏失败（忽略）: {sid}, {_fe}")
+
         return jsonify({
             "success": True,
             "deleted": deleted,
@@ -882,6 +896,71 @@ def delete_simulation(simulation_id: str):
         })
     except Exception as e:
         logger.error(f"删除模拟失败: {sid}, {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+@simulation_bp.route('/<simulation_id>/favorite', methods=['PATCH'])
+def update_simulation_favorite(simulation_id: str):
+    """更新一条模拟流向的收藏元数据。
+
+    支持字段（body JSON，任何一个字段缺省表示不改动）：
+        favorite  : bool  ⭐收藏标记
+        best_flow : bool  👑最佳流向（同项目唯一互斥，设为 True 会清除同项目其它条目）
+        remark    : str   备注文本（空串即清除）
+        project_id: str   可选，项目归属（用于互斥判定；缺省自动解析）
+
+    返回：
+        { "success": True, "data": { simulation_id, favorite, is_best_flow, remark } }
+    """
+    try:
+        sid = (simulation_id or "").strip()
+        if not sid:
+            return jsonify({"success": False, "error": "simulation_id 不能为空"}), 400
+
+        body = request.get_json(silent=True) or {}
+        favorite = body.get("favorite")
+        best_flow = body.get("best_flow")
+        remark = body.get("remark")
+        project_id = str(body.get("project_id") or "")
+
+        # best_flow / favorite 必须是布尔（若非布尔则视为非法）
+        for name, val in (("favorite", favorite), ("best_flow", best_flow)):
+            if val is not None and not isinstance(val, bool):
+                return jsonify({
+                    "success": False,
+                    "error": f"{name} 必须是布尔值",
+                }), 400
+        if remark is not None and not isinstance(remark, str):
+            return jsonify({
+                "success": False,
+                "error": "remark 必须是字符串",
+            }), 400
+
+        from ..services.simulation_favorite import SimulationFavoriteService
+        svc = SimulationFavoriteService()
+        result = svc.update(
+            sid,
+            favorite=favorite,
+            best_flow=best_flow,
+            remark=remark,
+            project_id=project_id,
+        )
+        return jsonify({
+            "success": True,
+            "data": {
+                "simulation_id": sid,
+                "favorite": result["favorite"],
+                "is_best_flow": result["is_best_flow"],
+                "remark": result["remark"],
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"更新模拟收藏失败: {simulation_id}, {e}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -932,11 +1011,16 @@ def simulation_history():
     """
     try:
         limit = int(request.args.get('limit', 20))
+        _fav_param = request.args.get('favorite')
+        _favorite_only = str(_fav_param or '').strip().lower() in ('1', 'true', 'yes', 'on')
         manager = SimulationManager()
         simulations = manager.list_simulations()
         # 按创建时间倒序（created_at 为 ISO 字符串，直接比较）
         simulations.sort(key=lambda s: s.created_at or '', reverse=True)
-        simulations = simulations[:limit]
+        # 只看收藏时先不截断，否则收藏但排在后段的媒体模拟会被 limit 丢弃；
+        # 收藏过滤在装配完 data 后统一执行。
+        if not _favorite_only:
+            simulations = simulations[:limit]
 
         from ..models.project import ProjectManager
         from ..services.world_bible import WorldBibleService
@@ -1044,6 +1128,26 @@ def simulation_history():
                 })
         except Exception as exc:
             logger.warning(f"补充孤儿世界模拟到历史列表失败（不影响主列表）: {exc}")
+
+        # 附加模拟流向收藏元数据（收藏 / 最佳流向 / 备注），并支持 favorite=1 只看收藏
+        from ..services.simulation_favorite import SimulationFavoriteService
+        fav_svc = SimulationFavoriteService()
+        _ids = [e.get('simulation_id') for e in data if e.get('simulation_id')]
+        fav_map = fav_svc.get_many(_ids)
+        for e in data:
+            fid = e.get('simulation_id')
+            fv = fav_map.get(fid) if fid else None
+            if fv:
+                e['favorite'] = fv.get('favorite', False)
+                e['is_best_flow'] = fv.get('is_best_flow', False)
+                e['remark'] = fv.get('remark', '')
+            else:
+                e['favorite'] = False
+                e['is_best_flow'] = False
+                e['remark'] = ''
+
+        if _favorite_only:
+            data = [e for e in data if e.get('favorite')]
 
         return jsonify({"success": True, "data": data, "count": len(data)})
 

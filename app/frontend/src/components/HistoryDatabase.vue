@@ -10,6 +10,11 @@
       <span class="section-title">{{ $t('history.title') }}</span>
       <div class="section-line"></div>
       <div class="hist-batch-ctl">
+        <button
+          class="hist-batch-btn"
+          :class="{ active: favOnly }"
+          @click="toggleFavOnly"
+        >★ {{ favOnly ? $t('history.showAll') : $t('history.onlyFavorites') }}</button>
         <button v-if="projects.length" class="hist-batch-btn" :class="{ active: selectionMode }" @click="toggleSelectionMode">
           {{ selectionMode ? $t('history.batchExit') : $t('history.batchSelect') }}
         </button>
@@ -51,6 +56,16 @@
         <div class="card-header">
           <span class="card-id">{{ formatSimulationId(project.simulation_id) }}</span>
           <div class="card-status-icons">
+            <span
+              v-if="project.is_best_flow"
+              class="badge-icon best"
+              title="👑 最佳流向"
+            >👑</span>
+            <span
+              v-if="project.favorite"
+              class="badge-icon fav"
+              :title="$t('history.favoriteHint')"
+            >⭐</span>
             <span
               class="status-icon"
               :class="{ available: project.project_id, unavailable: !project.project_id }"
@@ -101,8 +116,14 @@
         <!-- 卡片描述（模拟需求完整展示） -->
         <p class="card-desc">{{ truncateText(project.simulation_requirement, 55) }}</p>
 
-        <!-- 卡片操作区（hover 时显现：世界标识 / 删除空模拟 / 重试失败 / 删除） -->
+        <!-- 卡片操作区（hover 时显现：收藏 / 世界标识 / 删除空模拟 / 重试失败 / 删除） -->
         <div class="card-actions">
+          <button
+            class="card-action-btn fav-toggle"
+            :class="{ on: project.favorite }"
+            :title="project.favorite ? $t('history.unfavoriteHint') : $t('history.favoriteHint')"
+            @click="toggleFavorite(project, $event)"
+          >{{ project.favorite ? '★' : '☆' }} {{ $t('history.favorite') }}</button>
           <span v-if="isWorldProject(project)" class="world-tag" title="世界模拟">◈ WORLD</span>
           <button
             v-if="isEmptySimulation(project)"
@@ -179,6 +200,36 @@
                 </div>
                 <div class="modal-empty" v-else>{{ $t('history.noRelatedFiles') }}</div>
               </div>
+
+              <!-- 收藏管理：收藏 / 最佳流向 / 备注 -->
+              <div class="modal-section modal-fav-section">
+                <div class="modal-label">{{ $t('history.favorite') }}</div>
+                <div class="modal-fav-row">
+                  <button
+                    class="modal-fav-btn"
+                    :class="{ on: selectedProject.favorite }"
+                    :title="$t('history.favoriteHint')"
+                    @click="toggleFavorite(selectedProject)"
+                  >{{ selectedProject.favorite ? '★' : '☆' }}
+                    {{ selectedProject.favorite ? $t('history.favorite') : $t('history.favorite') }}</button>
+                  <button
+                    class="modal-fav-btn best"
+                    :class="{ on: selectedProject.is_best_flow }"
+                    :title="selectedProject.is_best_flow ? $t('history.removeBestHint') : $t('history.bestFlowHint')"
+                    @click="toggleBestFlow(selectedProject)"
+                  >👑 {{ $t('history.bestFlow') }}</button>
+                </div>
+                <div class="modal-best-hint">{{ $t('history.bestFlowOnly') }}</div>
+                <div class="modal-remark">
+                  <textarea
+                    class="remark-input"
+                    rows="2"
+                    :placeholder="$t('history.remarkPlaceholder')"
+                    :value="selectedProject.remark"
+                    @blur="saveRemark(selectedProject, $event)"
+                  ></textarea>
+                </div>
+              </div>
             </div>
 
             <!-- 推演回放分割线 -->
@@ -245,7 +296,7 @@
 import { ref, computed, onMounted, onUnmounted, onActivated, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { getSimulationHistory, deleteSimulation } from '../api/simulation'
+import { getSimulationHistory, deleteSimulation, updateSimulationFavorite } from '../api/simulation'
 import { deleteProject, resetProject } from '../api/graph'
 
 const router = useRouter()
@@ -260,10 +311,75 @@ const hoveringCard = ref(null)
 const historyContainer = ref(null)
 const selectedProject = ref(null)  // 当前选中的项目（用于弹窗）
 const loadError = ref('')           // 历史项目加载失败的告警信息
+const favOnly = ref(false)          // 只看收藏过滤
 let observer = null
 let isAnimating = false  // 动画锁，防止闪烁
 let expandDebounceTimer = null  // 防抖定时器
 let pendingState = null  // 记录待执行的目标状态
+
+// ============ 收藏 / 最佳流向 / 备注 ============
+const toggleFavOnly = () => {
+  favOnly.value = !favOnly.value
+  loadHistory()
+}
+
+// 卡片/详情切换收藏标记
+const toggleFavorite = async (project, event) => {
+  if (event) event.stopPropagation()
+  const id = project && (project.simulation_id || project.id)
+  if (!id) return
+  const target = !project.favorite
+  try {
+    const res = await updateSimulationFavorite(id, { favorite: target })
+    if (res && res.data) {
+      project.favorite = res.data.favorite
+      project.is_best_flow = res.data.is_best_flow || project.is_best_flow
+      project.remark = res.data.remark !== undefined ? res.data.remark : project.remark
+    } else {
+      project.favorite = target
+    }
+  } catch (e) {
+    alert(t('history.favoriteUpdateFailed') + '：' + (e?.message || t('history.favoriteError')))
+  }
+}
+
+// 详情：切换最佳流向（同项目唯一，前端直接乐观更新本地）
+const toggleBestFlow = async (project) => {
+  const id = project && (project.simulation_id || project.id)
+  if (!id) return
+  const target = !project.is_best_flow
+  const pid = project.project_id || undefined
+  try {
+    const res = await updateSimulationFavorite(id, { best_flow: target, ...(pid ? { project_id: pid } : {}) })
+    if (res && res.data) {
+      project.is_best_flow = res.data.is_best_flow
+      // 同项目唯一互斥：本地把同项目其它条目的最佳标记同步清除
+      if (res.data.is_best_flow && pid) {
+        projects.value.forEach(p => {
+          if (p !== project && p.project_id === pid) p.is_best_flow = false
+        })
+      }
+    } else {
+      project.is_best_flow = target
+    }
+  } catch (e) {
+    alert(t('history.favoriteUpdateFailed') + '：' + (e?.message || t('history.favoriteError')))
+  }
+}
+
+// 详情：保存备注（blur 触发）
+const saveRemark = async (project, event) => {
+  const id = project && (project.simulation_id || project.id)
+  if (!id) return
+  const val = (event && event.target && event.target.value) || ''
+  if ((project.remark || '') === val) return
+  project.remark = val
+  try {
+    await updateSimulationFavorite(id, { remark: val })
+  } catch (e) {
+    alert(t('history.favoriteUpdateFailed') + '：' + (e?.message || t('history.favoriteError')))
+  }
+}
 
 // 卡片布局配置 - 动态响应式：按视口宽度决定每行列数与卡片宽度
 const breakpoints = [
@@ -722,7 +838,7 @@ const loadHistory = async () => {
   try {
     loading.value = true
     loadError.value = ''
-    const response = await getSimulationHistory(20)
+    const response = await getSimulationHistory(20, favOnly.value ? 1 : null)
     if (response.success) {
       projects.value = response.data || []
     } else {
@@ -1071,6 +1187,15 @@ onUnmounted(() => {
   opacity: 0.5;
 }
 
+/* 收藏 / 最佳流向角标 */
+.badge-icon {
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: default;
+}
+.badge-icon.fav { color: #F59E0B; }
+.badge-icon.best { color: #B45309; }
+
 /* 轮数进度显示 */
 .card-progress {
   display: flex;
@@ -1335,6 +1460,19 @@ onUnmounted(() => {
   transition: all 0.15s ease;
   line-height: 1;
   margin-left: auto;
+}
+
+.card-action-btn.fav-toggle {
+  color: #B45309;
+  border-color: #F3D9A6;
+  background: #FFF7E8;
+  margin-left: 0;
+}
+
+.card-action-btn.fav-toggle.on {
+  color: #92400E;
+  border-color: #F5B861;
+  background: #FDEBC8;
 }
 
 .card-action-btn.retry {
@@ -1664,6 +1802,78 @@ onUnmounted(() => {
 
 .modal-section:last-child {
   margin-bottom: 0;
+}
+
+/* 收藏管理区块 */
+.modal-fav-section {
+  border-top: 1px solid #f3f4f6;
+  padding-top: 20px;
+  margin-top: 20px;
+}
+.modal-fav-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.modal-fav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  padding: 8px 16px;
+  border: 1px solid #F3D9A6;
+  border-radius: 6px;
+  background: #FFF7E8;
+  color: #B45309;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.modal-fav-btn:hover {
+  border-color: #F5B861;
+  background: #FDEBC8;
+}
+.modal-fav-btn.on {
+  color: #92400E;
+  border-color: #F5B861;
+  background: #FDEBC8;
+}
+.modal-fav-btn.best {
+  border-color: #E7D7C4;
+  background: #FBF5EE;
+  color: #8A5A2B;
+}
+.modal-fav-btn.best.on {
+  border-color: #D4AF7A;
+  background: #F5E5CC;
+  color: #6B4226;
+}
+.modal-best-hint {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: #9CA3AF;
+  margin: 8px 0 12px;
+  line-height: 1.4;
+}
+.remark-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.85rem;
+  color: #374151;
+  padding: 10px 12px;
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  background: #FFFFFF;
+  resize: vertical;
+  min-height: 40px;
+}
+.remark-input:focus {
+  outline: none;
+  border-color: #93C5FD;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .modal-label {

@@ -180,9 +180,24 @@ export const interviewAgents = (data) => {
  * 获取历史模拟列表（带项目详情）
  * 用于首页历史项目展示
  * @param {number} limit - 返回数量限制
+ * @param {boolean|string} favorite - 传 1 时只看收藏
  */
-export const getSimulationHistory = (limit = 20) => {
-  return service.get('/api/simulation/history', { params: { limit } })
+export const getSimulationHistory = (limit = 20, favorite = null) => {
+  const params = { limit }
+  if (favorite === true || favorite === 1 || favorite === '1') {
+    params.favorite = 1
+  }
+  return service.get('/api/simulation/history', { params })
+}
+
+/**
+ * 更新模拟流向收藏元数据（收藏 / 最佳流向 / 备注）
+ * @param {string} simulationId - 模拟ID
+ * @param {Object} data - { favorite?, best_flow?, remark?, project_id? }
+ * @returns {Promise} { success, data: { simulation_id, favorite, is_best_flow, remark } }
+ */
+export const updateSimulationFavorite = (simulationId, data = {}) => {
+  return service.patch(`/api/simulation/${simulationId}/favorite`, data)
 }
 
 /**
