@@ -5262,6 +5262,12 @@ onUnmounted(() => {
   .sim-controls { flex-direction: column; align-items: stretch; }
   .sim-field-wide { flex-basis: auto; }
   .sim-start { flex: none; width: 100%; }
+  .world-step-nav { flex-wrap: wrap; padding: 8px 12px; }
+  .world-search { margin-left: 0; min-width: 100%; }
+  .sim-event { grid-template-columns: 1fr; gap: 2px; }
+  .tree-node-row { gap: 6px; }
+  .sim-playback { flex-wrap: wrap; }
+  .sim-history-item { flex-wrap: wrap; }
 }
 @media (max-width: 480px) {
   /* 顶栏第二行：project-id / 导出 / 导入 / 助手 / 返回 在很窄时折行 */
