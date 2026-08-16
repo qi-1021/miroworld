@@ -895,6 +895,15 @@ const pollPrepareStatus = async () => {
 
       // 检查是否完成
       if (data.status === 'completed' || data.status === 'ready' || data.already_prepared) {
+        const innerFailed = data.result?.status === 'failed' || data.error
+        if (innerFailed) {
+          const reason = data.result?.error || data.error || t('common.unknownError')
+          addLog(t('log.prepareFailedWithError', { error: reason }))
+          stopPolling()
+          stopProfilesPolling()
+          emit('update-status', 'error')
+          return
+        }
         addLog(t('log.prepareComplete'))
         stopPolling()
         stopProfilesPolling()

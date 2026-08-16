@@ -71,7 +71,6 @@
             :buildProgress="buildProgress"
             :graphData="graphData"
             :systemLogs="systemLogs"
-            @next-step="handleNextStep"
           />
         </template>
       </div>
