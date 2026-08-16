@@ -1079,6 +1079,7 @@
     "failed": "Agent 调用失败",
     "quickStatus": "检查项目状态",
     "quickGraph": "构建世界图谱",
+    "quickExtract": "抽取时间线",
     "quickSim": "启动世界模拟",
     "quickCharacters": "生成人物档案",
     "quickReport": "生成最终报告",
