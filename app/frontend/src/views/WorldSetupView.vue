@@ -575,7 +575,7 @@
             <div class="sim-step-head">
               {{ $t('world.simStepLabel', { step: group.step }) }} · {{ group.time }}
             </div>
-            <div v-for="(e, ei) in group.events" :key="ei" class="sim-event">
+            <div v-for="(e, ei) in group.events" :key="ei" class="sim-event clickable" @click="openEventDetail(e)">
               <span class="sim-event-who">{{ e.character_name }}</span>
               <span class="sim-event-where">{{ e.location }}</span>
               <span class="sim-event-what">{{ e.action_desc }}</span>
@@ -1026,6 +1026,26 @@
         </div>
       </div>
 
+      <!-- 事件详情抽屉 -->
+      <div v-if="selectedEventDetail" class="assistant-modal-mask" @click.self="selectedEventDetail = null">
+        <div class="assistant-modal event-detail-modal">
+          <div class="assistant-head">
+            <span class="assistant-title">{{ $t('world.eventDetailTitle') }}</span>
+            <button class="assistant-close" @click="selectedEventDetail = null">×</button>
+          </div>
+          <div class="event-detail-body">
+            <div class="event-detail-row"><span class="ed-label">{{ $t('world.simStepLabel', { step: selectedEventDetail.step }) }}</span><span>{{ selectedEventDetail.time }}</span></div>
+            <div class="event-detail-row"><span class="ed-label">{{ $t('world.eventWho') }}</span><span>{{ selectedEventDetail.character_name }}</span></div>
+            <div class="event-detail-row"><span class="ed-label">{{ $t('world.eventWhere') }}</span><span>{{ selectedEventDetail.location }}</span></div>
+            <div class="event-detail-row"><span class="ed-label">{{ $t('world.eventAction') }}</span><span>{{ selectedEventDetail.action_desc }}</span></div>
+            <div class="event-detail-row"><span class="ed-label">{{ $t('world.eventResult') }}</span><span>{{ selectedEventDetail.result }}</span></div>
+            <div v-if="selectedEventDetail.links && selectedEventDetail.links.length" class="event-detail-row">
+              <span class="ed-label">{{ $t('world.eventLinks') }}</span><span>{{ selectedEventDetail.links.join(', ') }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 新手引导 -->
       <div v-if="showGuide" class="assistant-modal-mask guide-mask" @click.self="closeGuide">
         <div class="assistant-modal guide-modal">
@@ -1333,6 +1353,10 @@ const graphPosMap = computed(() => {
   return m
 })
 const selectedGraphEvent = ref('')
+const selectedEventDetail = ref(null)
+function openEventDetail(e) {
+  selectedEventDetail.value = e
+}
 const collapsedRoots = ref(new Set())
 function toggleRoot(id) {
   const next = new Set(collapsedRoots.value)
@@ -3481,6 +3505,12 @@ onUnmounted(() => {
   font-size: 12px;
   align-items: start;
 }
+.sim-event.clickable {
+  cursor: pointer;
+}
+.sim-event.clickable:hover {
+  background: #F7F9E8;
+}
 .sim-event:last-child {
   border-bottom: none;
 }
@@ -4957,6 +4987,27 @@ onUnmounted(() => {
 .guide-modal {
   width: 520px;
   max-width: 92vw;
+}
+.event-detail-modal {
+  width: 560px;
+  max-width: 94vw;
+}
+.event-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.event-detail-row {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ed-label {
+  flex-shrink: 0;
+  min-width: 60px;
+  font-weight: 700;
+  color: #666;
 }
 .guide-body {
   display: flex;
