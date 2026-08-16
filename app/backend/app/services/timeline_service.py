@@ -36,8 +36,19 @@ TIMELINE_ROOT = os.path.join(_APP_DATA, 'world-timeline')
 
 # 单块文本上限
 MAX_CHUNK_CHARS = 2000
+# 长文本走 map-reduce 分块的字符阈值：超过此值时按自然边界（空行/章节标题/时间标记）切块，
+# 每个大块内再交给逐事件抽取，避免一次性把整段长文塞进单次 LLM 调用而失败/超长。
+LONG_TEXT_CHUNK_CHARS = 12000
 # 单块最大 LLM 调用次数（1 原始 + 1 重试）
 MAX_LLM_ATTEMPTS = 2
+# 单 chunk 独立抽取的额外重试次数（期望总调用 = MAX_LLM_ATTEMPTS + CHUNK_RETRIES）。
+# 连续失败达到上限后，跳过该 chunk 并记录 partial（不把整个任务标记 failed）。
+CHUNK_RETRIES = 2
+# 线程防误拆阈值：主线程事件占比 >= 该值 且 其余线程各自事件数 <= 小线程上限 时才合并。
+MAINTHREAD_DOMINANCE = 0.60
+SMALL_THREAD_EVENT_MAX = 3
+# 真正的平行叙事最少事件数（少于该值视为主线误拆的碎片，应并入主线）
+PARALLEL_THREAD_EVENT_MIN = 4
 # 分叉推演批 1 完成后等待运行中补充设定的窗口（秒）
 FORK_GUIDANCE_WINDOW = 15.0
 
@@ -559,9 +570,10 @@ def _thread_hint_block(threads: List[Dict[str, Any]]) -> str:
 # 结构类型枚举：single=单线并行、parallel=多线并行、
 #   tree=树状(分支演进)、network=网状(多线交织)、meta=元叙事/嵌套(寓言/高维/回忆嵌套)、mixed=混合复杂
 STRUCTURE_TYPES = (
-    "single", "parallel", "tree", "network", "meta", "mixed",
+    "linear", "single", "parallel", "tree", "network", "meta", "mixed",
 )
 _STRUCTURE_LABELS = {
+    "linear": "单线叙事",
     "single": "单线叙事",
     "parallel": "并行多线",
     "tree": "树状/分支演进",
@@ -688,6 +700,175 @@ def structure_hint_block(structure: Optional[Dict[str, Any]]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# 自动结构判定（deterministic，抽取后基于已落事件/线程计算，不依赖 LLM）
+# ---------------------------------------------------------------------------
+# 判定阈值（集中可调）
+_CLASSIFY_PARALLEL_MIN = 2          # 需要至少 2 个非空线程才算 parallel
+_CLASSIFY_PARALLEL_EVENTS = 4       # 每个拟判为并行的线程至少要有的事件数
+_CLASSIFY_TREE_LINK_RATIO = 0.25    # parent_event_id 占比达到该值判为 tree
+_CLASSIFY_NETWORK_LINK_RATIO = 0.30 # linked_event_ids 多对多密度达到该值判为 network
+_CLASSIFY_META_TIMELESS_RATIO = 0.60# 无时间锚事件占比达到该值且组织松散判为 meta
+
+
+def _meta_dimension_ratio(events: List[Dict[str, Any]]) -> float:
+    """估算事件落在非 main 维度（寓言/高维/回忆等）的比例，用于 meta 判定。"""
+    if not events:
+        return 0.0
+    nonmain = sum(1 for e in events
+                  if str(e.get("dimension") or "main").strip() not in ("", "main"))
+    return nonmain / len(events)
+
+
+def _timeless_ratio(events: List[Dict[str, Any]]) -> float:
+    """估算“缺乏明确时间锚”的事件占比（time_kind=unspecified 或无可推断 sort）。"""
+    if not events:
+        return 0.0
+    timeless = 0
+    for e in events:
+        tk = str(e.get("time_kind") or "").strip()
+        if not tk or tk == "unspecified":
+            timeless += 1
+    return timeless / len(events)
+
+
+def _tree_ratio(events: List[Dict[str, Any]]) -> float:
+    if not events:
+        return 0.0
+    with_parent = sum(1 for e in events if str(e.get("parent_event_id") or "").strip())
+    return with_parent / len(events)
+
+
+def _link_density(events: List[Dict[str, Any]]) -> float:
+    """多对多跨事件链接密度：带 linked_event_ids 的事件占比 + 平均每条链接数。"""
+    if not events:
+        return 0.0
+    linked = [e for e in events if (e.get("linked_event_ids") or [])]
+    if not linked:
+        return 0.0
+    links = sum(len(e.get("linked_event_ids") or []) for e in events)
+    return (len(linked) / len(events)) + min(1.0, links / max(1, len(events)))
+
+
+def classify_structure(events: List[Dict[str, Any]],
+                       threads: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """基于已抽事件/线程，确定性判结构类型（linear/parallel/tree/network/meta）。
+
+    规则（优先级从高到低，先判特殊结构，再判并行/单线）：
+    - meta   ：非 main 维度占比高 且 事件组织松散（缺时间锚比例高）；
+    - tree   ：parent_event_id 占比较高，存在父->子分支层级；
+    - network：linked_event_ids 高密度多对多（且 links 平均 ≥3）；
+    - parallel：至少 2 个非空线程，每个足够多事件（持续支线），且整体时间有跳变/并行；
+    - linear ：单线程或全部归入 main，无跨线程边，朴素先后推进。
+
+    返回 {"type", "confidence", "reason"}；events 为空时返回 linear（置信度 0）。
+    该判定是 LLM 结构判断（detect_structure_type）的确定性补充：抽取后据实计算，
+    与 LLM 判断取“更高证据链”共同决定最终落盘结构（见 _finalize_structure）。
+    """
+    events = events or []
+    if not events:
+        return {"type": "linear", "confidence": 0.0, "reason": "无事件，默认线性"}
+
+    reasons: List[str] = []
+
+    # 线索/线程分布
+    thread_counts: Dict[str, int] = {}
+    for e in events:
+        t = str(e.get("thread_id") or e.get("thread_name") or "main").strip() or "main"
+        thread_counts[t] = thread_counts.get(t, 0) + 1
+    non_main_threads = {k: v for k, v in thread_counts.items()
+                        if _thread_norm_key(k) not in _MAINTHREAD_KEYS}
+
+    # --- meta：存在明显非 main 维度 + 组织松散 ---
+    if _meta_dimension_ratio(events) >= 0.30 and _timeless_ratio(events) >= _CLASSIFY_META_TIMELESS_RATIO:
+        reasons.append("存在寓言/高维/回忆等非主维度且时间锚稀疏")
+        return {"type": "meta", "confidence": 0.85, "reason": "；".join(reasons)}
+
+    # --- tree：父->子分支层级 ---
+    tr = _tree_ratio(events)
+    if tr > 0 and tr >= _CLASSIFY_TREE_LINK_RATIO and len(events) >= 4:
+        reasons.append(f"parent_event_id 层级明显（占比 {tr:.0%}）")
+        return {"type": "tree", "confidence": min(0.9, 0.5 + tr), "reason": "；".join(reasons)}
+
+    # --- network：多对多链接高密度 ---
+    ld = _link_density(events)
+    if ld >= _CLASSIFY_NETWORK_LINK_RATIO:
+        reasons.append(f"多对多事件链接密度高（score {ld:.2f}）")
+        return {"type": "network", "confidence": min(0.9, 0.45 + ld),
+                "reason": "；".join(reasons)}
+
+    # --- parallel：至少 2 个非空线程，每个足够多事件，且有并行跳变 ---
+    if len(non_main_threads) >= _CLASSIFY_PARALLEL_MIN:
+        sustained = [k for k, v in non_main_threads.items() if v >= _CLASSIFY_PARALLEL_EVENTS]
+        if len(sustained) >= _CLASSIFY_PARALLEL_MIN:
+            reasons.append(
+                f"{len(sustained)} 条持续线程（各≥{_CLASSIFY_PARALLEL_EVENTS} 事件）")
+            # 若存在 parallel_group 或维度区分，进一步佐证并行
+            groups = set(str(e.get("parallel_group") or "").strip() for e in events)
+            dims = set(str(e.get("dimension") or "main").strip() for e in events)
+            conf = 0.7
+            if len(groups - {""}) > 1:
+                conf = min(0.9, conf + 0.1)
+                reasons.append("存在并行分组")
+            if len(dims - {"main"}) > 0:
+                conf = min(0.9, conf + 0.1)
+                reasons.append("多维度")
+            return {"type": "parallel", "confidence": conf, "reason": "；".join(reasons)}
+
+    # --- linear：单线程 / 或虽有碎片但主线主导 ---
+    ratio_main = (len(events) - sum(non_main_threads.values())) / len(events)
+    if len(non_main_threads) == 0 or ratio_main >= MAINTHREAD_DOMINANCE:
+        conf = 0.9 if len(non_main_threads) == 0 else min(0.8, ratio_main)
+        reasons.append(
+            f"单主线主导（主线占比 {ratio_main:.0%}，非主线线程 {len(non_main_threads)} 条）")
+        return {"type": "linear", "confidence": conf, "reason": "；".join(reasons)}
+
+    reasons.append("多线程但证据不足，保守判为 linear")
+    return {"type": "linear", "confidence": 0.55, "reason": "；".join(reasons)}
+
+
+def finalize_structure(events: List[Dict[str, Any]],
+                       threads: Optional[List[Dict[str, Any]]] = None,
+                       llm_structure: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """把抽取后据实计算的确定性判定与 LLM 预判合并，得出最终落盘结构。
+
+    - deterministic = classify_structure(events, threads)：证据链来自真实事件；
+    - llm_structure = detect_structure_type 的预判（可能缺失）。
+    - 当二者不一致且 deterministic 置信度更高时，以 deterministic 为准；
+      否则保留 llm 预判（LLM 能看到整体叙事上下文，可补充确定性判据漏掉的语义）。
+    """
+    det = classify_structure(events, threads)
+    if llm_structure and isinstance(llm_structure, dict):
+        llm_type = _normalize_structure_type(llm_structure.get("type"))
+        llm_conf = _float_or(llm_structure.get("confidence"), 0.5)
+        det_type = det.get("type")
+        if det_type == llm_type:
+            det["confidence"] = max(det.get("confidence", 0.0), llm_conf)
+            det["reason"] = (det.get("reason") or "") + "；与 LLM 预判一致"
+            det["method"] = "deterministic+llm"
+            return det
+        if det_type == "linear" and llm_type == "single":
+            # single ↔ linear 等价命名，归一化为 linear
+            det["confidence"] = max(det.get("confidence", 0.0), llm_conf)
+            det["reason"] = (det.get("reason") or "") + "；LLM 预判 single（等价线性）"
+            det["method"] = "deterministic+llm"
+            return det
+        # 与 LLM 冲突：以更高置信度为准
+        if det.get("confidence", 0.0) >= llm_conf:
+            det["reason"] = (det.get("reason") or "") + f"；覆盖 LLM 预判 {llm_type}"
+            det["method"] = "deterministic"
+            return det
+        return {
+            "type": llm_type,
+            "confidence": llm_conf,
+            "reason": (str(llm_structure.get("reason") or "") or f"LLM 预判 {llm_type}"),
+            "strategy": str(llm_structure.get("strategy") or ""),
+            "method": "llm",
+        }
+    det["method"] = "deterministic"
+    return det
+
+
+# ---------------------------------------------------------------------------
 # 线程/时间线归一化合并
 # ---------------------------------------------------------------------------
 # 主线/占位名的归一化目标
@@ -811,7 +992,112 @@ def _reconcile_threads(
             add_canon(c)
         assign(e, c)
 
+    # 主线防误拆合并：主线程占比 ≥ 60% 且其余线程事件数 ≤ 3 时，把这些“碎片线程”
+    # 并入主线，并把原线程名保留为 event 的 thread_aliases，避免把同一条主线前后段
+    # 误拆成多个 thread（用户核心痛点）。仅当这些线程不是“真正平行叙事”才并。
+    # 若结构已被明确判定为 parallel（或 single 已全归 main），不在此合并——保留真正的
+    # 并行叙事（既有 test_multiline_merges_aliases 期望并行线被保留）。
+    if structure_type not in ("parallel", "single"):
+        _merge_small_threads_to_main(events)
+
     return events
+
+
+# 判定某事件是否来自“真正平行叙事”，不足以并入主线（保留为独立线程）。
+#   明确 POV 切换 / 明确并线 / 人物支线持续 ≥ PARALLEL_THREAD_EVENT_MIN 事件 才保留。
+def _is_sustained_thread(events: List[Dict[str, Any]], thread_key: str,
+                         min_events: int = PARALLEL_THREAD_EVENT_MIN) -> bool:
+    """判断某非主线线程是否应保留为独立平行叙事（而非主线误拆的碎片）。
+
+    - 片段事件数 >= min_events → 持续支线，保留；
+    - 非 main 维度且被显式标注 dimension（寓言/高维等）→ 独立维度，保留；
+    - 其余（碎片/偶发提一句）→ 可并入主线。
+    """
+    count = sum(1 for e in events
+                if (_thread_norm_key(str(e.get("thread_id") or "")) == thread_key)
+                or (_thread_norm_key(str(e.get("thread_name") or "")) == thread_key))
+    if count >= min_events:
+        return True
+    # 维度的独立叙事（寓言/高维/回忆层）即使片段少也应保留维度语义
+    for e in events:
+        if _thread_norm_key(str(e.get("thread_id") or "")) == thread_key or \
+           _thread_norm_key(str(e.get("thread_name") or "")) == thread_key:
+            if str(e.get("dimension") or "main").strip() not in ("", "main"):
+                return True
+    return False
+
+
+def _merge_small_threads_to_main(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """把主线程主导时的小线程并入主线，返回合并审计 dict。
+
+    规则（幂等、可审计）：
+    - 统计各线程事件数，找“主线”（显式 main 优先，否则事件最多者）；
+    - 若主线占比 >= MAINTHREAD_DOMINANCE 且每条非主线线程事件数 <= SMALL_THREAD_EVENT_MAX，
+      且该线程不是持续平行叙事（_is_sustained_thread 为 False）→ 并入主线；
+    - 合并时保留原 thread_id/thread_name 到 event['thread_aliases']（审计轨迹）；
+      event 的 thread_id/thread_name 重置为主线，parallel_group 清空，dimension 归一为 main。
+    返回 {"merged": {tid: name}, "ratio": float, "count": int}，供任务日志/落盘。
+    """
+    if not events:
+        return {"merged": {}, "ratio": 1.0, "count": 0}
+    meta: Dict[str, Any] = {"merged": {}, "ratio": 1.0, "count": 0}
+
+    # 统计线程分布（按归一化 key）
+    counts: Dict[str, int] = {}
+    for e in events:
+        t = str(e.get("thread_id") or e.get("thread_name") or "").strip() or "main"
+        counts[t] = counts.get(t, 0) + 1
+    if len(counts) <= 1:
+        return meta
+
+    # 主线 = 显式 main 键，否则事件最多者
+    main_key = None
+    for k in counts:
+        if _thread_norm_key(k) in _MAINTHREAD_KEYS:
+            main_key = k
+            break
+    if main_key is None:
+        main_key = max(counts, key=counts.get)
+
+    main_count = counts[main_key]
+    ratio = main_count / len(events)
+    meta["ratio"] = ratio
+    meta["main"] = main_key
+
+    others = {k: v for k, v in counts.items() if k != main_key}
+    if ratio < MAINTHREAD_DOMINANCE:
+        return meta
+
+    merged_threads: Dict[str, str] = {}
+    for tkey, tcount in others.items():
+        if tcount > SMALL_THREAD_EVENT_MAX:
+            continue  # 不小，保留为候选平行线
+        # 排除被判定为真正平行叙事的线程（持续支线/独立维度）
+        if _is_sustained_thread(events, _thread_norm_key(tkey)):
+            continue
+        merged_threads[tkey] = tkey
+        # 实际执行合并（幂等：已合并的事件 thread 已是主线则跳过）
+        for e in events:
+            cur = str(e.get("thread_id") or e.get("thread_name") or "").strip() or "main"
+            cur_name = str(e.get("thread_name") or e.get("thread_id") or "").strip()
+            if cur == tkey or _thread_norm_key(cur) == _thread_norm_key(tkey):
+                aliases = e.setdefault("thread_aliases", [])
+                # 审计轨迹：优先记录显示名（thread_name），其次用 thread_id；
+                # 同时保留 raw thread_id 便于溯源
+                alias_label = cur_name or cur
+                if alias_label not in aliases:
+                    aliases.append(alias_label)
+                if cur and cur != alias_label and cur not in aliases:
+                    aliases.append(cur)
+                e["thread_id"] = main_key if _thread_norm_key(main_key) not in _MAINTHREAD_KEYS else ""
+                e["thread_name"] = "" if _thread_norm_key(main_key) in _MAINTHREAD_KEYS else main_key
+                e["parallel_group"] = ""
+                if str(e.get("dimension") or "main").strip() in ("", "main"):
+                    e["dimension"] = "main"
+
+    meta["merged"] = merged_threads
+    meta["count"] = len(merged_threads)
+    return meta
 
 
 # 结构类型持久化（随 threads.json 一起存 timeline metadata，供结构视图前端使用）
@@ -833,6 +1119,7 @@ def save_structure(project_id: str, structure: Optional[Dict[str, Any]]) -> bool
             "confidence": structure.get("confidence"),
             "reason": structure.get("reason", ""),
             "strategy": structure.get("strategy", ""),
+            "method": structure.get("method", ""),
             "updated_at": datetime.now().isoformat(timespec="seconds"),
         })
         return True
@@ -1047,8 +1334,118 @@ def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> List[str]:
     return chunks
 
 
-# ---------------------------------------------------------------------------
-# 任务状态管理（进程内存 + 落盘持久化）
+# 长文本 map-reduce：自然的章节/时间标记边界。用于把超长文本切成“有语义边界”的大块，
+# 避免在一个 chunk 中间硬切导致跨块事件被腰斩。匹配：年份/纪年、章节标题、分区标题。
+_LONG_BOUNDARY_RE = re.compile(
+    r'^(?:第[一二三四五六七八九十百千万0-9]+[章节卷回部分篇集]'
+    r'|(?:\d{2,4}年|\d+[-/]\d+|泰历[\d]+|[\d]{2,4}\s*(?:年|纪元)|\d+-\d+年)'
+    r'|[-—–]{3,}|[=*]{3,}|\bCHAPTER\b|\bChapter\b|\bPART\b)',
+    re.MULTILINE,
+)
+
+
+def split_long_blocks(text: str, max_chars: int = LONG_TEXT_CHUNK_CHARS) -> List[str]:
+    """把超长文本按自然边界（章节标题/时间标记/空行分隔段）切成 blocks。
+
+    与 chunk_text 的区别：chunk_text 面向“每条事件抽取单元”做精细断句（<=2000）；
+    本函数面向“map-reduce 的分块”——尽量在语义边界处切，避免在事件中间腰斩。
+    若文本不超长则返回单块整篇（不做切分语义损失）。
+    """
+    text = text or ""
+    if len(text) <= max_chars:
+        return [text] if text.strip() else []
+    # 先按章节标题/时间标记/分隔线把文本切成“自然段”。
+    marker_positions = []
+    for m in _LONG_BOUNDARY_RE.finditer(text):
+        # 找到该行行首
+        line_start = text.rfind("\n", 0, m.start()) + 1
+        marker_positions.append(line_start)
+    marker_positions = sorted(set(marker_positions))
+
+    if not marker_positions:
+        # 无自然边界：退化用空行分段，仍无则按 max 硬切
+        para_positions = []
+        prev = 0
+        for m in re.finditer(r'\n\s*\n', text):
+            para_positions.append(m.end())
+        breaks = [p for p in para_positions if p < len(text)]
+        if not breaks:
+            return [text[i:i + max_chars] for i in range(0, len(text), max_chars)]
+        breaks = sorted(set(breaks + [len(text)]))
+        blocks = []
+        start = 0
+        for b in breaks:
+            if b - start >= max_chars:
+                blocks.append(text[start:b].strip())
+                start = b
+        if start < len(text) and text[start:].strip():
+            blocks.append(text[start:].strip())
+        return [b for b in blocks if b]
+
+    breaks = [p for p in marker_positions if p < len(text)]
+    breaks = sorted(set(breaks + [len(text)]))
+    blocks = []
+    start = 0
+    for b in breaks:
+        # 只在与前一段累计超过上限处打断，避免过多细碎块
+        if b - start >= max_chars:
+            blocks.append(text[start:b].strip())
+            start = b
+    if start < len(text) and text[start:].strip():
+        blocks.append(text[start:].strip())
+    return [b for b in blocks if b]
+
+
+def chunk_text_for_extract(text: str) -> List[str]:
+    """抽取用分块入口：长文本（> LONG_TEXT_CHUNK_CHARS）走 map-reduce 语义分块，
+    否则用既有的逐事件 chunk_text。返回块列表（顺序化，hash 稳定）。
+    """
+    if not text or not text.strip():
+        return []
+    if len(text) > LONG_TEXT_CHUNK_CHARS:
+        blocks = split_long_blocks(text)
+        # 每个大块内部再按逐事件上限切成小 chunk，保持逐块 LLM 抽取粒度稳定
+        out: List[str] = []
+        for b in blocks:
+            out.extend(chunk_text(b))
+        return out
+    return chunk_text(text)
+
+
+def _cross_chunk_merge(events: List[Dict[str, Any]],
+                       threads: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    """map-reduce 的跨块合并：把分块各自抽取的事件，按“同人物+连续时间+同主线”
+    归并成稳定的事件/线程，避免相同事件在块边界被重复抽取或主线被切散。
+
+    具体策略（确定性、幂等）：
+    - 事件级去重：复用 _dedupe_key 的近义判定会把跨块重复的相同 summary 去重；
+    - 线程级归并：同实体/同场景 + 时间上连续跳变 → 归一为同一线程
+      （用 _reconcile_threads 的 canonical 能力做别名合并）。
+    - 归一化 sort：按时间锚排序供下游复用。
+    """
+    if not events:
+        return events
+    # 先做一次跨块事件近似去重（按 summary + 人物 + 线程的相似度）
+    deduped: List[Dict[str, Any]] = []
+    seen: Dict[str, str] = {}
+    for e in events:
+        key = _dedupe_key(e)
+        if key in seen:
+            # 同 key 已存在：保留置信度更高的
+            existing = seen[key]
+            if _float_or(e.get("confidence"), 0.0) > _float_or(existing.get("confidence"), 0.0):
+                deduped[deduped.index(existing)] = e
+                seen[key] = e
+            continue
+        seen[key] = e
+        deduped.append(e)
+    # 线程别名归一（依赖 _reconcile_threads 的 canonical 合并能力；structure=None 走通用路径）
+    try:
+        _reconcile_threads(deduped, None, threads)
+    except Exception:
+        pass
+    deduped.sort(key=lambda e: (e.get("sort_lower") or 0))
+    return deduped
 #
 # 每个任务 dict 除旧字段（status/total_chunks/done_chunks/llm_ok/heuristic/
 # message，保持前端兼容）外，新增：
@@ -1318,6 +1715,9 @@ def _extract_task_body(project_id: str, source: str, task_id: str, resume: bool 
     from ..models.task import TaskStatus
     llm_ok_count = 0
     heuristic_count = 0
+    skipped_chunks = 0
+    # 本 run 内是否至少有一个 chunk 的 LLM 抽取成功（用于区分“网关整体可用但某块异常” vs “网关整体宕机”）
+    llm_any_ok = False
     all_events: List[Dict[str, Any]] = []
     threads: List[Dict[str, Any]] = []
     structure: Optional[Dict[str, Any]] = None
@@ -1333,7 +1733,7 @@ def _extract_task_body(project_id: str, source: str, task_id: str, resume: bool 
         else:
             text = _source_text(project_id, story=False)
 
-        chunks = chunk_text(text)
+        chunks = chunk_text_for_extract(text)
         total = len(chunks)
         _task_log(task_id, f"源文本已分为 {total} 块")
         _update(total_chunks=total, done_chunks=0, status="running", message="开始抽取",
@@ -1435,22 +1835,52 @@ def _extract_task_body(project_id: str, source: str, task_id: str, resume: bool 
 
             used = "heuristic"
             events = None
+            chunk_error = ""
             if llm is not None:
                 _task_log(task_id, f"第 {i + 1}/{total} 块开始 LLM 抽取")
-                for attempt in range(MAX_LLM_ATTEMPTS):
+                # 重试策略：MAX_LLM_ATTEMPTS 次原始尝试 + CHUNK_RETRIES 次补偿重试。
+                # 若本 run 已成功过至少一个 chunk（说明网关可用、是这块异常），连续失败
+                # 就把该 chunk 跳过并记 partial；若连一个 chunk 都没成功过（疑似网关宕机），
+                # 则回退启发式兜底，避免整条时间线出现空洞（兼容既有 fallback 语义）。
+                attempts = MAX_LLM_ATTEMPTS + CHUNK_RETRIES
+                for attempt in range(attempts):
                     try:
                         events = _llm_extract_chunk(llm, chunk, thread_hint, structure_hint)
                         if events:
                             used = "llm"
+                            llm_any_ok = True
                         break
-                    except Exception:
-                        if attempt == 0:
-                            logger.warning(f"[{task_id}] chunk {i} LLM 失败，重试 {attempt+1}")
-                            _task_log(task_id, f"第 {i + 1} 块 LLM 失败，重试")
-                        else:
-                            logger.warning(f"[{task_id}] chunk {i} 重试仍失败，走启发式")
-                            _task_log(task_id, f"第 {i + 1} 块重试仍失败，降级启发式")
+                    except Exception as e:
+                        chunk_error = str(e)[:200]
+                        if attempt < attempts - 1:
+                            logger.warning(f"[{task_id}] chunk {i} LLM 失败，重试 {attempt + 1}: {e}")
+                            _task_log(task_id, f"第 {i + 1} 块 LLM 失败，重试（{attempt + 1}/{attempts}）")
+                if events is None and chunk_error and llm_any_ok:
+                    # 网关可用但该块连续失败：跳过并记录 partial，不把整个任务标记失败
+                    skipped_chunks += 1
+                    logger.warning(f"[{task_id}] chunk {i} 多次失败，跳过并记 partial: {chunk_error}")
+                    _task_log(task_id, f"第 {i + 1} 块连续失败（{attempts} 次），跳过该块（partial）")
+                    progress_by_index[i] = {
+                        "index": i,
+                        "hash": h,
+                        "method": "llm",
+                        "status": "skipped",
+                        "error": chunk_error,
+                        "events": [],
+                    }
+                    _save_extract_progress(
+                        project_id,
+                        source,
+                        [progress_by_index[k] for k in sorted(progress_by_index) if k >= 0],
+                    )
+                    pct = round((i + 1) / total * 100) if total else 0
+                    _update(done_chunks=i + 1, llm_ok=llm_ok_count, heuristic=heuristic_count,
+                            progress=pct, skipped=skipped_chunks,
+                            message=f"已处理 {i + 1}/{total} 块（跳过失败块）",
+                            stage=f"第 {i + 1} 块失败已跳过（partial）")
+                    continue
             if events is None:
+                # 网关整体不可用（llm None）或疑似宕机（无任何 LLM 成功）→ 启发式兜底
                 events = _heuristic_extract_chunk(chunk, i, source)
                 used = "heuristic"
 
@@ -1466,6 +1896,8 @@ def _extract_task_body(project_id: str, source: str, task_id: str, resume: bool 
                 "index": i,
                 "hash": h,
                 "method": used,
+                "status": "ok" if events else "skipped",
+                "error": "",
                 "events": normalized_events,
             }
             # 每块完成后立即落盘断点，失败后也可从已成功块续跑
@@ -1485,8 +1917,26 @@ def _extract_task_body(project_id: str, source: str, task_id: str, resume: bool 
                     message=f"已处理 {i + 1}/{total} 块",
                     stage=f"正在抽取 {i + 1}/{total} 块（{'LLM' if used == 'llm' else '启发式'}）")
 
-        # 线程/时间线合并：修复同一主时间线前后段被拆成不同线程的问题
+        # 线程/时间线合并：修复同一主时间线前后段被拆成不同线程的问题。
+        # _reconcile_threads 内部会做 canon 归一 + 主线防误拆合并（parallel 结构下不并）。
         _task_log(task_id, "合并同名/同主线时间线分段...")
+        _reconcile_threads(all_events, structure, threads)
+        merged_events = sum(1 for e in all_events if (e.get("thread_aliases") or []))
+        if merged_events:
+            _task_log(task_id, f"已并入主线 {merged_events} 条事件（原线程名记入 thread_aliases）")
+
+        # 自动结构判定：抽取后据实计算，与 LLM 预判合并后落盘（供结构视图 deterministc 展示）
+        final_structure = finalize_structure(all_events, threads, structure)
+        save_structure(project_id, final_structure)
+        _task_log(
+            task_id,
+            f"时间线结构判定：{_STRUCTURE_LABELS.get(final_structure.get('type'), final_structure.get('type'))}"
+            f"（method={final_structure.get('method')}, 置信度 {final_structure.get('confidence') or 0:.0f}）",
+        )
+
+        # 跨块/跨线程合并（map-reduce 后的事件近似去重 + 别名归一）
+        all_events = _cross_chunk_merge(all_events, threads)
+        # 再次按结构定制（cross-chunk 可能引入新线程名）
         _reconcile_threads(all_events, structure, threads)
 
         # 排序 + 合并去重 + 写库（项目级锁内重读最新时间线，避免与并行任务互相覆盖）
@@ -1502,6 +1952,15 @@ def _extract_task_body(project_id: str, source: str, task_id: str, resume: bool 
             _task_log(task_id, "源文本为空，未抽取到事件")
             _update(status="completed", done_chunks=0, llm_ok=0, heuristic=0, progress=100,
                     stage="完成", message="源文本为空，未抽取到事件")
+        elif skipped_chunks > 0:
+            _task_log(
+                task_id,
+                f"完成（partial）：{skipped_chunks} 块失败已跳过，"
+                f"{llm_ok_count} 块 LLM、{heuristic_count} 块启发式（共 {len(all_events)} 事件）",
+            )
+            _update(status="partial_failed", progress=100, stage="完成（部分跳过）",
+                    skipped=skipped_chunks,
+                    message=f"完成，{skipped_chunks} 块失败已跳过，其余正常抽取")
         elif heuristic_count > 0:
             _task_log(task_id, f"完成：{llm_ok_count} 块 LLM、{heuristic_count} 块启发式降级（共 {len(all_events)} 事件）")
             _update(status="partial_failed", progress=100, stage="完成（部分降级）",

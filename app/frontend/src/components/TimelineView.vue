@@ -316,42 +316,58 @@
       </div>
       <!-- /并行模式 -->
 
-      <!-- 树状模式：可展开树 + 结构视图 -->
+      <!-- 树状模式：可展开树状 SVG 结构图 -->
       <div v-else-if="displayMode === 'tree'" class="tl-tree-mode">
-        <div class="tl-tree-toolbar">
-          <span class="tl-tree-hint">{{ $t('timeline.structureTree') }} · {{ $t('timeline.treeToggle') }}</span>
+        <div class="tl-mode-head">
+          <span class="tl-tree-hint">{{ $t('timeline.structureTree') }}</span>
+          <span class="mini-legend">
+            <span class="lg-item"><i class="lg-dot dot-ink"></i>{{ $t('timeline.structure.nodePast') }}</span>
+            <span class="lg-item"><i class="lg-dot dot-future"></i>{{ $t('timeline.kindFuture') }}</span>
+          </span>
         </div>
-        <div v-if="structureData.treeRows.length" class="tl-tree">
-          <div v-for="row in structureData.treeRows" :key="row.event.event_id" class="tree-row" :style="{ paddingLeft: (row.depth * 22) + 'px' }">
-            <span class="tree-depth" v-if="row.depth">└─</span>
-            <span class="tree-summary" @click="selectEvent(row.event)">{{ row.event.summary }}</span>
-          </div>
+        <div v-if="pageTreeNodes.length" class="tl-net-wrap">
+          <svg v-if="pageTreeLinks.length" class="struc-svg" viewBox="0 0 900 560" @click.self="clearNetSelection">
+            <g v-for="(s, i) in pageTreeLinks" :key="'tl' + i">
+              <path class="tree-edge" :d="treeBezier(s.a, s.b)" />
+            </g>
+            <g v-for="n in pageTreeNodes" :key="n.id" class="tl-net-node"
+               :class="{ active: selectedEvent && n.event_id === selectedEvent.event_id }"
+               :transform="'translate(' + n.x + ',' + n.y + ')'" @click="selectEvent(n.event)">
+              <title>{{ n.label }}</title>
+              <circle class="tree-node-shape" :class="{ 'future-node': n.future }" :r="n.r"
+                      :style="treeNodeStyle(n)"></circle>
+              <text class="tl-net-label" text-anchor="middle" dy=".32em">{{ n.shortLabel }}</text>
+            </g>
+          </svg>
+          <svg v-else class="struc-svg" viewBox="0 0 900 560">
+            <g v-for="n in pageTreeNodes" :key="n.id" class="tl-net-node"
+               :class="{ active: selectedEvent && n.event_id === selectedEvent.event_id }"
+               :transform="'translate(' + n.x + ',' + n.y + ')'" @click="selectEvent(n.event)">
+              <title>{{ n.label }}</title>
+              <circle :class="'tree-node-shape'" :r="n.r"
+                      :style="treeNodeStyle(n)"></circle>
+              <text class="tl-net-label" text-anchor="middle" dy=".32em">{{ n.shortLabel }}</text>
+            </g>
+          </svg>
         </div>
         <div v-else class="tl-state">{{ $t('timeline.structureEmpty') }}</div>
       </div>
       <!-- /树状模式 -->
 
-      <!-- 网状 / 元叙事模式：简化 SVG 关联图 -->
+      <!-- 网状 / 元叙事模式：力导向 SVG 关联图 -->
       <div v-else-if="displayMode === 'network' || displayMode === 'meta'" class="tl-net-mode">
-        <div class="tl-net-title">{{ displayMode === 'meta' ? $t('timeline.metaTitle') : $t('timeline.networkTitle') }}</div>
-        <svg v-if="netNodes.length" class="tl-net-svg" :viewBox="'0 0 ' + netW + ' ' + netH" @click.self="selectedEvent = null">
-          <line
-            v-for="(link, i) in netLinks"
-            :key="'l' + i"
-            :x1="link.a.x" :y1="link.a.y" :x2="link.b.x" :y2="link.b.y"
-            class="tl-net-link"
-          />
-          <g
-            v-for="n in netNodes"
-            :key="n.id"
-            class="tl-net-node"
-            :class="{ active: selectedEvent && String(n.id) === 'event_' + String(selectedEvent.event_id) }"
-            @click="selectGraphNode(n)"
-          >
-            <circle :cx="n.x" :cy="n.y" :r="n.r" :style="netNodeStyle(n)"></circle>
-            <text :x="n.x" :y="n.y" class="tl-net-label" text-anchor="middle">{{ n.shortLabel }}</text>
-          </g>
-        </svg>
+        <div class="tl-mode-head">
+          <span class="tl-net-title">{{ displayMode === 'meta' ? $t('timeline.metaTitle') : $t('timeline.networkTitle') }}</span>
+          <span class="mini-legend">
+            <span class="lg-item"><i class="lg-dot dot-ink"></i>{{ $t('timeline.structure.nodeHappened') }}</span>
+            <span class="lg-item"><i class="lg-dot dot-future"></i>{{ $t('timeline.kindFuture') }}</span>
+          </span>
+        </div>
+        <div v-if="displayEvents.length" class="tl-net-wrap">
+          <svg ref="netSvgEl" class="tl-net-svg" :viewBox="'0 0 ' + netW + ' ' + netH"
+               @click.self="clearNetSelection"></svg>
+          <div class="tl-net-hint">{{ $t('timeline.netHint') }}</div>
+        </div>
         <div v-else class="tl-state">{{ $t('timeline.graphPlaceholder') }}</div>
         <div v-if="selectedEvent" class="tl-net-preview">
           <div class="tl-card">
@@ -596,44 +612,43 @@
           <button class="tl-modal-close" @click="structureOpen = false">×</button>
         </div>
         <div class="structure-body">
-          <div class="structure-section">
-            <div class="structure-title">{{ $t('timeline.structureTree') }}</div>
-            <div v-if="structureData.treeRows.length" class="structure-tree">
-              <div v-for="row in structureData.treeRows" :key="row.event.event_id" class="tree-row" :style="{ paddingLeft: (row.depth * 16) + 'px' }">
-                <span class="tree-depth" v-if="row.depth">└─</span>
-                <span class="tree-summary">{{ row.event.summary }}</span>
-              </div>
+          <div class="structure-toolbar">
+            <div class="structure-type-switch">
+              <button
+                v-for="st in structureTypes"
+                :key="st"
+                class="st-chip"
+                :class="{ active: structureType === st }"
+                @click="structureType = st"
+              >{{ $t('timeline.structure.' + st) }}</button>
             </div>
+            <span class="mini-legend">
+              <span class="lg-item"><i class="lg-dot dot-happened"></i>{{ $t('timeline.structure.nodePast') }}</span>
+              <span class="lg-item"><i class="lg-dot dot-future"></i>{{ $t('timeline.kindFuture') }}</span>
+              <span class="lg-item"><i class="lg-dot dot-link"></i>{{ $t('timeline.structure.relations') }}</span>
+            </span>
+          </div>
+          <div class="structure-canvas">
+            <svg v-if="strucNodes.length" ref="strucSvgEl" class="struc-svg"
+                 :viewBox="'0 0 ' + strucW + ' ' + strucH" @click.self="clearNetSelection">
+              <g v-for="(s, i) in strucLinks" :key="'sl' + i">
+                <path v-if="structureType === 'tree'" class="tree-edge" :d="treeBezier(s.a, s.b)" />
+                <line v-else class="tl-struc-link"
+                      :x1="s.a.x" :y1="s.a.y" :x2="s.b.x" :y2="s.b.y" />
+              </g>
+              <g v-for="n in strucNodes" :key="n.id" class="tl-net-node struc-node"
+                 :class="{ active: selectedEvent && n.event_id === selectedEvent.event_id }"
+                 :transform="'translate(' + n.x + ',' + n.y + ')'" @click="selectEvent(n.event)">
+                <title>{{ n.label }}</title>
+                <circle v-if="structureType === 'tree'" class="tree-node-shape"
+                        :class="{ 'future-node': n.future }" :r="n.r" :style="treeNodeStyle(n)"></circle>
+                <circle v-else class="net-node-shape" :r="n.r" :style="strucNodeStyle(n)"></circle>
+                <text class="tl-net-label" text-anchor="middle" dy=".32em">{{ n.shortLabel }}</text>
+              </g>
+            </svg>
             <div v-else class="structure-empty">{{ $t('timeline.structureEmpty') }}</div>
           </div>
-          <div class="structure-section">
-            <div class="structure-title">{{ $t('timeline.structureLinks') }}</div>
-            <div v-if="structureData.linkPairs.length" class="structure-links">
-              <div v-for="(pair, i) in structureData.linkPairs" :key="i" class="link-row">
-                <span class="link-from">{{ pair.from.summary }}</span>
-                <span class="link-arrow">⇄</span>
-                <span class="link-to">{{ pair.to.summary }}</span>
-              </div>
-            </div>
-            <div v-else class="structure-empty">{{ $t('timeline.structureEmpty') }}</div>
-          </div>
-          <div class="structure-section">
-            <div class="structure-title">{{ $t('timeline.structureParallel') }}</div>
-            <div v-if="structureData.threads.length" class="structure-threads">
-              <span v-for="th in structureData.threads" :key="th.key" class="thread-chip">{{ th.label }}</span>
-            </div>
-            <div v-else class="structure-empty">{{ $t('timeline.structureEmpty') }}</div>
-          </div>
-          <div class="structure-section">
-            <div class="structure-title">{{ $t('timeline.structureMeta') }}</div>
-            <div v-if="structureData.metaEvents.length" class="structure-meta">
-              <div v-for="ev in structureData.metaEvents" :key="ev.event_id" class="meta-row">
-                <span class="meta-dim">{{ ev.dimension }}</span>
-                <span class="meta-summary">{{ ev.summary }}</span>
-              </div>
-            </div>
-            <div v-else class="structure-empty">{{ $t('timeline.structureEmpty') }}</div>
-          </div>
+          <div class="struc-hint">{{ $t('timeline.structureHint') }}</div>
         </div>
       </div>
     </div>
@@ -641,8 +656,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import * as d3 from 'd3'
 import {
   extractTimeline,
   getTimelineStatus,
@@ -762,54 +778,356 @@ function laneStyle(lane) {
   return { borderLeftColor: c }
 }
 
-// 网状 / 元叙事 SVG 关联图
+// ===== 结构可视化布局引擎（五种结构：linear/parallel/tree/network/meta）=====
+// 统一节点/边数据结构，供结构弹窗与页面内网状模式复用。
 const netW = 900
 const netH = 420
-const netNodes = computed(() => {
-  const list = filteredEvents.value
-  const ids = list.map(ev => ev.event_id).filter(Boolean)
-  const cols = Math.max(1, Math.ceil(Math.sqrt(list.length)))
-  return list.map((ev, i) => {
-    const col = i % cols
-    const row = Math.floor(i / cols)
-    const x = 80 + col * (netW - 160) / cols + ((row % 2) * 30)
-    const y = 60 + row * (netH - 120) / Math.max(1, Math.ceil(list.length / cols))
-    const short = (ev.summary || ev.time_text || '').slice(0, 14)
-    return {
-      id: 'event_' + String(ev.event_id),
-      event_id: ev.event_id,
-      summary: ev.summary || ev.time_text || '',
-      shortLabel: short,
-      x, y,
-      r: 22 + Math.min(10, (short || '').length),
-      color: pointColor(ev).borderColor || '#a1c50a'
-    }
-  })
-})
-const netLinks = computed(() => {
-  const idSet = new Set(netNodes.value.map(n => n.event_id))
-  const links = []
-  const byId = new Map(netNodes.value.map(n => [n.event_id, n]))
-  filteredEvents.value.forEach(ev => {
+const strucW = 900
+const strucH = 560
+const strucNodeR = 14
+const INK = '#10203a'
+const ACCENT = '#a1c50a'
+
+// 将事件包装成布局节点
+function makeNode(ev, x, y, r) {
+  const label = ev.summary || ev.time_text || ''
+  return {
+    id: 'event_' + String(ev.event_id),
+    event_id: ev.event_id,
+    event: ev,
+    label,
+    shortLabel: label.length > 16 ? label.slice(0, 16) + '…' : label,
+    x, y, r: r || strucNodeR,
+    color: pointColor(ev).borderColor || ACCENT,
+    future: ev.kind === 'future',
+    thread: threadKey(ev),
+    // 供点击定位
+    eventRef: ev
+  }
+}
+
+// 收集事件间的关系（linked + parent→child），返回 { a: ev, b: ev } 列表
+function relationPairs(list) {
+  const evById = new Map(list.map(e => [e.event_id, e]))
+  const pairs = []
+  list.forEach(ev => {
     ;(ev.linked_event_ids || []).forEach(tid => {
-      if (idSet.has(tid) && byId.has(ev.event_id) && byId.has(tid)) {
-        links.push({ a: byId.get(ev.event_id), b: byId.get(tid) })
-      }
+      const target = evById.get(tid)
+      if (target && ev.event_id !== tid) pairs.push({ a: ev, b: target })
     })
     const p = ev.parent_event_id
-    if (p && idSet.has(p) && byId.has(ev.event_id) && byId.has(p)) {
-      links.push({ a: byId.get(p), b: byId.get(ev.event_id) })
+    if (p && evById.has(p) && p !== ev.event_id) pairs.push({ a: evById.get(p), b: ev })
+  })
+  return pairs
+}
+
+function threadOrder(list) {
+  const order = []
+  list.forEach(ev => {
+    const k = threadKey(ev) || 'main'
+    if (!order.includes(k)) order.push(k)
+  })
+  return order
+}
+
+// 线性：单条水平时间轴脊柱，事件按时间排序等距分布，y 按线程细分组避免重叠
+function linearLayout(list) {
+  const up = threadOrder(list)
+  const laneOf = {}
+  up.forEach((k, i) => { laneOf[k] = i })
+  const n = list.length
+  const nodes = list.map((ev, i) => {
+    const lane = laneOf[threadKey(ev) || 'main'] || 0
+    const total = up.length || 1
+    const x = 80 + (i / Math.max(1, n - 1)) * (strucW - 160)
+    // 每线程一条水平脊柱，微调上下避免重叠
+    const y = (lane + 0.5) * ((strucH - 80) / total)
+    return makeNode(ev, x, y + ((i % 2) ? 6 : -6))
+  })
+  const links = relationPairs(list).map(p => ({ a: nodeById(nodes, p.a.event_id), b: nodeById(nodes, p.b.event_id) })).filter(l => l.a && l.b)
+  return { nodes, links }
+}
+
+// 并行：多条泳道，每条 thread 一行；跨泳道关系用曲线连接
+function parallelLayout(list) {
+  const up = threadOrder(list)
+  const laneOf = {}
+  up.forEach((k, i) => { laneOf[k] = i })
+  const laneEvents = {}
+  list.forEach(ev => {
+    const lk = threadKey(ev) || 'main'
+    if (!laneEvents[lk]) laneEvents[lk] = []
+    laneEvents[lk].push(ev)
+  })
+  const laneH = up.length ? ((strucH - 100) / up.length) : 200
+  const nodes = []
+  list.forEach(ev => {
+    const lk = threadKey(ev) || 'main'
+    const lane = laneOf[lk] || 0
+    const sorted = laneEvents[lk].slice().sort((a, b) => sortNum(a) - sortNum(b))
+    const idx = sorted.findIndex(e => e.event_id === ev.event_id)
+    const x = 60 + (idx / Math.max(1, sorted.length - 1)) * (strucW - 120)
+    const y = 40 + lane * laneH + laneH / 2
+    nodes.push(makeNode(ev, x, y))
+  })
+  const links = relationPairs(list).map(p => ({ a: nodeById(nodes, p.a.event_id), b: nodeById(nodes, p.b.event_id) })).filter(l => l.a && l.b)
+  return { nodes, links }
+}
+
+// 树：垂直树形，按父链分层，同一层横向铺开避免重叠，贝塞尔父子边
+function treeLayout(list) {
+  const evById = new Map(list.map(e => [e.event_id, e]))
+  const children = new Map()
+  list.forEach(e => {
+    const p = e.parent_event_id
+    if (p && evById.has(p) && p !== e.event_id) {
+      if (!children.has(p)) children.set(p, [])
+      children.get(p).push(e)
     }
   })
-  return links
+  const roots = list.filter(e => !e.parent_event_id || !evById.has(e.parent_event_id) || e.parent_event_id === e.event_id)
+  const depthMap = {}
+  const assignDepth = (ev, d) => {
+    depthMap[ev.event_id] = d
+    ;(children.get(ev.event_id) || []).forEach(c => assignDepth(c, d + 1))
+  }
+  roots.forEach(r => assignDepth(r, 0))
+  const maxDepth = list.length ? Math.max(...list.map(e => depthMap[e.event_id] || 0)) : 0
+  // leaf 游标分配 x（-1 未分）
+  const xPos = {}
+  let cursor = 0
+  const place = (ev) => {
+    const kids = children.get(ev.event_id) || []
+    if (!kids.length) { xPos[ev.event_id] = cursor++ }
+    else { kids.forEach(k => place(k)) }
+  }
+  roots.forEach(r => place(r))
+  const levelH = (strucH - 80) / Math.max(1, maxDepth + 1)
+  const nodes = list.map(ev => {
+    const d = depthMap[ev.event_id] || 0
+    const maxLeaf = Math.max(cursor - 1, 1)
+    const x = 60 + (xPos[ev.event_id] / maxLeaf) * (strucW - 120)
+    const y = 40 + d * levelH + levelH / 2
+    return makeNode(ev, x, y)
+  })
+  const links = []
+  list.forEach(ev => {
+    const p = ev.parent_event_id
+    if (p && nodeById(nodes, p) && nodeById(nodes, ev.event_id)) {
+      links.push({ a: nodeById(nodes, p), b: nodeById(nodes, ev.event_id) })
+    }
+  })
+  return { nodes, links }
+}
+
+// 网状/元叙事：中心辐射/分层环布局（确定性，避免重叠）
+function radialLayout(list) {
+  const pairs = relationPairs(list)
+  const degree = new Map()
+  list.forEach(ev => degree.set(ev.event_id, 0))
+  pairs.forEach(p => {
+    if (degree.has(p.a.event_id)) degree.set(p.a.event_id, degree.get(p.a.event_id) + 1)
+    if (degree.has(p.b.event_id)) degree.set(p.b.event_id, degree.get(p.b.event_id) + 1)
+  })
+  // 中心点：关联度最高的未发生/普通节点
+  const sorted = list.slice().sort((a, b) => (degree.get(b.event_id) || 0) - (degree.get(a.event_id) || 0))
+  const center = sorted.length ? sorted[0] : null
+  const rest = sorted.filter(e => e !== center)
+  const cx = strucW / 2, cy = strucH / 2
+  const nodes = []
+  if (center) nodes.push(makeNode(center, cx, cy, strucNodeR + 6))
+  // 按关联度分环（近中心）
+  const ringCount = 4
+  const maxDeg = Math.max(1, degree.get(center ? center.event_id : null) || 0)
+  // 若全无关联，按序均分到各环，避免堆叠
+  const hasLinks = maxDeg > 0
+  rest.forEach((ev, i) => {
+    const deg = degree.get(ev.event_id) || 0
+    let ring
+    if (hasLinks) ring = Math.min(ringCount - 1, Math.floor((deg / maxDeg) * ringCount))
+    else ring = Math.floor((i / Math.max(rest.length, 1)) * ringCount)
+    const ringRadius = 85 + ring * 105
+    const countInRing = rest.filter((e, j) => {
+      const ed = degree.get(e.event_id) || 0
+      const rj = hasLinks ? Math.min(ringCount - 1, Math.floor((ed / maxDeg) * ringCount)) : Math.floor((j / Math.max(rest.length, 1)) * ringCount)
+      return rj === ring
+    }).length
+    const idxInRing = rest.filter((e, j) => {
+      if (j >= i) return false
+      const ed = degree.get(e.event_id) || 0
+      const rj = hasLinks ? Math.min(ringCount - 1, Math.floor((ed / maxDeg) * ringCount)) : Math.floor((j / Math.max(rest.length, 1)) * ringCount)
+      return rj === ring
+    }).length
+    const step = (Math.PI * 2) / Math.max(countInRing, 1)
+    const ang = idxInRing * step + (ring % 2 ? Math.PI / 2 : 0)
+    const x = cx + ringRadius * Math.cos(ang)
+    const y = cy + ringRadius * Math.sin(ang)
+    nodes.push(makeNode(ev, x, y))
+  })
+  const links = relationPairs(list).map(p => ({ a: nodeById(nodes, p.a.event_id), b: nodeById(nodes, p.b.event_id) })).filter(l => l.a && l.b)
+  return { nodes, links }
+}
+
+function nodeById(nodes, id) {
+  return nodes.find(n => n.event_id === id)
+}
+
+const STRUCT_LAYOUTS = {
+  linear: linearLayout,
+  parallel: parallelLayout,
+  tree: treeLayout,
+  network: radialLayout,
+  meta: radialLayout
+}
+
+// 结构弹窗当前布局类型（默认按后端/事件推断）
+const structureType = ref('linear')
+// 结构弹窗节点集合（模板渲染用）
+const strucNodes = computed(() => {
+  const layout = STRUCT_LAYOUTS[structureType.value] || linearLayout
+  return layout(displayEvents.value).nodes
 })
-function netNodeStyle(n) {
-  return { fill: '#ffffff', stroke: n.color, borderColor: n.color }
+const strucLinks = computed(() => {
+  const layout = STRUCT_LAYOUTS[structureType.value] || linearLayout
+  return layout(displayEvents.value).links
+})
+// 结构弹窗推断默认类型（打开时设置）
+function inferStructureType() {
+  const t = events.value[0]?.structure_type
+  return STRUCT_LAYOUTS[t] ? t : 'linear'
 }
-function selectGraphNode(n) {
-  const ev = events.value.find(x => x.event_id === n.event_id)
-  if (ev) selectEvent(ev)
+
+function clearNetSelection() { selectedEvent.value = null }
+
+// 页面内树状模式布局（高于/复用于结构弹窗的 tree 布局）
+const pageTreeNodes = computed(() => treeLayout(displayEvents.value).nodes)
+const pageTreeLinks = computed(() => treeLayout(displayEvents.value).links)
+function treeBezier(a, b) {
+  // 垂直贝塞尔：父在 b（下方），子父在 a（上方）
+  const midY = (a.y + b.y) / 2
+  return `M${a.x},${a.y} C${a.x},${midY} ${b.x},${midY} ${b.x},${b.y}`
 }
+function treeNodeStyle(n) {
+  return {
+    fill: n.future ? 'rgba(161,197,10,0.15)' : '#ffffff',
+    stroke: n.future ? ACCENT : n.color,
+    strokeDasharray: n.future ? '4 3' : 'none'
+  }
+}
+function strucNodeStyle(n) {
+  return {
+    fill: n.future ? 'rgba(161,197,10,0.15)' : '#ffffff',
+    stroke: n.future ? ACCENT : n.color,
+    strokeDasharray: n.future ? '4 3' : 'none'
+  }
+}
+
+// d3 力导向渲染：页面内 network / meta 模式
+let netSimulation = null
+let netZoom = null
+const netSvgEl = ref(null)
+// 节点尺寸：未来=虚线圈，普通=实心，均不重叠
+function eventRadius(ev) {
+  return ev.kind === 'future' ? 11 : 13
+}
+function renderNetSvg() {
+  const svgEl = netSvgEl.value
+  if (!svgEl) return
+  if (netSimulation) netSimulation.stop()
+  const svg = d3.select(svgEl)
+  svg.selectAll('*').remove()
+
+  const list = displayEvents.value
+  if (!list.length) return
+
+  const nodes = list.map(ev => {
+    const n = makeNode(ev, netW / 2, netH / 2, eventRadius(ev))
+    return { ...n, fx: null, fy: null }
+  })
+  const nodeByIdM = new Map(nodes.map(n => [n.event_id, n]))
+  const links = relationPairs(list)
+    .map(p => ({ source: nodeByIdM.get(p.a.event_id), target: nodeByIdM.get(p.b.event_id) }))
+    .filter(l => l.source && l.target)
+
+  const root = svg.append('g').attr('class', 'net-g')
+  const linkG = root.append('g').attr('class', 'net-g-links')
+  const nodeG = root.append('g').attr('class', 'net-g-nodes')
+
+  const link = linkG.selectAll('line').data(links).enter().append('line')
+    .attr('class', 'tl-net-link')
+
+  const node = nodeG.selectAll('g.tl-net-node').data(nodes).enter().append('g')
+    .attr('class', d => 'tl-net-node' + (d.future ? ' future-node' : '') + (selectedEvent.value && d.event_id === selectedEvent.value.event_id ? ' active' : ''))
+    .style('cursor', 'pointer')
+    .call(d3.drag()
+      .on('start', (event, d) => { d.fx = d.x; d.fy = d.y })
+      .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; netSimulation && netSimulation.alphaTarget(0.3).restart() })
+      .on('end', (event, d) => { if (netSimulation) netSimulation.alphaTarget(0); d.fx = null; d.fy = null })
+    )
+    .on('click', (event, d) => {
+      event.stopPropagation()
+      selectEvent(d.event)
+    })
+
+  node.append('title').text(d => d.label)
+  node.append('circle')
+    .attr('class', 'net-node-shape')
+    .attr('r', d => d.r)
+    .attr('fill', '#ffffff')
+    .attr('fill-opacity', d => d.future ? 0.15 : 0.55)
+    .attr('stroke', d => d.color)
+    .attr('stroke-width', 1.5)
+    // 未来节点使用虚线圈（由 CSS 描边处理）
+  node.append('text')
+    .attr('class', 'tl-net-label')
+    .attr('text-anchor', 'middle')
+    .attr('dy', '.32em')
+    .text(d => d.shortLabel)
+
+  const simulation = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.event_id).distance(120).strength(0.5))
+    .force('charge', d3.forceManyBody().strength(-280))
+    .force('collide', d3.forceCollide().radius(d => d.r * 2.6))
+    .force('x', d3.forceX(netW / 2).strength(0.045))
+    .force('y', d3.forceY(netH / 2).strength(0.045))
+    .force('center', d3.forceCenter(netW / 2, netH / 2))
+  netSimulation = simulation
+
+  simulation.on('tick', () => {
+    link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x).attr('y2', d => d.target.y)
+    node.attr('transform', d => `translate(${d.x},${d.y})`)
+  })
+
+  // 缩放/平移
+  netZoom = d3.zoom().scaleExtent([0.3, 4]).on('zoom', (event) => {
+    root.attr('transform', event.transform)
+  })
+  svg.call(netZoom)
+
+  svg.on('dblclick.zoom', null)
+}
+
+// 在事件/模式变化时重绘（displayEvents 定义处下方注册）
+function filterKey() {
+  return displayEvents.value.map(e => e.event_id).join(',')
+}
+
+// 结构弹窗打开时渲染并推断默认类型
+watch(structureOpen, (open) => {
+  if (open) {
+    structureType.value = inferStructureType()
+  }
+})
+
+// 选中变化时更新网状节点高亮（不重启力导向）
+watch(selectedEvent, (ev) => {
+  if (!netSvgEl.value) return
+  const svg = d3.select(netSvgEl.value)
+  svg.selectAll('g.tl-net-node')
+    .classed('active', d => !!(ev && d.event_id === ev.event_id))
+})
+
 const savingEdit = ref(false)
 const editMsg = ref('')
 const editMsgError = ref(false)
@@ -1031,6 +1349,13 @@ function isFuture(ev) { return ev.kind === 'future'; }
 
 // 主显示列表（用于渲染） = filteredEvents 兼容旧接口，用 displayEvents
 const filteredEvents = computed(() => displayEvents.value);
+
+// 网状/元叙事页面内模式：事件或模式变化时重绘力导向 SVG
+watch(() => [displayMode.value, filterKey()], () => {
+  if (displayMode.value === 'network' || displayMode.value === 'meta') {
+    nextTick(renderNetSvg)
+  }
+}, { deep: true })
 
 const presentTypesC = computed(() => {
   const s = new Set();
@@ -2164,15 +2489,47 @@ onUnmounted(() => {
 .tl-tree .tree-row { cursor: pointer; }
 .tl-tree .tree-row:hover .tree-summary { color: #a1c50a; }
 .tl-net-mode { display: flex; flex-direction: column; gap: 10px; }
+.tl-mode-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .tl-net-title { font-size: 13px; font-weight: 700; }
+.tl-net-wrap { position: relative; }
+.tl-net-wrap svg.tl-net-svg { width: 100%; height: 420px; max-height: 60vh; }
 .tl-net-svg { width: 100%; height: auto; background: #FFF; border: 1px solid #EEE; border-radius: 10px; }
-.tl-net-link { stroke: #D1D5DB; stroke-width: 1.5; }
+.tl-net-link { stroke: #C8CDD6; stroke-width: 1.5; }
+.tl-struc-link { stroke: #C8CDD6; stroke-width: 1.5; }
+.struc-svg { width: 100%; height: auto; background: #FFF; border: 1px solid #EEE; border-radius: 10px; }
+.tree-edge { fill: none; stroke: #B8BEC8; stroke-width: 1.5; }
 .tl-net-node { cursor: pointer; }
 .tl-net-node text { pointer-events: none; font-size: 9px; fill: #333; }
 .tl-net-node circle { stroke-width: 2; fill: #FFF; }
 .tl-net-node.active circle { stroke: #a1c50a; stroke-width: 3; }
+.net-node-shape { stroke-width: 1.5; }
+.tree-node-shape { stroke-width: 1.5; }
+.tl-net-node.text-tiny text { font-size: 8.5px; }
 .tl-net-preview { max-width: 460px; }
 .tl-net-preview .tl-card { box-shadow: none; }
+
+/* 结构视图新版：SVG 结构图 */
+.tl-modal.structure { width: 760px; max-width: 94vw; }
+.structure-body { display: flex; flex-direction: column; gap: 12px; max-height: 72vh; overflow-y: auto; }
+.structure-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.structure-type-switch { display: flex; gap: 6px; flex-wrap: wrap; }
+.st-chip {
+  border: 1px solid #E5E7EB; background: #FFF; border-radius: 999px;
+  padding: 4px 12px; font-size: 12px; cursor: pointer; color: #536078; transition: all 0.15s;
+}
+.st-chip.active { background: #f3f7e6; color: #5f7008; border-color: #a1c50a; font-weight: 600; }
+.structure-canvas { display: block; }
+.struc-hint { font-size: 11px; color: #9aa5b8; text-align: center; }
+
+/* 迷你图例 */
+.mini-legend { display: flex; gap: 10px; align-items: center; font-size: 11px; color: #536078; }
+.lg-item { display: inline-flex; align-items: center; gap: 4px; }
+.lg-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,0.2); }
+.dot-ink { background: #10203a; }
+.dot-happened { background: #ffffff; border-color: #10203a; }
+.dot-future { background: rgba(161,197,10,0.2); border: 1.5px dashed #a1c50a; }
+.dot-link { background: transparent; border-color: #C8CDD6; height: 3px; border-radius: 2px; }
+.tl-net-hint { font-size: 11px; color: #9aa5b8; text-align: center; }
 
 /* ================= 手机端响应式 ================= */
 @media (max-width: 768px) {
@@ -2209,9 +2566,10 @@ onUnmounted(() => {
   .lane-block { border-radius: 8px; }
   .lane-head { padding: 6px 10px; flex-wrap: wrap; }
   .lane-cards { padding: 6px 10px; }
-  .tl-tree { padding: 8px; }
-  .tl-tree-toolbar { flex-wrap: wrap; }
-  .tl-net-svg { min-width: 480px; }
+  .tl-net-wrap svg.tl-net-svg { height: 320px; max-height: 50vh; }
+  .structure-toolbar { align-items: flex-start; }
+  .structure-type-switch { width: 100%; }
+  .tl-modal.structure { padding: 12px; }
   /* 弹窗接近全屏 */
   .tl-modal {
     width: 100%;

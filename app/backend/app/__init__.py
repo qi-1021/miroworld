@@ -2,6 +2,7 @@
 MiroFish Backend - Flask应用工厂
 """
 
+import gzip
 import os
 import warnings
 
@@ -177,7 +178,9 @@ def create_app(config_class=Config):
     # API 404 保持 JSON 404，不落入 SPA fallback。
     # ============================================================
     def _register_frontend_spa():
-        from flask import send_file, send_from_directory, abort as flask_abort
+        import mimetypes
+
+        from flask import Response, abort as flask_abort
 
         dist_dir = os.path.normpath(os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "..", "..", "frontend", "dist"
@@ -204,10 +207,17 @@ def create_app(config_class=Config):
                 except ValueError:
                     flask_abort(404)
             if os.path.isfile(target):
-                if not path:
-                    return send_file(index_file)
-                return send_from_directory(dist_dir, path)
-            return send_from_directory(dist_dir, "index.html")
+                # 用 Response(bytes) 而非 send_file：文件响应不再是 streamed，
+                # 上面的 gzip 中间件才能压缩（隧道场景下 721KB JS → ~220KB）。
+                with open(target, "rb") as fh:
+                    data = fh.read()
+                mime = mimetypes.guess_type(target)[0] or "application/octet-stream"
+                if target.endswith(".html"):
+                    mime = "text/html; charset=utf-8"
+                return Response(data, mimetype=mime)
+            with open(index_file, "rb") as fh:
+                data = fh.read()
+            return Response(data, mimetype="text/html; charset=utf-8")
 
         @app.after_request
         def _cache_static(response):
@@ -225,6 +235,37 @@ def create_app(config_class=Config):
             logger.info(f"SPA 托管已启用: {dist_dir}")
 
     _register_frontend_spa()
+
+    # 压缩文本类响应（静态 JS/CSS/HTML 与 JSON API），手机走隧道时传输量降至约 1/3。
+    @app.after_request
+    def _gzip_compress(response):
+        if (
+            response.status_code == 200
+            and not response.is_streamed
+            and "gzip" in (request.headers.get("Accept-Encoding") or "").lower()
+            and not response.headers.get("Content-Encoding")
+        ):
+            ctype = (response.content_type or "").split(";")[0].strip().lower()
+            if ctype in {
+                "text/html",
+                "text/css",
+                "application/javascript",
+                "text/javascript",
+                "application/json",
+                "image/svg+xml",
+            }:
+                try:
+                    data = response.get_data()
+                    if len(data) >= 1024:
+                        compressed = gzip.compress(data, compresslevel=6)
+                        response.set_data(compressed)
+                        response.headers["Content-Encoding"] = "gzip"
+                        response.headers["Content-Length"] = str(len(compressed))
+                        if "Vary" not in response.headers:
+                            response.headers["Vary"] = "Accept-Encoding"
+                except Exception:
+                    pass
+        return response
 
     if should_log_startup:
         logger.info("MiroFish Backend 启动完成")

@@ -1,12 +1,12 @@
 <template>
-  <div class="graph-panel">
+  <div class="graph-panel liquid-glass">
     <div class="panel-header">
       <span class="panel-title">{{ $t('graph.panelTitle') }}</span>
       <!-- 顶部工具栏 (Internal Top Right) -->
       <div class="header-tools">
         <button class="tool-btn" @click="$emit('refresh')" :disabled="loading" :title="$t('graph.refreshGraph')">
           <span class="icon-refresh" :class="{ 'spinning': loading }">↻</span>
-          <span class="btn-text">Refresh</span>
+          <span class="btn-text">{{ $t('graph.refreshBtn') }}</span>
         </button>
         <button class="tool-btn" @click="$emit('toggle-maximize')" :title="$t('graph.toggleMaximize')">
           <span class="icon-maximize">⛶</span>
@@ -61,21 +61,21 @@
           <!-- 节点详情 -->
           <div v-if="selectedItem.type === 'node'" class="detail-content">
             <div class="detail-row">
-              <span class="detail-label">Name:</span>
+              <span class="detail-label">{{ $t('graph.name') }}:</span>
               <span class="detail-value">{{ selectedItem.data.name }}</span>
             </div>
             <div class="detail-row">
-              <span class="detail-label">UUID:</span>
+              <span class="detail-label">{{ $t('graph.uuid') }}:</span>
               <span class="detail-value uuid-text">{{ selectedItem.data.uuid }}</span>
             </div>
             <div class="detail-row" v-if="selectedItem.data.created_at">
-              <span class="detail-label">Created:</span>
+              <span class="detail-label">{{ $t('graph.created') }}:</span>
               <span class="detail-value">{{ formatDateTime(selectedItem.data.created_at) }}</span>
             </div>
 
             <!-- Properties -->
             <div class="detail-section" v-if="selectedItem.data.attributes && Object.keys(selectedItem.data.attributes).length > 0">
-              <div class="section-title">Properties:</div>
+              <div class="section-title">{{ $t('graph.properties') }}:</div>
               <div class="properties-list">
                 <div v-for="(item) in displayAttributes" :key="item.key" class="property-item">
                   <span class="property-key">{{ item.key }}:</span>
@@ -86,13 +86,13 @@
 
             <!-- Summary -->
             <div class="detail-section" v-if="selectedItem.data.summary">
-              <div class="section-title">Summary:</div>
+              <div class="section-title">{{ $t('graph.summary') }}:</div>
               <div class="summary-text">{{ selectedItem.data.summary }}</div>
             </div>
 
             <!-- Labels -->
             <div class="detail-section" v-if="selectedItem.data.labels && selectedItem.data.labels.length > 0">
-              <div class="section-title">Labels:</div>
+              <div class="section-title">{{ $t('graph.labels') }}:</div>
               <div class="labels-list">
                 <span v-for="label in selectedItem.data.labels" :key="label" class="label-tag">
                   {{ label }}
@@ -106,8 +106,8 @@
             <!-- 自环组详情 -->
             <template v-if="selectedItem.data.isSelfLoopGroup">
               <div class="edge-relation-header self-loop-header">
-                {{ selectedItem.data.source_name }} - Self Relations
-                <span class="self-loop-count">{{ selectedItem.data.selfLoopCount }} items</span>
+                {{ selectedItem.data.source_name }} - {{ $t('graph.selfRelations') }}
+                <span class="self-loop-count">{{ selectedItem.data.selfLoopCount }} {{ $t('graph.selfRelationsItems') }}</span>
               </div>
 
               <div class="self-loop-list">
@@ -128,23 +128,23 @@
 
                   <div class="self-loop-item-content" v-show="expandedSelfLoops.has(loop.uuid || idx)">
                     <div class="detail-row" v-if="loop.uuid">
-                      <span class="detail-label">UUID:</span>
+                      <span class="detail-label">{{ $t('graph.uuid') }}:</span>
                       <span class="detail-value uuid-text">{{ loop.uuid }}</span>
                     </div>
                     <div class="detail-row" v-if="loop.fact">
-                      <span class="detail-label">Fact:</span>
+                      <span class="detail-label">{{ $t('graph.fact') }}:</span>
                       <span class="detail-value fact-text">{{ loop.fact }}</span>
                     </div>
                     <div class="detail-row" v-if="loop.fact_type">
-                      <span class="detail-label">Type:</span>
+                      <span class="detail-label">{{ $t('graph.type') }}:</span>
                       <span class="detail-value">{{ loop.fact_type }}</span>
                     </div>
                     <div class="detail-row" v-if="loop.created_at">
-                      <span class="detail-label">Created:</span>
+                      <span class="detail-label">{{ $t('graph.created') }}:</span>
                       <span class="detail-value">{{ formatDateTime(loop.created_at) }}</span>
                     </div>
                     <div v-if="loop.episodes && loop.episodes.length > 0" class="self-loop-episodes">
-                      <span class="detail-label">Episodes:</span>
+                      <span class="detail-label">{{ $t('graph.episodes') }}:</span>
                       <div class="episodes-list compact">
                         <span v-for="ep in loop.episodes" :key="ep" class="episode-tag small">{{ ep }}</span>
                       </div>
@@ -161,25 +161,21 @@
               </div>
 
               <div class="detail-row">
-                <span class="detail-label">UUID:</span>
+                <span class="detail-label">{{ $t('graph.uuid') }}:</span>
                 <span class="detail-value uuid-text">{{ selectedItem.data.uuid }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Label:</span>
-                <span class="detail-value">{{ selectedItem.data.name || 'RELATED_TO' }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Type:</span>
+                <span class="detail-label">{{ $t('graph.type') }}:</span>
                 <span class="detail-value">{{ selectedItem.data.fact_type || 'Unknown' }}</span>
               </div>
               <div class="detail-row" v-if="selectedItem.data.fact">
-                <span class="detail-label">Fact:</span>
+                <span class="detail-label">{{ $t('graph.fact') }}:</span>
                 <span class="detail-value fact-text">{{ selectedItem.data.fact }}</span>
               </div>
 
               <!-- Episodes -->
               <div class="detail-section" v-if="selectedItem.data.episodes && selectedItem.data.episodes.length > 0">
-                <div class="section-title">Episodes:</div>
+                <div class="section-title">{{ $t('graph.episodes') }}:</div>
                 <div class="episodes-list">
                   <span v-for="ep in selectedItem.data.episodes" :key="ep" class="episode-tag">
                     {{ ep }}
@@ -188,11 +184,11 @@
               </div>
 
               <div class="detail-row" v-if="selectedItem.data.created_at">
-                <span class="detail-label">Created:</span>
+                <span class="detail-label">{{ $t('graph.created') }}:</span>
                 <span class="detail-value">{{ formatDateTime(selectedItem.data.created_at) }}</span>
               </div>
               <div class="detail-row" v-if="selectedItem.data.valid_at">
-                <span class="detail-label">Valid From:</span>
+                <span class="detail-label">{{ $t('graph.validFrom') }}:</span>
                 <span class="detail-value">{{ formatDateTime(selectedItem.data.valid_at) }}</span>
               </div>
             </template>
@@ -215,7 +211,7 @@
 
     <!-- 底部图例 (Bottom Left) -->
     <div v-if="graphData && entityTypes.length" class="graph-legend">
-      <span class="legend-title">Entity Types</span>
+      <span class="legend-title">{{ $t('graph.entityTypes') }}</span>
       <div class="legend-items">
         <div class="legend-item" v-for="type in entityTypes" :key="type.name">
           <span class="legend-dot" :style="{ background: type.color }"></span>
@@ -230,7 +226,7 @@
         <input type="checkbox" v-model="showEdgeLabels" />
         <span class="slider"></span>
       </label>
-      <span class="toggle-label">Show Edge Labels</span>
+      <span class="toggle-label">{{ $t('graph.showEdgeLabels') }}</span>
     </div>
   </div>
 </template>
@@ -292,13 +288,20 @@ const toggleSelfLoop = (id) => {
 const entityTypes = computed(() => {
   if (!props.graphData?.nodes) return []
   const typeMap = {}
-  // 美观的颜色调色板
-  const colors = ['#FF6B35', '#004E89', '#7B2D8E', '#1A936F', '#C5283D', '#E9724C', '#3498db', '#9b59b6', '#27ae60', '#f39c12']
+  // 受控调色板：仅允许「柑橘 / 深墨 / 灰 / 白 + 语义红」。
+  // 首个出现类型用柑橘强调，其余用深墨的灰阶，冲突类型用语义红。
+  const ACCENT = '#a1c50a'
+  const INK = '#10203a'
+  const GRAYS = ['#374a63', '#536078', '#7b879e', '#9aa5b8', '#67748a']
 
   props.graphData.nodes.forEach(node => {
     const type = node.labels?.find(l => l !== 'Entity') || 'Entity'
     if (!typeMap[type]) {
-      typeMap[type] = { name: type, count: 0, color: colors[Object.keys(typeMap).length % colors.length] }
+      const idx = Object.keys(typeMap).length
+      const color = type.toLowerCase().includes('conflict') || type.toLowerCase().includes('异常') || type.toLowerCase().includes('冲突')
+        ? '#c5283d'
+        : (idx === 0 ? ACCENT : GRAYS[(idx - 1) % GRAYS.length])
+      typeMap[type] = { name: type, count: 0, color }
     }
     typeMap[type].count++
   })
@@ -364,10 +367,12 @@ const renderGraph = () => {
     id: n.uuid,
     name: n.name || 'Unnamed',
     type: n.labels?.find(l => l !== 'Entity') || 'Entity',
-    rawData: n
+    rawData: n,
+    edgeCount: 0 // 后续按关联度统计，决定大小/层环
   }))
 
   const nodeIds = new Set(nodes.map(n => n.id))
+  const nodeByUuid = new Map(nodesData.map(n => [n.uuid, n]))
 
   // 处理边数据，计算同一对节点间的边数量和索引
   const edgePairCount = {}
@@ -470,26 +475,57 @@ const renderGraph = () => {
     })
   })
 
-  // Color scale
+  // 统计每个节点的关联度（用于确定中心大节点 + 节点尺寸）
+  edges.forEach(e => {
+    if (e.isSelfLoop) {
+      const n = nodes.find(x => x.id === e.source)
+      if (n) n.edgeCount++
+      return
+    }
+    nodes.forEach(n => { if (n.id === e.source || n.id === e.target) n.edgeCount++ })
+  })
+  const maxDegree = nodes.length ? Math.max(...nodes.map(n => n.edgeCount), 1) : 1
+  const hub = nodes.reduce((a, b) => (b.edgeCount > (a?.edgeCount || -1) ? b : a), null)
+  if (hub) hub.isHub = true
+  nodes.forEach(n => {
+    if (n.isHub) { n.size = 30; return }
+    const ratio = n.edgeCount / maxDegree
+    n.size = 11 + Math.round(8 * ratio)
+  })
+
+  // Color scale（受控调色板）
   const colorMap = {}
   entityTypes.value.forEach(t => colorMap[t.name] = t.color)
-  const getColor = (type) => colorMap[type] || '#999'
+  const getColor = (type) => colorMap[type] || '#7b879e'
 
-  // Simulation - 根据边数量动态调整节点间距
+  // 重置一组节点形状到默认描边（白底墨描，中心节点保留柑橘）
+  const resetNodeShapes = (sel) => {
+    if (!sel) return
+    sel.selectAll('.node-shape')
+      .attr('stroke', d => (d && d.isHub ? '#10203a' : '#fff'))
+      .attr('stroke-width', 1.5)
+  }
+
+  // Simulation - 中心大实体 + 相关实体按层环/类型分簇
   const simulation = d3.forceSimulation(nodes)
     .force('link', d3.forceLink(edges).id(d => d.id).distance(d => {
-      // 根据这对节点之间的边数量动态调整距离
-      // 基础距离 150，每多一条边增加 40
+      // 与中心节点相连的关系更紧（更靠中心）
       const baseDistance = 150
       const edgeCount = d.pairTotal || 1
       return baseDistance + (edgeCount - 1) * 50
     }))
     .force('charge', d3.forceManyBody().strength(-400))
     .force('center', d3.forceCenter(width / 2, height / 2))
-    .force('collide', d3.forceCollide(50))
-    // 添加向中心的引力，让独立的节点群聚集到中心区域
+    .force('collide', d3.forceCollide().radius(d => (d.size || 12) + 4))
+    // 向中心的引力，让独立节点群聚到中心区域
     .force('x', d3.forceX(width / 2).strength(0.04))
     .force('y', d3.forceY(height / 2).strength(0.04))
+
+  // 固定中心大实体节点，使其他节点围绕它分环收敛
+  if (hub) {
+    hub.fx = width / 2
+    hub.fy = height / 2
+  }
 
   currentSimulation = simulation
 
@@ -589,7 +625,7 @@ const renderGraph = () => {
       linkLabelBg.attr('fill', 'rgba(255,255,255,0.95)')
       linkLabels.attr('fill', '#666')
       // 高亮当前选中的边
-      d3.select(event.target).attr('stroke', '#3498db').attr('stroke-width', 3)
+      d3.select(event.target).attr('stroke', '#a1c50a').attr('stroke-width', 3)
 
       selectedItem.value = {
         type: 'edge',
@@ -613,7 +649,7 @@ const renderGraph = () => {
       linkLabelBg.attr('fill', 'rgba(255,255,255,0.95)')
       linkLabels.attr('fill', '#666')
       // 高亮对应的边
-      link.filter(l => l === d).attr('stroke', '#3498db').attr('stroke-width', 3)
+      link.filter(l => l === d).attr('stroke', '#a1c50a').attr('stroke-width', 3)
       d3.select(event.target).attr('fill', 'rgba(52, 152, 219, 0.1)')
 
       selectedItem.value = {
@@ -641,8 +677,8 @@ const renderGraph = () => {
       linkLabelBg.attr('fill', 'rgba(255,255,255,0.95)')
       linkLabels.attr('fill', '#666')
       // 高亮对应的边
-      link.filter(l => l === d).attr('stroke', '#3498db').attr('stroke-width', 3)
-      d3.select(event.target).attr('fill', '#3498db')
+      link.filter(l => l === d).attr('stroke', '#a1c50a').attr('stroke-width', 3)
+      d3.select(event.target).attr('fill', '#a1c50a')
 
       selectedItem.value = {
         type: 'edge',
@@ -657,18 +693,16 @@ const renderGraph = () => {
   // Nodes group
   const nodeGroup = g.append('g').attr('class', 'nodes')
 
-  // Node circles
-  const node = nodeGroup.selectAll('circle')
+  // Node group - 每个节点的 SVG 形状由类型决定
+  const node = nodeGroup.selectAll('g.node')
     .data(nodes)
-    .enter().append('circle')
-    .attr('r', 10)
-    .attr('fill', d => getColor(d.type))
-    .attr('stroke', '#fff')
-    .attr('stroke-width', 2.5)
+    .enter().append('g')
+    .attr('class', d => (d.isHub ? 'node hub-node' : 'node'))
     .style('cursor', 'pointer')
     .call(d3.drag()
       .on('start', (event, d) => {
         // 只记录位置，不重启仿真（区分点击和拖拽）
+        if (d.isHub) return
         d.fx = d.x
         d.fy = d.y
         d._dragStartX = event.x
@@ -676,6 +710,7 @@ const renderGraph = () => {
         d._isDragging = false
       })
       .on('drag', (event, d) => {
+        if (d.isHub) return
         // 检测是否真正开始拖拽（移动超过阈值）
         const dx = event.x - d._dragStartX
         const dy = event.y - d._dragStartY
@@ -693,6 +728,7 @@ const renderGraph = () => {
         }
       })
       .on('end', (event, d) => {
+        if (d.isHub) return
         // 只有真正拖拽过才让仿真逐渐停止
         if (d._isDragging) {
           simulation.alphaTarget(0)
@@ -705,13 +741,14 @@ const renderGraph = () => {
     .on('click', (event, d) => {
       event.stopPropagation()
       // 重置所有节点样式
-      node.attr('stroke', '#fff').attr('stroke-width', 2.5)
+      resetNodeShapes(node)
       linkGroup.selectAll('path').attr('stroke', '#C0C0C0').attr('stroke-width', 1.5)
       // 高亮选中节点
-      d3.select(event.target).attr('stroke', '#E91E63').attr('stroke-width', 4)
+      d3.select(event.currentTarget).selectAll('.node-shape')
+        .attr('stroke', '#a1c50a').attr('stroke-width', 3.5)
       // 高亮与此节点相连的边
       link.filter(l => l.source.id === d.id || l.target.id === d.id)
-        .attr('stroke', '#E91E63')
+        .attr('stroke', '#a1c50a')
         .attr('stroke-width', 2.5)
 
       selectedItem.value = {
@@ -723,25 +760,82 @@ const renderGraph = () => {
     })
     .on('mouseenter', (event, d) => {
       if (!selectedItem.value || selectedItem.value.data?.uuid !== d.rawData.uuid) {
-        d3.select(event.target).attr('stroke', '#333').attr('stroke-width', 3)
+        d3.select(event.currentTarget).selectAll('.node-shape').attr('stroke', '#10203a').attr('stroke-width', 3)
       }
     })
     .on('mouseleave', (event, d) => {
       if (!selectedItem.value || selectedItem.value.data?.uuid !== d.rawData.uuid) {
-        d3.select(event.target).attr('stroke', '#fff').attr('stroke-width', 2.5)
+        resetNodeShapes(node)
       }
     })
 
-  // Node Labels
+  // 节点形状：按类型区分（circle / rect / diamond），带类型描边
+  const shapeTypeIdx = d => {
+    const s = d.type || 'entity'
+    let h = 0
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+    return h % 3
+  }
+  node.each(function(d) {
+    const g = d3.select(this)
+    // 原生 tooltip：显示节点全名与类型
+    g.append('title').text(() => `${d.name} (${d.type})`)
+    const r = d.size || 12
+    const isHub = !!d.isHub
+    const shape = isHub ? 3 : shapeTypeIdx(d)
+    if (shape === 0) {
+      g.append('circle')
+        .attr('class', 'node-shape')
+        .attr('r', r)
+        .attr('fill', d => getColor(d.type))
+        .attr('fill-opacity', isHub ? 0.9 : 0.35)
+        .attr('stroke', '#fff')
+        .attr('stroke-width', isHub ? 2 : 1.5)
+    } else if (shape === 1) {
+      g.append('rect')
+        .attr('class', 'node-shape')
+        .attr('x', -r).attr('y', -r)
+        .attr('width', r * 2).attr('height', r * 2)
+        .attr('rx', 4)
+        .attr('fill', d => getColor(d.type))
+        .attr('fill-opacity', 0.35)
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 1.5)
+    } else if (shape === 2) {
+      g.append('polygon')
+        .attr('class', 'node-shape')
+        .attr('points', `0,${-r} ${r * 0.8},0 0,${r} ${-r * 0.8},0`)
+        .attr('fill', d => getColor(d.type))
+        .attr('fill-opacity', 0.35)
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 1.5)
+    } else {
+      // 中心大实体：多环高亮圆
+      g.append('circle')
+        .attr('class', 'node-shape hub-ring')
+        .attr('r', r)
+        .attr('fill', 'rgba(255,255,255,0.9)')
+        .attr('stroke', '#10203a')
+        .attr('stroke-width', 2)
+      g.append('circle')
+        .attr('class', 'node-shape')
+        .attr('r', r * 0.62)
+        .attr('fill', '#a1c50a')
+        .attr('fill-opacity', 0.85)
+        .attr('stroke', 'none')
+    }
+  })
+
+  // Node Labels - 受控墨色，中心节点更大
   const nodeLabels = nodeGroup.selectAll('text')
     .data(nodes)
     .enter().append('text')
-    .text(d => d.name.length > 8 ? d.name.substring(0, 8) + '…' : d.name)
-    .attr('font-size', '11px')
-    .attr('fill', '#333')
-    .attr('font-weight', '500')
-    .attr('dx', 14)
-    .attr('dy', 4)
+    .text(d => d.name.length > 10 ? d.name.substring(0, 10) + '…' : d.name)
+    .attr('font-size', d => (d.isHub ? 13 : 11) + 'px')
+    .attr('font-weight', d => (d.isHub ? 700 : 500))
+    .attr('fill', '#10203a')
+    .attr('x', d => (d.size || 12) + 8)
+    .attr('y', 4)
     .style('pointer-events', 'none')
     .style('font-family', 'system-ui, sans-serif')
 
@@ -772,18 +866,13 @@ const renderGraph = () => {
     })
 
     node
-      .attr('cx', d => d.x)
-      .attr('cy', d => d.y)
-
-    nodeLabels
-      .attr('x', d => d.x)
-      .attr('y', d => d.y)
+      .attr('transform', d => `translate(${d.x},${d.y})`)
   })
 
   // 点击空白处关闭详情面板
   svg.on('click', () => {
     selectedItem.value = null
-    node.attr('stroke', '#fff').attr('stroke-width', 2.5)
+    resetNodeShapes(node)
     linkGroup.selectAll('path').attr('stroke', '#C0C0C0').attr('stroke-width', 1.5)
     linkLabelBg.attr('fill', 'rgba(255,255,255,0.95)')
     linkLabels.attr('fill', '#666')
@@ -825,10 +914,12 @@ onUnmounted(() => {
   position: relative;
   width: 100%;
   height: 100%;
-  background-color: rgba(255, 255, 255, 0.5);
-  background-image: radial-gradient(rgba(83, 96, 120, 0.25) 1.5px, transparent 1.5px);
+  background-color: rgba(255, 255, 255, 0.45);
+  background-image: radial-gradient(rgba(16, 32, 58, 0.08) 1.5px, transparent 1.5px);
   background-size: 24px 24px;
+  border-radius: var(--mf-radius, 18px);
   overflow: hidden;
+  border: 1px solid var(--mf-hairline, rgba(16, 32, 58, 0.12));
 }
 
 .panel-header {
@@ -935,7 +1026,7 @@ onUnmounted(() => {
   display: block;
   font-size: 11px;
   font-weight: 600;
-  color: #E91E63;
+  color: var(--mf-ink, #10203a);
   margin-bottom: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1021,7 +1112,7 @@ onUnmounted(() => {
 }
 
 input:checked + .slider {
-  background-color: #7B2D8E;
+  background-color: #a1c50a;
 }
 
 input:checked + .slider:before {
@@ -1249,12 +1340,12 @@ input:checked + .slider:before {
 .memory-icon {
   width: 18px;
   height: 18px;
-  color: #4CAF50;
+  color: #a1c50a;
 }
 
 @keyframes breathe {
-  0%, 100% { opacity: 0.7; transform: scale(1); filter: drop-shadow(0 0 2px rgba(76, 175, 80, 0.3)); }
-  50% { opacity: 1; transform: scale(1.15); filter: drop-shadow(0 0 8px rgba(76, 175, 80, 0.6)); }
+  0%, 100% { opacity: 0.7; transform: scale(1); filter: drop-shadow(0 0 2px rgba(161, 197, 10, 0.3)); }
+  50% { opacity: 1; transform: scale(1.15); filter: drop-shadow(0 0 8px rgba(161, 197, 10, 0.6)); }
 }
 
 /* 模拟结束后的提示样式 */
@@ -1306,7 +1397,7 @@ input:checked + .slider:before {
   width: 40px;
   height: 40px;
   border: 3px solid #E0E0E0;
-  border-top-color: #7B2D8E;
+  border-top-color: #a1c50a;
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin: 0 auto 16px;
@@ -1317,8 +1408,8 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: linear-gradient(135deg, #E8F5E9 0%, #F1F8E9 100%);
-  border: 1px solid #C8E6C9;
+  background: linear-gradient(135deg, #f3f7e6 0%, #eef2e6 100%);
+  border: 1px solid #dbe3c8;
 }
 
 .self-loop-count {
