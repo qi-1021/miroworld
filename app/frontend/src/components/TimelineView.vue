@@ -808,8 +808,12 @@ async function doExport() {
     const a = document.createElement('a')
     a.href = url
     a.download = data.filename || `timeline-export.${exportFormat.value}`
-    document.body.appendChild(a); a.click(); a.remove()
-    URL.revokeObjectURL(url)
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    // 延迟释放，避免部分浏览器（尤其 Safari）在下载开始前撤销导致不自动下载
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
     exportOpen.value = false
   } catch (e) {
     console.error('export failed', e)
