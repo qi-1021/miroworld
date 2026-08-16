@@ -205,6 +205,7 @@ class WorldEnv:
         self.time_mode = str(wc.get("time_mode") or "minutes")
         self.time_jumps = list(wc.get("time_jumps") or []) if isinstance(wc.get("time_jumps"), list) else []
         self.story_summary_mode = str(wc.get("story_summary_mode") or "rule")  # rule | llm
+        self.max_concurrency = int(wc.get("max_concurrency") or max(1, len(config.get("characters", []) or [])))
         self.current_step_label = ""
         try:
             self.current_time = datetime.fromisoformat(wc.get("initial_time", "2026-01-01 08:00"))
@@ -669,12 +670,15 @@ class WorldEnv:
                 prepared.append((char, observation, prompt, filtered))
 
             # 2. 同一步内多角色并行 LLM 决策（大幅提升效率）
+            sem = asyncio.Semaphore(max(1, self.max_concurrency))
+
             async def _decide(prompt):
-                try:
-                    return await llm_call(prompt)
-                except Exception as e:
-                    print(f"  ⚠ LLM 调用失败: {e}")
-                    return "我停下来等待。"
+                async with sem:
+                    try:
+                        return await llm_call(prompt)
+                    except Exception as e:
+                        print(f"  ⚠ LLM 调用失败: {e}")
+                        return "我停下来等待。"
 
             decisions = await asyncio.gather(*(_decide(p) for _, _, p, _ in prepared))
 

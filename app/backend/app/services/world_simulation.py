@@ -654,6 +654,7 @@ class WorldSimulationService:
         include_timeline: bool = False,
         from_event_id: Optional[str] = None,
         story_summary_mode: str = "rule",
+        max_concurrency: Optional[int] = None,
     ) -> WorldSimulationState:
         """
         启动世界模拟：
@@ -723,6 +724,7 @@ class WorldSimulationService:
                 )
                 config["world"]["total_steps"] = int(total_steps)
                 config["world"]["story_summary_mode"] = story_summary_mode if story_summary_mode in ("rule", "llm") else "rule"
+                config["world"]["max_concurrency"] = int(max_concurrency) if max_concurrency else max(1, len(config.get("characters", []) or []))
                 config["world"]["time_step_minutes"] = int(time_step_minutes)
                 config["world"]["time_mode"] = time_mode
                 config["world"]["time_jumps"] = list(time_jumps or [])

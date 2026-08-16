@@ -958,6 +958,7 @@
     "simTimeJumpsPlaceholder": "例：数日后，三个月后，一年后，十年后（逗号/顿号分隔）",
     "simUseTimeline": "把当前时间线作为推演上下文",
     "simStorySummaryLlm": "LLM 剧情摘要（更连贯，稍慢）",
+    "simMaxConcurrencyLabel": "并发决策数",
     "simStartEventLabel": "起点事件（可选）",
     "simStartEventNone": "从世界初始状态开始",
     "simStartBtn": "启动世界模拟",

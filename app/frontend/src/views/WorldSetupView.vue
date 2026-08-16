@@ -513,6 +513,10 @@
               {{ $t('world.simStorySummaryLlm') }}
             </label>
           </div>
+          <div class="sim-field">
+            <label class="sim-label">{{ $t('world.simMaxConcurrencyLabel') }}</label>
+            <input v-model.number="simMaxConcurrency" type="number" min="1" max="8" class="sim-input" />
+          </div>
           <div class="sim-field sim-field-wide">
             <label class="sim-label">{{ $t('world.simStartEventLabel') }}</label>
             <select v-model="simStartEventId" class="sim-input">
@@ -1087,6 +1091,7 @@ const simTimeMode = ref('minutes')
 const simTimeJumps = ref('')
 const simUseTimeline = ref(false)
 const simStorySummaryLlm = ref(false)
+const simMaxConcurrency = ref(1)
 const simStartEventId = ref('')
 const simTimelineEvents = ref([])
 const simGoal = ref('')  // 任务目标（可选，决定推演走向）
@@ -1771,6 +1776,7 @@ async function quickAsk(key) {
           ? simTimeJumps.value.split(/[,，]/).map(s => s.trim()).filter(Boolean)
           : [],
         story_summary_mode: simStorySummaryLlm.value ? 'llm' : 'rule',
+        max_concurrency: simMaxConcurrency.value || 1,
       })
     } else if (key === 'assistant.quickCharacters') {
       res = await generateTimelineCharacters(projectId)
@@ -2406,6 +2412,7 @@ async function handleStartSim() {
       time_jumps: jumps,
       include_timeline: simUseTimeline.value,
       story_summary_mode: simStorySummaryLlm.value ? 'llm' : 'rule',
+      max_concurrency: simMaxConcurrency.value || 1,
       from_event_id: simStartEventId.value || undefined,
       goal: simGoal.value.trim() || undefined
     })
