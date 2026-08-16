@@ -328,7 +328,7 @@ class ConflictDetector:
                     progress_cb("未抽取到足够事实，跳过对比", 100)
                 return report
 
-            conflicts, _ = self._compare_facts(
+            conflicts, suppressed = self._compare_facts(
                 bg_facts,
                 st_facts,
                 resolved_context=_resolutions_to_text(load_effective_resolutions(project_id)),
@@ -339,6 +339,7 @@ class ConflictDetector:
                 "story_facts": len(st_facts),
                 "background_chars": len(background_text),
                 "story_chars": len(story_text),
+                "suppressed": suppressed,
             }
             if progress_cb:
                 progress_cb("冲突检测完成", 100)
@@ -403,8 +404,13 @@ class ConflictDetector:
         bg_facts: List[FactItem],
         st_facts: List[FactItem],
         resolved_context: str = "",
-    ) -> List[ConflictItem]:
-        """对比两份事实清单，输出冲突列表（可携带已生效裁定抑制重复报告）"""
+    ) -> tuple[List[ConflictItem], int]:
+        """对比两份事实清单，输出冲突列表（可携带已生效裁定抑制重复报告）。
+
+        返回 (conflicts, suppressed)：
+        - conflicts：真正仍需处理的新冲突；
+        - suppressed：因已生效裁定而被 LLM 抑制（记录在 ignored 数组中）的主题数。
+        """
         # 控制输入规模：优先保留与正文主体相关的背景事实
         bg_keep = self._prioritize_facts(bg_facts, st_facts, MAX_FACTS_FOR_COMPARE)
         st_keep = st_facts[:MAX_FACTS_FOR_COMPARE]
@@ -428,7 +434,10 @@ class ConflictDetector:
         )
 
         conflicts: List[ConflictItem] = []
-        for item in result.get("conflicts", []) if isinstance(result, dict) else []:
+        items = result.get("conflicts", []) if isinstance(result, dict) else []
+        if not isinstance(items, list):
+            items = []
+        for item in items:
             if not isinstance(item, dict):
                 continue
             conflict = ConflictItem(
@@ -445,7 +454,18 @@ class ConflictDetector:
             )
             if conflict.topic and (conflict.background_fact or conflict.story_fact):
                 conflicts.append(conflict)
-        return conflicts
+
+        # 已生效裁定抑制的主题：LLM 可把与新裁定主题重合、不再报告的
+        # 冲突放进 "ignored" 数组（可选），此处统计其数量供 meta/time 汇报。
+        suppressed = 0
+        if isinstance(result, dict):
+            ignored = result.get("ignored")
+            if isinstance(ignored, list):
+                suppressed = sum(
+                    1 for i in ignored
+                    if isinstance(i, dict) and str(i.get("topic") or "").strip()
+                )
+        return conflicts, suppressed
 
     # ---------------- 多轮辩解评估 ----------------
 

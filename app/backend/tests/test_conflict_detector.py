@@ -144,10 +144,11 @@ def test_compare_facts_output_shape():
     detector = ConflictDetector(llm_client=llm)
     bg = [FactItem(subject="龙裔王国", predicate="建于", object="三百年前")]
     st = [FactItem(subject="龙裔王国", predicate="建于", object="五百年前")]
-    conflicts = detector._compare_facts(bg, st)
+    conflicts, suppressed = detector._compare_facts(bg, st)
     assert len(conflicts) == 1
     assert isinstance(conflicts[0], ConflictItem)
     assert conflicts[0].conflict_id
+    assert suppressed == 0
 
 
 def test_report_save_and_load(tmp_path):
