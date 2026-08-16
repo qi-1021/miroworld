@@ -9,6 +9,8 @@
 - data/world-timeline/<project_id>/timeline.json（data/ 已 gitignore）
   timeline.json = { "project_id", "source", "events": [ <TimelineEvent>... ] }
 """
+import difflib
+import hashlib
 import json
 import os
 import re
@@ -685,6 +687,133 @@ def structure_hint_block(structure: Optional[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# 线程/时间线归一化合并
+# ---------------------------------------------------------------------------
+# 主线/占位名的归一化目标
+_MAINTHREAD_KEYS = {"", "main", "主线", "主时间线", "全部", "all", "default", "默认"}
+
+# 常见线程名后缀/噪音词，归一化时去掉，避免“乌萨斯主线”“乌萨斯线”“乌萨斯-线”被拆成多条。
+_THREAD_SUFFIXES = (
+    "时间线", "故事线", "剧情线", "叙事线", "主线", "支线", "线", "历史",
+    "timeline", "thread", "storyline", "line",
+)
+
+
+def _thread_norm_key(label: Any) -> str:
+    """把线程名/ID 归一化为稳定的比较键：小写、去空白/标点、去常见后缀。"""
+    s = str(label or "").strip().lower()
+    s = re.sub(r"[\s_\-—－:：,，。.、;；!！?？()（）\[\]【】/\\|]+", "", s)
+    # 去掉常见后缀（保留至少 1 个字符）
+    changed = True
+    while changed and len(s) > 1:
+        changed = False
+        for suf in _THREAD_SUFFIXES:
+            if s.endswith(suf) and len(s) > len(suf):
+                s = s[:-len(suf)]
+                changed = True
+    return s
+
+
+def _thread_similarity(a: str, b: str) -> float:
+    """两个归一化线程键的相似度：包含关系给高分，否则用 difflib。"""
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    if len(a) >= 2 and len(b) >= 2 and (a in b or b in a):
+        return 0.92
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def _reconcile_threads(
+    events: List[Dict[str, Any]],
+    structure: Optional[Dict[str, Any]],
+    threads: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """把抽取事件按“真实时间线线索”归一化合并，避免同一条主线被拆成多段。
+
+    - single（或明确无多线） → 全部归入 main；
+    - 多线结构 → 把同一条线索的不同命名（“乌萨斯”/“乌萨斯主线”）合并到同一条，
+      但保留真正并行的不同 thread（国家/势力/维度等）。
+    """
+    if not events:
+        return events
+
+    structure_type = (structure or {}).get("type") if structure else None
+    if structure_type == "single":
+        for e in events:
+            e["thread_id"] = ""
+            e["thread_name"] = ""
+            e["parallel_group"] = ""
+            e["dimension"] = "main"
+        return events
+
+    canon_map: Dict[str, Dict[str, Any]] = {}
+
+    def add_canon(c: Dict[str, Any]) -> None:
+        if not c:
+            return
+        name_key = _thread_norm_key(c.get("name") or c.get("id"))
+        if name_key and name_key not in canon_map:
+            canon_map[name_key] = c
+        id_key = _thread_norm_key(c.get("id"))
+        if id_key and id_key not in canon_map:
+            canon_map[id_key] = c
+
+    for t in threads or []:
+        add_canon({
+            "id": str(t.get("id") or t.get("name") or "").strip(),
+            "name": str(t.get("name") or t.get("id") or "").strip(),
+            "dimension": str(t.get("dimension") or "main").strip() or "main",
+            "parallel_group": str(t.get("parallel_group") or "").strip(),
+        })
+
+    # 保证存在一条 main 归并目标
+    if not any(k in _MAINTHREAD_KEYS or _thread_norm_key(k) in _MAINTHREAD_KEYS for k in canon_map):
+        add_canon({"id": "main", "name": "main", "dimension": "main", "parallel_group": ""})
+
+    def find_canon(norm_key: str) -> Optional[Dict[str, Any]]:
+        if norm_key in canon_map:
+            return canon_map[norm_key]
+        best_key = None
+        best_score = 0.0
+        for k, c in canon_map.items():
+            score = _thread_similarity(norm_key, k)
+            if score > best_score:
+                best_key, best_score = k, score
+        if best_key and best_score >= 0.72:
+            return canon_map[best_key]
+        return None
+
+    def assign(e: Dict[str, Any], c: Dict[str, Any]) -> None:
+        e["thread_id"] = str(c.get("id") or "").strip()
+        e["thread_name"] = str(c.get("name") or c.get("id") or "").strip()
+        e["parallel_group"] = str(c.get("parallel_group") or "").strip()
+        if not str(e.get("dimension") or "").strip() or e.get("dimension") == "main":
+            e["dimension"] = str(c.get("dimension") or "main").strip() or "main"
+
+    for e in events:
+        label = str(e.get("thread_name") or e.get("thread_id") or "").strip()
+        norm = _thread_norm_key(label)
+        if norm in _MAINTHREAD_KEYS:
+            c = find_canon("main") or {"id": "", "name": "", "dimension": "main", "parallel_group": ""}
+            assign(e, c)
+            continue
+        c = find_canon(norm)
+        if c is None:
+            c = {
+                "id": str(e.get("thread_id") or label or norm),
+                "name": label or norm,
+                "dimension": str(e.get("dimension") or "main").strip() or "main",
+                "parallel_group": str(e.get("parallel_group") or "").strip(),
+            }
+            add_canon(c)
+        assign(e, c)
+
+    return events
+
+
 # 结构类型持久化（随 threads.json 一起存 timeline metadata，供结构视图前端使用）
 def _structure_path(project_id: str) -> str:
     return os.path.join(TIMELINE_ROOT, validate_project_id(project_id), "structure.json")
@@ -1126,13 +1255,72 @@ def get_status(task_id: str) -> Optional[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# 抽取断点进度持久化
+# ---------------------------------------------------------------------------
+def _extract_progress_path(project_id: str, source: str) -> str:
+    """抽取断点文件：data/world-timeline/<pid>/extract-progress-<source>.json"""
+    return os.path.join(
+        TIMELINE_ROOT,
+        validate_project_id(project_id),
+        f"extract-progress-{source}.json",
+    )
+
+
+def _load_extract_progress(project_id: str, source: str) -> List[Dict[str, Any]]:
+    """读取抽取断点；不存在/损坏返回 []。"""
+    try:
+        path = _extract_progress_path(project_id, source)
+        if not os.path.exists(path):
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        chunks = data.get("chunks") if isinstance(data, dict) else data
+        if not isinstance(chunks, list):
+            return []
+        out = []
+        for item in chunks:
+            if isinstance(item, dict) and isinstance(item.get("events"), list):
+                out.append(item)
+        return out
+    except Exception as e:
+        logger.warning(f"读取时间线抽取进度失败（忽略）: {e}")
+        return []
+
+
+def _save_extract_progress(
+    project_id: str, source: str, entries: List[Dict[str, Any]]
+) -> bool:
+    """原子写抽取断点。失败仅告警，不影响抽取主流程。"""
+    try:
+        path = _extract_progress_path(project_id, source)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        atomic_write_json(path, {
+            "project_id": project_id,
+            "source": source,
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "chunks": entries,
+        })
+        return True
+    except Exception as e:
+        logger.warning(f"保存时间线抽取进度失败（忽略）: {e}")
+        return False
+
+
+def _chunk_hash(chunk: str) -> str:
+    """chunk 文本的 sha1，用于断点续跑时判断文本是否变化。"""
+    return hashlib.sha1((chunk or "").encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
 # 抽取主流程（后台任务体）
 # ---------------------------------------------------------------------------
-def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
+def _extract_task_body(project_id: str, source: str, task_id: str, resume: bool = False) -> None:
     from ..models.task import TaskStatus
     llm_ok_count = 0
     heuristic_count = 0
     all_events: List[Dict[str, Any]] = []
+    threads: List[Dict[str, Any]] = []
+    structure: Optional[Dict[str, Any]] = None
 
     # 局部 _update：刷新 elapsed 的便捷封装
     def _update(**kw):
@@ -1198,8 +1386,53 @@ def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
                 logger.warning(f"[{task_id}] 结构判断失败，使用默认策略: {e}")
                 _task_log(task_id, "结构判断失败，使用默认策略")
 
-        seq = 0
+        # ---------- 断点续跑 ----------
+        progress_by_index: Dict[int, Dict[str, Any]] = {}
+        if resume:
+            for entry in _load_extract_progress(project_id, source):
+                try:
+                    idx = int(entry.get("index", -1))
+                except (TypeError, ValueError):
+                    continue
+                if idx >= 0:
+                    progress_by_index[idx] = entry
+            matched = sum(
+                1 for idx, entry in progress_by_index.items()
+                if 0 <= idx < total
+                and entry.get("hash") == _chunk_hash(chunks[idx])
+                and entry.get("events")
+            )
+            if matched:
+                _task_log(task_id, f"断点续跑：跳过 {matched} 个已完成块")
+
+        # 先装载已完成的块，避免后续重跑
+        for idx, entry in progress_by_index.items():
+            if 0 <= idx < total and entry.get("hash") == _chunk_hash(chunks[idx]) and entry.get("events"):
+                saved = list(entry.get("events") or [])
+                if saved:
+                    all_events.extend(saved)
+                    used = str(entry.get("method") or "llm")
+                    if used == "llm":
+                        llm_ok_count += 1
+                    else:
+                        heuristic_count += 1
+        if resume and all_events:
+            _task_log(task_id, f"已从断点恢复 {len(all_events)} 个事件")
+
+        seq = len(all_events)
         for i, chunk in enumerate(chunks):
+            h = _chunk_hash(chunk)
+            entry = progress_by_index.get(i)
+            if resume and entry and entry.get("hash") == h and entry.get("events"):
+                # 已完成块：事件已在上面的装载阶段加入，这里只推进进度
+                used = str(entry.get("method") or "llm")
+                pct = round((i + 1) / total * 100) if total else 0
+                _update(done_chunks=i + 1, llm_ok=llm_ok_count, heuristic=heuristic_count,
+                        progress=pct,
+                        message=f"已处理 {i + 1}/{total} 块（断点跳过）",
+                        stage=f"正在抽取 {i + 1}/{total} 块（{used}）")
+                continue
+
             used = "heuristic"
             events = None
             if llm is not None:
@@ -1220,11 +1453,28 @@ def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
             if events is None:
                 events = _heuristic_extract_chunk(chunk, i, source)
                 used = "heuristic"
+
+            normalized_events: List[Dict[str, Any]] = []
             if events:
                 for raw in events:
                     ev = _normalize_event(raw, project_id, source, i, used, seq)
+                    normalized_events.append(ev)
                     all_events.append(ev)
                     seq += 1
+
+            progress_by_index[i] = {
+                "index": i,
+                "hash": h,
+                "method": used,
+                "events": normalized_events,
+            }
+            # 每块完成后立即落盘断点，失败后也可从已成功块续跑
+            _save_extract_progress(
+                project_id,
+                source,
+                [progress_by_index[k] for k in sorted(progress_by_index) if k >= 0],
+            )
+
             if used == "llm":
                 llm_ok_count += 1
             else:
@@ -1234,6 +1484,10 @@ def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
                     progress=pct,
                     message=f"已处理 {i + 1}/{total} 块",
                     stage=f"正在抽取 {i + 1}/{total} 块（{'LLM' if used == 'llm' else '启发式'}）")
+
+        # 线程/时间线合并：修复同一主时间线前后段被拆成不同线程的问题
+        _task_log(task_id, "合并同名/同主线时间线分段...")
+        _reconcile_threads(all_events, structure, threads)
 
         # 排序 + 合并去重 + 写库（项目级锁内重读最新时间线，避免与并行任务互相覆盖）
         _task_log(task_id, "归一化并排序事件")
@@ -1265,6 +1519,8 @@ def _extract_task_body(project_id: str, source: str, task_id: str) -> None:
         _update(status="failed", error=str(e), stage="失败", message=str(e))
 
 
+
+
 def _merge_events(existing: List[Dict[str, Any]], new: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """把新抽事件并入现有事件，按 summary+location 近似去重（保留已有、跳过重复新事件）。"""
     seen = set()
@@ -1294,13 +1550,18 @@ def _source_text(project_id: str, story: bool) -> str:
 # ---------------------------------------------------------------------------
 # 对外启动接口
 # ---------------------------------------------------------------------------
-def start_extract(project_id: str, source: str) -> str:
-    """校验 project_id/source，创建后台任务并返回 task_id。"""
+def start_extract(project_id: str, source: str, resume: bool = False) -> str:
+    """校验 project_id/source，创建后台任务并返回 task_id。
+
+    resume=True 时读取 extract-progress-<source>.json，跳过已完成且
+    源文本 hash 未变的 chunk，从失败/未处理处续跑。
+    """
     validate_project_id(project_id)
     if source not in ("story", "bg"):
         raise ValueError("source 必须是 story 或 bg")
     task_id = _new_task("tl_task", "任务已创建")
-    threading.Thread(target=_extract_task_body, args=(project_id, source, task_id),
+    threading.Thread(target=_extract_task_body,
+                     args=(project_id, source, task_id, resume),
                      daemon=True).start()
     return task_id
 

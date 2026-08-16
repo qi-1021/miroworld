@@ -65,15 +65,61 @@ CONFLICT_COMPARE_PROMPT = """你是一名严谨的小说设定编辑，正在检
 
 要求：
 1. 只报告真实矛盾，不要报告"正文补充了背景没有的信息"——补充不算冲突
-2. 每条冲突输出：主题（topic）、冲突类型（conflict_type，取值：fact_contradiction/rule_violation/time_conflict/character_mismatch/location_conflict/other）、背景事实、正文事实、冲突原因（reason）、严重程度（severity，取值：high/medium/low）、修改建议（suggestion，指出应以哪边为准）
-3. 最多输出 {max_conflicts} 条，按严重程度排序
-4. 只输出 JSON：{{"conflicts": [{{"topic": "", "conflict_type": "", "background_fact": "", "story_fact": "", "background_quote": "", "story_quote": "", "reason": "", "severity": "", "suggestion": ""}}]}}
+2. **已生效裁定**：下方"已裁定清单"中的冲突已由创作者裁定并标记生效，
+   检测时**不要再报告相同或类似主题的冲突**，一律视为已解决；
+   若正文出现了与裁定相反的新写法，也不重新报告，只可记录在结果的
+   "ignored" 数组中（可选，格式同 conflicts，但不会对外展示为冲突）。
+3. 每条冲突输出：主题（topic）、冲突类型（conflict_type，取值：fact_contradiction/rule_violation/time_conflict/character_mismatch/location_conflict/other）、背景事实、正文事实、冲突原因（reason）、严重程度（severity，取值：high/medium/low）、修改建议（suggestion，指出应以哪边为准）
+4. 最多输出 {max_conflicts} 条，按严重程度排序
+5. 只输出 JSON：{{"conflicts": [{{"topic": "", "conflict_type": "", "background_fact": "", "story_fact": "", "background_quote": "", "story_quote": "", "reason": "", "severity": "", "suggestion": ""}}]}}
 
 背景事实清单：
 {background_facts}
 
 正文事实清单：
-{story_facts}"""
+{story_facts}
+
+已裁定清单（生效，不再报告）：
+{resolved_notes}"""
+
+# 多轮辩解评估提示词
+DEFENSE_EVALUATE_PROMPT = """你是一名严谨的小说设定编辑，正在评估创作者针对一条**世界设定冲突**提出的"辩解"（抗辩意见）。
+
+创作流程：背景设定文档是"世界应该是什么样的"，小说正文是"故事中实际发生了什么"。
+冲突可能存在，也可能被创作者合理解释（如寓言层、视角差异、设定演化、能力例外等）。
+
+请结合冲突信息、此前的辩解记录（若有）与创作者最新的一条辩解，给出裁定：
+- defense_accepted   辩解成立：该处矛盾可接受，不再作为必须修改的冲突
+- defense_rejected   辩解不成立：仍是真实矛盾，应按建议修改
+- defense_partial    部分成立：接受部分辩解，但仍有残留问题需要处理
+
+要求：
+1. 依据冲突的事实与引用原文判断，不要空泛附和，也不要为了消灭矛盾而强行驳回
+2. 对每轮辩解都要逐条回应其论点（引用其原话），说明成立或不成立的具体理由
+3. reply 是面向创作者的回复：清楚说明裁定结论与下一步可以做什么（≤200 字）
+
+只输出 JSON：
+{{"verdict": "defense_accepted|defense_rejected|defense_partial", "reasoning": "裁定理由", "suggestion": "接下来建议怎么做", "reply": "面向创作者的回复"}}
+
+冲突信息：
+主题：{topic}
+类型：{conflict_type}
+背景事实：{background_fact}
+正文事实：{story_fact}
+背景原文引用：{background_quote}
+正文原文引用：{story_quote}
+既有的修改建议：{suggestion}
+
+此前的辩解记录（最早在前）：
+{history}
+
+创作者最新辩解：
+「{argument}」"""
+
+# 单次辩解内容上限（字符）
+MAX_DEFENSE_ARGUMENT = 2000
+# 单条冲突保留的辩解轮次上限（超过丢弃最旧，控制上下文）
+MAX_DEFENSE_ROUNDS = 12
 
 
 # ---------------------------------------------------------------- 数据模型
@@ -92,6 +138,27 @@ class FactItem:
 
 
 @dataclass
+class DefenseRound:
+    """一轮冲突辩解：创作者提交论点，助手（LLM）给出裁定回复。
+
+    role: 'user'（创作者论点）| 'assistant'（LLM 裁定）
+    verdict: ''（user 轮）| defense_accepted | defense_rejected | defense_partial
+    """
+    round_id: str
+    role: str  # 'user' | 'assistant'
+    content: str
+    verdict: str = ""
+    created_at: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'DefenseRound':
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+@dataclass
 class ConflictItem:
     """一条冲突"""
     conflict_id: str
@@ -106,13 +173,32 @@ class ConflictItem:
     suggestion: str = ""
     status: str = "open"  # open | accepted | dismissed | justified
     resolution_note: str = ""  # 用户自定义辩解/裁定说明（justified 时必填）
+    defense_rounds: List[DefenseRound] = field(default_factory=list)  # 多轮辩解记录
+    effective: bool = False  # 裁定已生效：后续检测不再重复报告该冲突
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ConflictItem':
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        kwargs = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
+        rounds = kwargs.get("defense_rounds")
+        if rounds:
+            kwargs["defense_rounds"] = [
+                DefenseRound.from_dict(r) if isinstance(r, dict) else r
+                for r in rounds
+            ]
+        else:
+            kwargs["defense_rounds"] = []
+        return cls(**kwargs)
+
+    @property
+    def last_verdict(self) -> str:
+        """最近一条助手裁定（无则空串）"""
+        for r in reversed(self.defense_rounds):
+            if r.role == "assistant" and r.verdict:
+                return r.verdict
+        return ""
 
 
 @dataclass
@@ -160,6 +246,10 @@ class ConflictDetector:
     def detect(self, project_id: str, background_text: str, story_text: str) -> ConflictReport:
         """
         检测背景与正文的冲突，返回报告（不落盘，由调用方决定是否保存）。
+
+        自动加载本项目已"生效"的冲突裁定（effective=true 且 status 为
+        accepted/justified），把这些裁定交给 LLM 抑制重复报告，并过滤
+        与已生效裁定主题重合的新冲突。
         """
         report = ConflictReport(
             project_id=project_id,
@@ -174,19 +264,26 @@ class ConflictDetector:
             st_facts = self._extract_facts(story_text, source='story')
             logger.info(f"事实抽取完成: background={len(bg_facts)}, story={len(st_facts)}")
 
-            # 阶段 2：对比
+            # 阶段 2：对比（携带已生效裁定抑制重复报告）
             if not bg_facts or not st_facts:
                 report.meta = {"background_facts": len(bg_facts), "story_facts": len(st_facts)}
                 logger.warning("某来源未抽取到事实，跳过对比")
                 return report
 
-            conflicts = self._compare_facts(bg_facts, st_facts)
+            resolutions = load_effective_resolutions(project_id)
+            conflicts, suppressed = self._compare_facts(
+                bg_facts,
+                st_facts,
+                resolved_context=_resolutions_to_text(resolutions),
+            )
             report.conflicts = conflicts
             report.meta = {
                 "background_facts": len(bg_facts),
                 "story_facts": len(st_facts),
                 "background_chars": len(background_text),
                 "story_chars": len(story_text),
+                "effective_resolutions": len(resolutions),
+                "suppressed": suppressed,  # 因已生效裁定而未报告的主题
             }
             return report
 
@@ -231,7 +328,11 @@ class ConflictDetector:
                     progress_cb("未抽取到足够事实，跳过对比", 100)
                 return report
 
-            conflicts = self._compare_facts(bg_facts, st_facts)
+            conflicts, _ = self._compare_facts(
+                bg_facts,
+                st_facts,
+                resolved_context=_resolutions_to_text(load_effective_resolutions(project_id)),
+            )
             report.conflicts = conflicts
             report.meta = {
                 "background_facts": len(bg_facts),
@@ -297,8 +398,13 @@ class ConflictDetector:
 
     # ---------------- 阶段 2：冲突对比 ----------------
 
-    def _compare_facts(self, bg_facts: List[FactItem], st_facts: List[FactItem]) -> List[ConflictItem]:
-        """对比两份事实清单，输出冲突列表"""
+    def _compare_facts(
+        self,
+        bg_facts: List[FactItem],
+        st_facts: List[FactItem],
+        resolved_context: str = "",
+    ) -> List[ConflictItem]:
+        """对比两份事实清单，输出冲突列表（可携带已生效裁定抑制重复报告）"""
         # 控制输入规模：优先保留与正文主体相关的背景事实
         bg_keep = self._prioritize_facts(bg_facts, st_facts, MAX_FACTS_FOR_COMPARE)
         st_keep = st_facts[:MAX_FACTS_FOR_COMPARE]
@@ -310,6 +416,7 @@ class ConflictDetector:
             background_facts=bg_lines,
             story_facts=st_lines,
             max_conflicts=20,
+            resolved_notes=resolved_context or "（无）",
         )
         result = self.llm.chat_json(
             messages=[
@@ -339,6 +446,61 @@ class ConflictDetector:
             if conflict.topic and (conflict.background_fact or conflict.story_fact):
                 conflicts.append(conflict)
         return conflicts
+
+    # ---------------- 多轮辩解评估 ----------------
+
+    def evaluate_defense(
+        self,
+        conflict: ConflictItem,
+        argument: str,
+    ) -> DefenseRound:
+        """用 LLM 评估创作者最新一轮辩解，返回 assistant 裁定轮。
+
+        - 调用失败会抛异常，由调用方决定降级/报错。
+        - verdict 规范化为 defense_accepted / defense_rejected / defense_partial。
+        """
+        history_lines = []
+        for idx, r in enumerate(conflict.defense_rounds or [], start=1):
+            role_label = "创作者" if r.role == "user" else "裁定"
+            history_lines.append(
+                f"{idx}. [{role_label}] {r.content}" + (f"（{r.verdict}）" if r.verdict else "")
+            )
+        history = "\n".join(history_lines) or "（无）"
+
+        prompt = DEFENSE_EVALUATE_PROMPT.format(
+            topic=conflict.topic,
+            conflict_type=conflict.conflict_type,
+            background_fact=conflict.background_fact,
+            story_fact=conflict.story_fact,
+            background_quote=conflict.background_quote or "（无）",
+            story_quote=conflict.story_quote or "（无）",
+            suggestion=conflict.suggestion or "（无）",
+            history=history,
+            argument=argument[:MAX_DEFENSE_ARGUMENT],
+        )
+        result = self.llm.chat_json(
+            messages=[
+                {"role": "system", "content": "你是严谨的小说设定编辑，只输出 JSON。"},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.2,
+            max_tokens=1200,
+        )
+        verdict = str(
+            result.get("verdict") if isinstance(result, dict) else ""
+        ).strip()
+        if verdict not in ("defense_accepted", "defense_rejected", "defense_partial"):
+            verdict = "defense_partial"
+        reply = str(
+            result.get("reply") or result.get("reasoning") or "已收到辩解并给出裁定。"
+        ).strip()
+        return DefenseRound(
+            round_id=uuid.uuid4().hex[:12],
+            role="assistant",
+            content=reply[:2000],
+            verdict=verdict,
+            created_at=datetime.now().isoformat(timespec="seconds"),
+        )
 
     # ---------------- 工具 ----------------
 
@@ -398,3 +560,33 @@ def load_conflict_report(project_id: str) -> Optional[ConflictReport]:
     except Exception as e:
         logger.error(f"读取冲突报告失败: project={project_id}, err={e}")
         return None
+
+
+def load_effective_resolutions(project_id: str) -> List[Dict[str, Any]]:
+    """读取已生效的冲突裁定，供后续检测/世界推演/小说续写注入。"""
+    report = load_conflict_report(project_id)
+    if report is None:
+        return []
+    resolutions = []
+    for c in report.conflicts:
+        if c.status in ("accepted", "justified", "dismissed"):
+            resolutions.append({
+                "topic": c.topic,
+                "conflict_type": c.conflict_type,
+                "status": c.status,
+                "resolution_note": c.resolution_note or "",
+                "verdict": c.last_verdict or "",
+                "effective": c.effective or c.status in ("accepted", "justified"),
+            })
+    return resolutions
+
+
+def _resolutions_to_text(resolutions: List[Dict[str, Any]]) -> str:
+    """把已生效裁定渲染成提示词文本；无则返回空串。"""
+    if not resolutions:
+        return ""
+    lines = []
+    for r in resolutions:
+        detail = r.get("resolution_note") or r.get("verdict") or ""
+        lines.append(f"- {r.get('topic')}（{r.get('status')}）{('：' + detail) if detail else ''}")
+    return "\n".join(lines)

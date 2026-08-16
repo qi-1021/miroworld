@@ -237,3 +237,29 @@ export function getWorldReport(projectId, simulationId) {
     method: 'get'
   })
 }
+
+/**
+ * 基于世界模拟结果生成小说续写
+ * @param {String} projectId
+ * @param {String} simulationId
+ */
+export function generateWorldNovel(projectId, simulationId) {
+  return service({
+    url: `/api/world/${projectId}/novel`,
+    method: 'post',
+    data: { simulation_id: simulationId },
+    timeout: 300000 // 小说续写可能较慢
+  })
+}
+
+/**
+ * 读取已生成的世界小说续写
+ * @param {String} projectId
+ * @param {String} simulationId
+ */
+export function getWorldNovel(projectId, simulationId) {
+  return service({
+    url: `/api/world/${projectId}/novel/${simulationId}`,
+    method: 'get'
+  })
+}

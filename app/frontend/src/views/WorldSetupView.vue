@@ -279,6 +279,19 @@
               <span class="crn-label">{{ $t('world.justifyNoteLabel') }}</span>
               <span class="crn-text">{{ c.resolution_note }}</span>
             </div>
+            <div v-if="c.defense_rounds && c.defense_rounds.length" class="conflict-defense-history">
+              <div class="cdh-title">{{ $t('world.defenseHistory') }}</div>
+              <div
+                v-for="(r, ri) in c.defense_rounds"
+                :key="ri"
+                class="defense-round"
+                :class="{ user: r.role === 'user', assistant: r.role === 'assistant' }"
+              >
+                <span class="defense-role">{{ r.role === 'user' ? $t('world.defenseUser') : $t('world.defenseAssistant') }}</span>
+                <span v-if="r.verdict" class="defense-verdict">{{ defenseVerdictLabel(r.verdict) }}</span>
+                <p class="defense-content">{{ r.content }}</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -426,11 +439,11 @@
           </div>
         </div>
 
-        <!-- 世界报告 -->
+        <!-- 世界小说续写 -->
         <div v-if="reportSimulationId" class="sim-report">
           <div class="sim-report-head">
             <div class="sim-report-title">
-              <span>{{ $t('world.reportTitle') }}</span>
+              <span>{{ $t('world.novelTitle') }}</span>
               <span v-if="reportSimulationLabel" class="sim-report-sub">{{ reportSimulationLabel }}</span>
             </div>
             <button
@@ -439,7 +452,7 @@
               @click="handleGenerateReport"
             >
               <span v-if="reportGenerating" class="spinner-xs"></span>
-              {{ reportGenerating ? $t('world.reportGenerating') : reportText ? $t('world.reportRegenerate') : $t('world.reportGenerate') }}
+              {{ reportGenerating ? $t('world.novelGenerating') : reportText ? $t('world.novelRegenerate') : $t('world.novelGenerate') }}
             </button>
           </div>
           <div v-if="reportText" class="report-body">
@@ -688,6 +701,8 @@ import {
   simulateWorldWhatIf,
   generateWorldReport,
   getWorldReport,
+  generateWorldNovel,
+  getWorldNovel,
   buildWorldGraph,
   getWorldGraph,
   refillWorldGraphEdges
@@ -940,7 +955,8 @@ async function handleBuildGraph() {
   try {
     const res = await buildWorldGraph(projectId, {
       goal: simGoal.value.trim() || undefined,
-      force: !!graphInfo.value
+      force: !!graphInfo.value,
+      resume: !!graphInfo.value
     })
     graphMsg.value = res.message || t('world.msgGraphStarted')
     pollGraphTask(res.task_id)
@@ -1066,6 +1082,7 @@ const reportBlocks = computed(() => {
 const typeLabel = key => t(`world.conflictTypes.${key}`)
 const sevLabel = key => t(`world.severity.${key}`)
 const statusLabel = key => t(`world.status.${key}`)
+const defenseVerdictLabel = key => t(`world.defenseVerdicts.${key}`)
 
 function formatSize(bytes) {
   if (!bytes) return ''
@@ -1521,7 +1538,7 @@ async function handleInterview() {
   }
 }
 
-// ---------------- 世界报告 ----------------
+// ---------------- 世界小说续写 ----------------
 
 async function openChartRecord(sim) {
   // sim 可能是 dict 或 {simulation_id, created_at}
@@ -1532,15 +1549,15 @@ async function openChartRecord(sim) {
   reportEmptyNote.value = ''
   const time = (sim.created_at || '').replace('T', ' ').slice(0, 16)
   reportSimulationLabel.value = time ? `（${time}）` : ''
-  // 先尝试读取已生成报告
+  // 先尝试读取已生成小说续写
   try {
-    const res = await getWorldReport(projectId, simId)
-    if (res.report && res.report.text) {
-      reportText.value = res.report.text
+    const res = await getWorldNovel(projectId, simId)
+    if (res.novel && res.novel.text) {
+      reportText.value = res.novel.text
       return
     }
   } catch (e) {
-    // 报告不存在，保持生成按钮
+    // 小说尚未生成，保持生成按钮
   }
 }
 
@@ -1550,14 +1567,14 @@ async function handleGenerateReport() {
   reportText.value = ''
   reportEmptyNote.value = ''
   try {
-    const res = await generateWorldReport(projectId, reportSimulationId.value)
-    if (res.report && res.report.text) {
-      reportText.value = res.report.text
+    const res = await generateWorldNovel(projectId, reportSimulationId.value)
+    if (res.novel && res.novel.text) {
+      reportText.value = res.novel.text
     } else {
-      reportEmptyNote.value = t('world.msgReportEmpty')
+      reportEmptyNote.value = t('world.msgNovelEmpty')
     }
   } catch (e) {
-    reportEmptyNote.value = e.message || t('world.msgReportFailed')
+    reportEmptyNote.value = e.message || t('world.msgNovelFailed')
   } finally {
     reportGenerating.value = false
   }

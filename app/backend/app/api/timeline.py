@@ -25,12 +25,19 @@ logger = get_logger('mirofish.api.timeline')
 # ---------------------------------------------------------------------------
 @timeline_bp.route('/extract', methods=['POST'])
 def extract():
-    """触发时间线抽取（后台任务，逐块抽取）。"""
+    """触发时间线抽取（后台任务，逐块抽取）。
+
+    body:
+        project_id: str 必填
+        source: 'story' | 'bg'，默认 story
+        resume: bool 可选，true 时从上次断点续跑
+    """
     try:
         data = request.get_json(silent=True) or {}
         project_id = str(data.get('project_id') or '').strip()
         source = str(data.get('source') or 'story').strip()
-        task_id = timeline_service.start_extract(project_id, source)
+        resume = bool(data.get('resume', False))
+        task_id = timeline_service.start_extract(project_id, source, resume=resume)
         return jsonify({"success": True, "data": {"task_id": task_id}})
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 400

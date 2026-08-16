@@ -26,6 +26,7 @@ from ..models.task import TaskManager, TaskStatus
 from ..services.world_bible import WorldBibleService
 from ..services.conflict_detector import (
     ConflictDetector,
+    DefenseRound,
     save_conflict_report,
     load_conflict_report,
 )
@@ -248,6 +249,31 @@ def save_world_input(project_id: str):
             overlap=overlap,
             metadata=metadata,
         )
+        # 同步文件清单到项目元数据，使首页历史数据库能显示已上传资料，
+        # 而不是总是“无资料”。文本-only 保存时不会清掉已有文件清单。
+        try:
+            from ..models.project import ProjectManager
+            proj = ProjectManager.get_project(project_id)
+            if proj is not None:
+                existing = list(proj.files or [])
+                seen_keys = {
+                    (str(f.get("filename") or ""), str(f.get("source") or ""))
+                    for f in existing
+                }
+                for item in file_manifest:
+                    key = (
+                        str(item.get("filename") or ""),
+                        str(item.get("source") or ""),
+                    )
+                    if key not in seen_keys:
+                        existing.append(item)
+                        seen_keys.add(key)
+                proj.files = existing
+                proj.total_text_length = len(background) + len(story)
+                ProjectManager.save_project(proj)
+        except Exception as e:
+            logger.warning(f"同步世界输入文件清单到项目元数据失败（忽略）: {e}")
+
         result = bible.stats()
         result["files"] = file_manifest
         return jsonify({"success": True, "stats": result})
@@ -292,6 +318,8 @@ def build_world_graph(project_id: str):
         {
             "goal": "可选，任务目标（作为本体生成的上文）",
             "force": false,   // 已有图谱时是否强制重建
+            "resume": false,  // 已有图谱且存在 build-progress 时，跳过已完成 chunk 续构建
+            "skip_auto_refill": false,  // true 时建图完成后不自动启动补边
             "chunk_size": 1500,
             "chunk_overlap": 150
         }
@@ -306,6 +334,8 @@ def build_world_graph(project_id: str):
 
     data = request.get_json(silent=True) or {}
     force = bool(data.get('force', False))
+    resume = bool(data.get('resume', False))
+    skip_auto_refill = bool(data.get('skip_auto_refill', False))
     goal = str(data.get('goal') or '').strip()
 
     try:
@@ -322,10 +352,16 @@ def build_world_graph(project_id: str):
     project = ProjectManager.get_project(project_id)
     if project is None:
         project = ProjectManager.create_project(name="世界模拟")
-    if project.graph_id and not force:
+
+    # 断点续构建：已有 graph_id 且（显式 resume 或 force 但存在 build-progress）时，
+    # 不再强制新建图，而是复用同一 graph_id 继续未完成 chunk。
+    from ..services.world_graph_refill import load_build_progress
+    existing_progress = load_build_progress(project_id) if project and project.graph_id else None
+    can_resume = bool(existing_progress and project and project.graph_id)
+    if project.graph_id and not force and not resume and not can_resume:
         return jsonify({
             "success": False,
-            "error": "世界图谱已存在，如需重建请加 force: true",
+            "error": "世界图谱已存在，如需重建请加 force: true，或加 resume: true 断点续构建",
             "graph_id": project.graph_id,
         }), 400
 
@@ -376,31 +412,61 @@ def build_world_graph(project_id: str):
                 message=f"本体生成完成：{len(ontology.get('entity_types', []))} 个实体类型"
             )
 
-            # 2. 创建图谱并设置本体
+            # 2. 创建/复用图谱并设置本体
             builder = GraphBuilderService()
             # 注意：此处必须重新取 project（闭包内对 project 的赋值会使其
             # 成为局部变量，直接引用外层 project 会触发 UnboundLocalError）
             proj = ProjectManager.get_project(project_id) or project
-            graph_id = builder.create_graph(name=f"世界图谱-{proj.name or project_id}")
-            proj.graph_id = graph_id
-            ProjectManager.save_project(proj)
-            task_manager.update_task(
-                task_id, progress=25, message=f"图谱已创建: {graph_id}"
+            from ..services.world_graph_refill import (
+                load_build_progress, chunk_hash, mark_chunks_done,
+                save_episodes_cache,
             )
+
+            # 已有图谱 + 断点清单 → 复用同一 graph_id 续构建，避免从头开始
+            if proj.graph_id and (resume or can_resume):
+                graph_id = proj.graph_id
+                task_manager.update_task(
+                    task_id, progress=25,
+                    message=f"断点续构建：复用已有图谱 {graph_id}",
+                )
+            else:
+                graph_id = builder.create_graph(name=f"世界图谱-{proj.name or project_id}")
+                proj.graph_id = graph_id
+                ProjectManager.save_project(proj)
+                task_manager.update_task(
+                    task_id, progress=25, message=f"图谱已创建: {graph_id}"
+                )
             builder.set_ontology(graph_id, ontology)
 
-            # 3. 分块并添加 episode
+            # 3. 分块并添加 episode（跳过 build-progress 中已完成的 chunk）
             chunks = TextProcessor.split_text(text, chunk_size=chunk_size, overlap=overlap)
             total_chunks = len(chunks)
             # 缓存 episode 文本，供后续"补边"重放（低频；失败仅警告，不影响建图）
             try:
-                from ..services.world_graph_refill import save_episodes_cache
                 save_episodes_cache(project_id, chunks)
             except Exception:
                 logger.warning("缓存世界图谱 episodes 失败（忽略）")
+
+            progress = load_build_progress(project_id) or {"chunks": []}
+            done_by_index = {}
+            for item in progress.get("chunks", []):
+                if isinstance(item, dict) and item.get("status") == "done":
+                    try:
+                        done_by_index[int(item.get("index", -1))] = item
+                    except (TypeError, ValueError):
+                        continue
+            remaining_indices = []
+            remaining_chunks = []
+            for idx, chunk in enumerate(chunks):
+                item = done_by_index.get(idx)
+                if item and item.get("hash") == chunk_hash(chunk):
+                    continue
+                remaining_indices.append(idx)
+                remaining_chunks.append(chunk)
+
             task_manager.update_task(
                 task_id, progress=30,
-                message=f"设定文本已分割为 {total_chunks} 个块，开始写入图谱..."
+                message=f"设定文本已分割为 {total_chunks} 个块，待写入 {len(remaining_indices)} 个块",
             )
 
             def add_progress_callback(msg, progress_ratio):
@@ -410,11 +476,22 @@ def build_world_graph(project_id: str):
                     progress=30 + int(progress_ratio * 55),  # 30-85%
                 )
 
-            episode_uuids = builder.add_text_batches(
-                graph_id, chunks, batch_size=3,
-                progress_callback=add_progress_callback,
-            )
-            builder._wait_for_episodes(episode_uuids)
+            if remaining_chunks:
+                episode_uuids = builder.add_text_batches(
+                    graph_id, remaining_chunks, batch_size=4,
+                    progress_callback=add_progress_callback,
+                )
+                builder._wait_for_episodes(episode_uuids)
+                mark_chunks_done(
+                    project_id, remaining_chunks, remaining_indices,
+                    episode_uuids, graph_id=graph_id,
+                )
+            else:
+                episode_uuids = []
+                task_manager.update_task(
+                    task_id, progress=85,
+                    message="所有 chunk 已在断点中完成，跳过写入",
+                )
 
             # 4. 统计并收尾
             graph_data = builder.get_graph_data(graph_id)
@@ -430,13 +507,13 @@ def build_world_graph(project_id: str):
                 "node_count": node_count,
                 "edge_count": edge_count,
                 "chunk_count": total_chunks,
+                "resumed_chunk_count": total_chunks - len(remaining_chunks),
                 "auto_refill_task": None,
             }
 
-            # 建图完成后自动补边（可选）：默认开启。仅当补边队列可用且
-            # project 已有 graph_id 时才启动；任何启动失败只 warning，
-            # 绝不拖垮 build 主流程。
-            if Config.GRAPHITI_AUTO_REFILL:
+            # 建图完成后自动补边（可选）：默认开启；前端可传 skip_auto_refill 跳过，
+            # 避免用户以为还在建图。仅当补边队列可用且 project 已有 graph_id 才启动。
+            if Config.GRAPHITI_AUTO_REFILL and not skip_auto_refill:
                 try:
                     from ..services.world_graph_refill import start_edge_refill
                     auto_refill_task = start_edge_refill(
@@ -669,17 +746,63 @@ def update_conflict_status(project_id: str, conflict_id: str):
             return jsonify({"success": False, "error": "没有可更新的冲突报告"}), 404
 
         updated = False
+        from datetime import datetime as _dt
+        now = _dt.now().isoformat(timespec="seconds")
         for c in report.conflicts:
             if c.conflict_id == conflict_id:
-                c.status = status
-                c.resolution_note = note
+                if status == "justified":
+                    # 多轮辩解：记录创作者论点，再交给 LLM 评估
+                    user_round = DefenseRound(
+                        round_id=f"{c.conflict_id}_u{len(c.defense_rounds) + 1}",
+                        role="user",
+                        content=note[:2000],
+                        created_at=now,
+                    )
+                    c.defense_rounds.append(user_round)
+                    if len(c.defense_rounds) > 12:
+                        del c.defense_rounds[:-12]
+
+                    assistant_round = None
+                    try:
+                        detector = ConflictDetector(
+                            llm_client=_build_llm_client_for_project(project_id)
+                        )
+                        assistant_round = detector.evaluate_defense(c, note)
+                        c.defense_rounds.append(assistant_round)
+                    except Exception as e:
+                        logger.warning(f"LLM 辩解评估失败，按人工辩解通过处理: {e}")
+
+                    c.resolution_note = note
+                    if assistant_round and assistant_round.verdict == "defense_rejected":
+                        # 没解释通：保留 open，允许继续辩解
+                        c.status = "open"
+                        c.effective = False
+                    else:
+                        # 解释通（accepted/partial）或评估降级 → 标记 justified 并生效
+                        c.status = "justified"
+                        c.effective = True
+                elif status in ("accepted", "dismissed"):
+                    c.status = status
+                    c.effective = True
+                    c.resolution_note = note or c.resolution_note or ""
+                    if note:
+                        c.defense_rounds.append(DefenseRound(
+                            round_id=f"{c.conflict_id}_m{len(c.defense_rounds) + 1}",
+                            role="user",
+                            content=note[:2000],
+                            created_at=now,
+                        ))
+                else:  # open
+                    c.status = "open"
+                    c.effective = False
+                    c.resolution_note = note or c.resolution_note or ""
                 updated = True
                 break
         if not updated:
             return jsonify({"success": False, "error": "冲突不存在"}), 404
 
         save_conflict_report(project_id, report)
-        return jsonify({"success": True})
+        return jsonify({"success": True, "conflict": c.to_dict()})
     except Exception as e:
         logger.error(f"更新冲突状态失败: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -914,6 +1037,50 @@ def get_world_report(project_id: str, simulation_id: str):
     except Exception as e:
         logger.error(f"读取世界报告失败: {e}")
         return jsonify({"success": False, "error": f"读取报告失败: {e}"}), 500
+
+
+# ---------------------------------------------------------------- 世界小说续写
+
+@world_bp.route('/<project_id>/novel', methods=['POST'])
+def generate_world_novel(project_id: str):
+    """基于世界模拟的最终确定内容，生成“小说续写”而不是分析报告。
+
+    请求（JSON）：
+        { "simulation_id": "xxx" }
+
+    返回：
+        { "success": true, "novel": {"text": "...", "chapters": [...]} }
+    """
+    try:
+        from ..services.world_novel import WorldNovelService
+
+        data = request.get_json(silent=True) or {}
+        simulation_id = str(data.get('simulation_id', '')).strip()
+        if not simulation_id:
+            return jsonify({"success": False, "error": "simulation_id 不能为空"}), 400
+
+        novel = WorldNovelService.generate_novel(project_id, simulation_id)
+        return jsonify({"success": True, "novel": novel})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 404
+    except Exception as e:
+        logger.error(f"生成世界小说续写失败: {e}")
+        return jsonify({"success": False, "error": f"生成小说续写失败: {e}"}), 500
+
+
+@world_bp.route('/<project_id>/novel/<simulation_id>', methods=['GET'])
+def get_world_novel(project_id: str, simulation_id: str):
+    """读取已生成的世界小说续写"""
+    try:
+        from ..services.world_novel import WorldNovelService
+
+        novel = WorldNovelService.load_novel(project_id, simulation_id)
+        if novel is None:
+            return jsonify({"success": False, "error": "小说续写尚未生成"}), 404
+        return jsonify({"success": True, "novel": novel})
+    except Exception as e:
+        logger.error(f"读取世界小说续写失败: {e}")
+        return jsonify({"success": False, "error": f"读取小说续写失败: {e}"}), 500
 
 
 # ---------------------------------------------------------------- 删除

@@ -41,6 +41,18 @@ export function getTimeline(projectId, source) {
 }
 
 /**
+ * 获取时间线整体结构类型判断结果（single/parallel/tree/network/meta/mixed，可能为 null）
+ * @param {String} projectId
+ * @returns {Promise} { success, data: { project_id, structure: { type, confidence, reason, strategy } | null } }
+ */
+export function getTimelineStructure(projectId) {
+  return service({
+    url: '/api/timeline/' + projectId + '/structure',
+    method: 'get'
+  })
+}
+
+/**
  * 人工修正单个事件
  * @param {String} projectId
  * @param {String} eventId

@@ -826,7 +826,14 @@ def delete_simulation(simulation_id: str):
                 removed_any = True
                 deleted.append({"project_id": pid, "scope": "project-world-sim"})
             if not removed_any:
-                return jsonify({"success": False, "error": f"世界模拟数据不存在: {pid}"}), 404
+                # 历史列表里可能残留 world_<pid> 占位，但数据目录已被清掉。
+                # 幂等返回成功，避免首页“空任务”删除时 404。
+                return jsonify({
+                    "success": True,
+                    "deleted": deleted,
+                    "removed_any": False,
+                    "already_absent": True,
+                })
             return jsonify({"success": True, "deleted": deleted, "removed_any": True})
 
         # 2) 媒体模拟目录
@@ -854,6 +861,15 @@ def delete_simulation(simulation_id: str):
                 removed_any = manager.delete_simulation(sid)
                 deleted.append({"simulation_id": sid, "scope": "media-cache-only"})
             else:
+                # 对 MiroFish 标识（sim_/worldsim_/world_）做幂等删除：
+                # 历史列表可能来自内存/状态缓存，而数据目录已不存在，此时也视为删除成功。
+                if sid.startswith(("sim_", "worldsim_", "world_")):
+                    return jsonify({
+                        "success": True,
+                        "deleted": deleted,
+                        "removed_any": False,
+                        "already_absent": True,
+                    })
                 return jsonify({
                     "success": False,
                     "error": f"模拟不存在: {sid}",

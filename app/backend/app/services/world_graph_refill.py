@@ -19,10 +19,11 @@
   （data/ 已在 .gitignore，目录无需额外处理）
 """
 
+import hashlib
 import json
 import os
 import re
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ..utils.logger import get_logger
 from ..utils.atomic_json import atomic_write_json
@@ -86,6 +87,89 @@ def load_episodes_cache(project_id: str) -> Optional[List[str]]:
     except Exception as e:
         logger.warning(f"读取 episodes 缓存失败：{e}")
         return None
+
+
+# ---------------------------------------------------------------------------
+# 建图断点进度（build-progress.json）
+# ---------------------------------------------------------------------------
+
+def build_progress_path(project_id: str) -> str:
+    """建图断点文件：data/world-graph/<project_id>/build-progress.json"""
+    return os.path.join(
+        WORLD_GRAPH_ROOT,
+        validate_project_id(project_id),
+        'build-progress.json',
+    )
+
+
+def chunk_hash(text: str) -> str:
+    """chunk 文本 sha1，用于判断源文本是否变化。"""
+    return hashlib.sha1((text or "").encode("utf-8")).hexdigest()
+
+
+def load_build_progress(project_id: str) -> Optional[Dict[str, Any]]:
+    """读取建图断点。返回 {"chunks": [{index, hash, status, episode_uuid}], "graph_id": ...} 或 None。"""
+    try:
+        path = build_progress_path(project_id)
+        if not os.path.exists(path):
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict) or not isinstance(data.get("chunks"), list):
+            return None
+        return data
+    except Exception as e:
+        logger.warning(f"读取建图断点失败（忽略）: {e}")
+        return None
+
+
+def save_build_progress(
+    project_id: str,
+    chunks_state: List[Dict[str, Any]],
+    graph_id: Optional[str] = None,
+) -> bool:
+    """原子写建图断点。失败仅告警。"""
+    try:
+        path = build_progress_path(project_id)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        atomic_write_json(path, {
+            "project_id": project_id,
+            "graph_id": graph_id or "",
+            "chunks": chunks_state,
+            "updated_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+        })
+        return True
+    except Exception as e:
+        logger.warning(f"保存建图断点失败（忽略）: {e}")
+        return False
+
+
+def mark_chunks_done(
+    project_id: str,
+    chunks: List[str],
+    indices: List[int],
+    episode_uuids: List[str],
+    graph_id: Optional[str] = None,
+) -> None:
+    """把一批成功写入的 chunk 标记为 done 并保存到 build-progress.json。"""
+    progress = load_build_progress(project_id) or {"chunks": []}
+    by_index = {
+        int(item.get("index", -1)): item
+        for item in progress.get("chunks", [])
+        if isinstance(item, dict)
+    }
+    for idx, text, uuid_ in zip(indices, chunks, episode_uuids):
+        by_index[idx] = {
+            "index": idx,
+            "hash": chunk_hash(text),
+            "status": "done",
+            "episode_uuid": uuid_ or "",
+        }
+    save_build_progress(
+        project_id,
+        [by_index[k] for k in sorted(by_index) if k >= 0],
+        graph_id=graph_id or progress.get("graph_id"),
+    )
 
 
 def run_edge_refill(

@@ -616,6 +616,7 @@ const extractSteps = ref([])
 const extractError = ref('')
 const extractDetail = ref(false)
 const extractInterrupted = ref(false)
+const extractResumable = ref(false)
 const statusMessage = ref('')
 const statusError = ref(false)
 const futureGoal = ref('')
@@ -1083,8 +1084,10 @@ async function runExtract() {
   extracting.value = true; statusMessage.value = ''; statusError.value = false;
   extractProgress.value = { done: 0, total: 0 };
   extractStage.value = ''; extractSteps.value = []; extractError.value = ''; extractDetail.value = true; extractTries = 0; extractInterrupted.value = false;
+  const resume = extractResumable.value;
+  extractResumable.value = false;
   try {
-    const res = await extractTimeline({ project_id: props.projectId, source: source.value, timeline_type: timelineType.value });
+    const res = await extractTimeline({ project_id: props.projectId, source: source.value, timeline_type: timelineType.value, resume });
     typePickerOpen.value = false;
     const taskId = res?.data?.task_id || res?.task_id;
     if (!taskId) throw new Error(t('timeline.extractFailed'));
@@ -1104,8 +1107,8 @@ function pollExtract() {
       if (Array.isArray(st.steps)) extractSteps.value = st.steps.slice(-6);
       const s = String(st.status || 'running');
       if (s === 'completed') { stopExtractPoll(); await loadEvents(true); statusMessage.value = t('timeline.extractDone', { n: events.value.length }); }
-      else if (s === 'partial_failed') { stopExtractPoll(); await loadEvents(true); statusMessage.value = t('timeline.extractPartial', { n: events.value.length }); }
-      else if (s === 'failed') { stopExtractPoll(); extractError.value = st.error || st.message || ''; statusMessage.value = st.message || t('timeline.extractFailed'); statusError.value = true; }
+      else if (s === 'partial_failed') { stopExtractPoll(); await loadEvents(true); statusMessage.value = t('timeline.extractPartial', { n: events.value.length }); extractResumable.value = true; }
+      else if (s === 'failed') { stopExtractPoll(); extractError.value = st.error || st.message || ''; statusMessage.value = st.message || t('timeline.extractFailed'); statusError.value = true; extractResumable.value = true; }
       else if (s === 'interrupted') {
         // 服务重启导致任务中断
         stopExtractPoll();
@@ -1113,6 +1116,7 @@ function pollExtract() {
         statusMessage.value = st.message || t('extract.interrupted');
         statusError.value = true;
         extractInterrupted.value = true;
+        extractResumable.value = true;
       }
     } catch (e) {
       // 任务不存在（404）或请求错误：停止轮询并提示重新发起
@@ -1122,10 +1126,11 @@ function pollExtract() {
         statusMessage.value = t('timeline.taskLost');
         statusError.value = true;
         extractInterrupted.value = true;
+        extractResumable.value = true;
         return;
       }
     }
-    if (extractTries > 300) { stopExtractPoll(); extractInterrupted.value = true; statusMessage.value = t('timeline.taskLost'); statusError.value = true; }
+    if (extractTries > 300) { stopExtractPoll(); extractInterrupted.value = true; extractResumable.value = true; statusMessage.value = t('timeline.taskLost'); statusError.value = true; }
   }, 2000);
 }
 function stopExtractPoll() { clearInterval(extractTimer); extractTimer = null; extractTask.value = ''; extracting.value = false; }

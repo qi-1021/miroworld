@@ -167,6 +167,102 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
         snapshot = export_project_snapshot(project_id)
         return {"snapshot": snapshot}
 
+    if action == "update_conflict_status":
+        conflict_id = str(params.get("conflict_id") or "").strip()
+        status = str(params.get("status") or "").strip()
+        note = str(params.get("note") or params.get("resolution_note") or "").strip()
+        if not conflict_id or status not in ("open", "accepted", "dismissed", "justified"):
+            raise ValueError("update_conflict_status 需要 conflict_id 和 status(open/accepted/dismissed/justified)")
+        from ..services.conflict_detector import (
+            ConflictDetector, DefenseRound, load_conflict_report, save_conflict_report,
+        )
+        from datetime import datetime as _dt
+        report = load_conflict_report(project_id)
+        if report is None:
+            raise ValueError("没有可更新的冲突报告")
+        now = _dt.now().isoformat(timespec="seconds")
+        updated = None
+        for c in report.conflicts:
+            if c.conflict_id != conflict_id:
+                continue
+            updated = c
+            if status == "justified":
+                if not note:
+                    raise ValueError("辩解必须填写 note")
+                c.defense_rounds.append(DefenseRound(
+                    round_id=f"{c.conflict_id}_u{len(c.defense_rounds) + 1}",
+                    role="user", content=note[:2000], created_at=now,
+                ))
+                if len(c.defense_rounds) > 12:
+                    del c.defense_rounds[:-12]
+                assistant_round = None
+                try:
+                    assistant_round = ConflictDetector(
+                        llm_client=_build_llm_client_for_project(project_id)
+                    ).evaluate_defense(c, note)
+                    c.defense_rounds.append(assistant_round)
+                except Exception:
+                    logger.warning("助手自动辩解评估失败，按人工辩解通过处理")
+                c.resolution_note = note
+                if assistant_round and assistant_round.verdict == "defense_rejected":
+                    c.status = "open"
+                    c.effective = False
+                else:
+                    c.status = "justified"
+                    c.effective = True
+            else:
+                c.status = status
+                c.effective = status in ("accepted", "dismissed")
+                c.resolution_note = note or c.resolution_note or ""
+                if note and status in ("accepted", "dismissed"):
+                    c.defense_rounds.append(DefenseRound(
+                        round_id=f"{c.conflict_id}_m{len(c.defense_rounds) + 1}",
+                        role="user", content=note[:2000], created_at=now,
+                    ))
+            break
+        if updated is None:
+            raise ValueError("冲突不存在")
+        save_conflict_report(project_id, report)
+        return {"conflict_id": conflict_id, "status": updated.status,
+                "effective": updated.effective, "last_verdict": updated.last_verdict}
+
+    if action == "start_world_simulation":
+        from ..services.world_simulation import WorldSimulationService
+        raw_jumps = params.get("time_jumps") or []
+        if isinstance(raw_jumps, str):
+            raw_jumps = [s.strip() for s in raw_jumps.replace("，", ",").split(",") if s.strip()]
+        try:
+            total_steps = int(params.get("total_steps", 6))
+        except (TypeError, ValueError):
+            total_steps = 6
+        state = WorldSimulationService.start_simulation(
+            project_id=project_id,
+            total_steps=total_steps,
+            time_step_minutes=int(params.get("time_step_minutes", 30) or 30),
+            goal=str(params.get("goal") or params.get("simulation_requirement") or "").strip() or None,
+            time_mode=str(params.get("time_mode") or "minutes").strip(),
+            time_jumps=[str(x).strip() for x in raw_jumps if str(x).strip()],
+            include_timeline=bool(params.get("include_timeline", False)),
+            from_event_id=str(params.get("from_event_id") or "").strip() or None,
+        )
+        return {"simulation_id": state.simulation_id, "status": state.status}
+
+    if action == "generate_novel":
+        sim_id = str(params.get("simulation_id") or "").strip()
+        if not sim_id:
+            raise ValueError("generate_novel 需要 simulation_id")
+        from ..services.world_novel import WorldNovelService
+        novel = WorldNovelService.generate_novel(project_id, sim_id)
+        return {
+            "simulation_id": sim_id,
+            "chapters": len(novel.get("chapters") or []),
+            "text_preview": str(novel.get("text") or "")[:200],
+        }
+
+    if action == "get_project_status":
+        context = _build_project_context(project_id)
+        return {"context": context}
+
     raise ValueError(f"未知操作: {action}")
 
 
@@ -187,7 +283,11 @@ _SYSTEM_PROMPT = (
     "save_characters(characters)、"
     "save_world_input(background, story)、"
     "save_threads(threads)、"
-    "export_snapshot()。"
+    "export_snapshot()、"
+    "update_conflict_status(conflict_id, status, note)、"
+    "start_world_simulation(goal, total_steps, time_mode, time_jumps, include_timeline, from_event_id)、"
+    "generate_novel(simulation_id)、"
+    "get_project_status()。"
     "否则输出普通中文回答，简洁、分点，不超过 400 字。"
 )
 

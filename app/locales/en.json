@@ -843,6 +843,14 @@
     "justifySubmit": "Save Justification",
     "justifying": "Saving...",
     "justifyNoteLabel": "Justification/Ruling: ",
+    "defenseHistory": "Justification History",
+    "defenseUser": "Creator",
+    "defenseAssistant": "Assistant Ruling",
+    "defenseVerdicts": {
+      "defense_accepted": "Accepted",
+      "defense_rejected": "Rejected",
+      "defense_partial": "Partially Accepted"
+    },
     "conflictTypes": {
       "fact_contradiction": "Fact Contradiction",
       "rule_violation": "Rule Violation",
@@ -899,6 +907,12 @@
     "reportGenerating": "Generating...",
     "reportRegenerate": "Regenerate Report",
     "reportGenerate": "Generate World Report",
+    "novelTitle": "Novel Continuation",
+    "novelGenerate": "Generate Novel Continuation",
+    "novelRegenerate": "Regenerate Novel",
+    "novelGenerating": "Writing...",
+    "msgNovelEmpty": "Novel continuation generated, but no text content",
+    "msgNovelFailed": "Novel continuation failed",
     "reportHistoryTitle": "Simulation History",
     "eventCount": "{count} events",
     "whatifFlag": "What-if",

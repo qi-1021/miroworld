@@ -843,6 +843,14 @@
     "justifySubmit": "保存辩解",
     "justifying": "保存中...",
     "justifyNoteLabel": "辩解/裁定：",
+    "defenseHistory": "辩解记录",
+    "defenseUser": "创作者",
+    "defenseAssistant": "助手裁定",
+    "defenseVerdicts": {
+      "defense_accepted": "辩解成立",
+      "defense_rejected": "辩解不成立",
+      "defense_partial": "部分成立"
+    },
     "conflictTypes": {
       "fact_contradiction": "事实矛盾",
       "rule_violation": "规则违反",
@@ -899,6 +907,12 @@
     "reportGenerating": "生成中...",
     "reportRegenerate": "重新生成报告",
     "reportGenerate": "生成世界报告",
+    "novelTitle": "小说续写",
+    "novelGenerate": "生成小说续写",
+    "novelRegenerate": "重新续写",
+    "novelGenerating": "续写中...",
+    "msgNovelEmpty": "小说续写完成，暂无文本内容",
+    "msgNovelFailed": "小说续写失败",
     "reportHistoryTitle": "历史模拟记录",
     "eventCount": "{count} 事件",
     "whatifFlag": "推演",
