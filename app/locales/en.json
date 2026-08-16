@@ -999,6 +999,7 @@
     "eventResult": "Result",
     "eventLinks": "Linked Events",
     "loadMoreEvents": "Load more events…",
+    "exportReportHtml": "Export HTML",
     "allCharacters": "All Characters",
     "exportGraph": "Export Graph",
     "eventCount": "{count} events",

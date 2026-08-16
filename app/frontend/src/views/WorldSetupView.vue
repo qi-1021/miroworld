@@ -708,6 +708,7 @@
               <span v-if="reportGenerating" class="spinner-xs"></span>
               {{ reportGenerating ? $t('world.novelGenerating') : reportText ? $t('world.novelRegenerate') : $t('world.novelGenerate') }}
             </button>
+            <button v-if="reportText" class="mini-btn ghost" @click="exportReportHtml">{{ $t('world.exportReportHtml') }}</button>
           </div>
           <div v-if="reportText" class="report-body">
             <div v-for="(block, bi) in reportBlocks" :key="bi" class="report-block">
@@ -2514,6 +2515,28 @@ async function copyWorldline(sim) {
     simMsg.value = e?.message || t('world.msgUnknownError')
     simMsgError.value = true
   }
+}
+
+function escapeHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+function exportReportHtml() {
+  const blocks = reportBlocks.value || []
+  const body = blocks.map(b => {
+    if (b.type === 'h2') return `<h2>${escapeHtml(b.text)}</h2>`
+    if (b.type === 'li') return `<li>${escapeHtml(b.text)}</li>`
+    return `<p>${escapeHtml(b.text)}</p>`
+  }).join('\n')
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(projectId)}</title><style>body{font-family:-apple-system,'PingFang SC',sans-serif;max-width:800px;margin:40px auto;line-height:1.8;color:#222}h2{margin-top:32px}</style></head><body>${body}</body></html>`
+  const blob = new Blob([html], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `world-report-${projectId}.html`
+  a.style.display = 'none'
+  document.body.appendChild(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 function exportGraph() {

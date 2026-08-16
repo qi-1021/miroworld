@@ -999,6 +999,7 @@
     "eventResult": "结果",
     "eventLinks": "关联事件",
     "loadMoreEvents": "加载更多事件…",
+    "exportReportHtml": "导出 HTML",
     "allCharacters": "全部角色",
     "exportGraph": "导出图",
     "eventCount": "{count} 事件",
