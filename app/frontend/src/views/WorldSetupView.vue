@@ -722,6 +722,7 @@
                 <button class="mini-btn ghost" @click="editWorldlineMeta(child)">✎</button>
                 <button class="mini-btn ghost" @click="loadSimulation(child)">{{ $t('world.loadSimulation') }}</button>
                 <button class="mini-btn" :disabled="simStarting" @click="continueSimulation(child)">{{ $t('world.continueSimulation') }}</button>
+                <button v-if="child.result?.meta?.whatif_question" class="mini-btn" :disabled="simStarting" @click="rerunBranchWithSettings(child)">{{ $t('world.rerunBranchWithSettings') }}</button>
                 <button class="mini-btn ghost" @click="exportSimulation(child)">{{ $t('world.exportSimulation') }}</button>
               </div>
               </div>
@@ -2310,6 +2311,41 @@ async function editWorldlineMeta(sim) {
   } catch (e) {
     simMsg.value = e?.message || t('world.msgUnknownError')
     simMsgError.value = true
+  }
+}
+
+async function rerunBranchWithSettings(sim) {
+  const question = sim.result?.meta?.whatif_question || simGoal.value.trim() || ''
+  if (!question) {
+    simMsg.value = t('world.msgNoBranchQuestion')
+    simMsgError.value = true
+    return
+  }
+  if (simStarting.value) return
+  simStarting.value = true
+  try {
+    const jumps = simTimeJumps.value.split(/[,，、;；]+/).map(s => s.trim()).filter(Boolean)
+    const res = await startWorldSimulation(projectId, {
+      total_steps: simSteps.value || 6,
+      time_step_minutes: simStepMin.value || 30,
+      time_mode: simTimeMode.value || 'minutes',
+      time_jumps: jumps,
+      include_timeline: simUseTimeline.value,
+      goal: question,
+      story_summary_mode: simStorySummaryLlm.value ? 'llm' : 'rule',
+      max_concurrency: simMaxConcurrency.value || 1,
+    })
+    const sim = res.simulation
+    simMsg.value = t('world.msgRerunBranchStarted', { id: sim.simulation_id })
+    simMsgError.value = false
+    simPollingId = sim.simulation_id
+    startSimPolling(sim.simulation_id)
+    loadSimHistory()
+  } catch (e) {
+    simMsg.value = e?.message || t('world.msgSimStartFailed')
+    simMsgError.value = true
+  } finally {
+    simStarting.value = false
   }
 }
 
