@@ -896,6 +896,117 @@ class WorldSimulationService:
         threading.Thread(target=run, daemon=True).start()
         return state
 
+    @classmethod
+    def rollback_simulation(
+        cls,
+        base_simulation_id: str,
+        target_step: int,
+        additional_steps: int = 3,
+        goal: Optional[str] = None,
+    ) -> WorldSimulationState:
+        """从某条世界线的第 N 步回滚重推：保留 N 之前的事件，从 N 步重新演。"""
+        base = cls.get_state(base_simulation_id)
+        if base is None:
+            raise ValueError("基础模拟不存在")
+        project_id = base.project_id
+        events_path = base.events_path or os.path.join(
+            WORLD_SIM_ROOT, project_id, base.simulation_id, "events.json"
+        )
+        if not os.path.exists(events_path):
+            raise ValueError("基础模拟没有事件文件，无法回滚")
+        with open(events_path, "r", encoding="utf-8") as f:
+            all_events = json.load(f)
+        if not all_events:
+            raise ValueError("基础模拟事件为空，无法回滚")
+        target_step = max(1, int(target_step))
+        kept = [e for e in all_events if int(e.get("step") or 0) < target_step]
+
+        base_config_path = base.config_path or os.path.join(
+            WORLD_SIM_ROOT, project_id, base.simulation_id, "world_config.json"
+        )
+        if not os.path.exists(base_config_path):
+            raise ValueError("基础模拟缺少世界配置，无法回滚")
+        with open(base_config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        sim_id = f"{base.simulation_id}_rollback_{target_step}"
+        counter = 2
+        while cls.get_state(sim_id) is not None:
+            sim_id = f"{base.simulation_id}_rollback_{target_step}_{counter}"
+            counter += 1
+
+        sim_dir = os.path.join(WORLD_SIM_ROOT, project_id, sim_id)
+        os.makedirs(sim_dir, exist_ok=True)
+
+        new_config = json.loads(json.dumps(config))
+        new_config["world"]["total_steps"] = int(additional_steps)
+        if goal:
+            new_config["world"]["goal"] = str(goal).strip()
+
+        config_path = os.path.join(sim_dir, "world_config.json")
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(new_config, f, ensure_ascii=False, indent=2)
+
+        resume_events_path = os.path.join(sim_dir, "resume_events.json")
+        with open(resume_events_path, "w", encoding="utf-8") as f:
+            json.dump(kept, f, ensure_ascii=False, indent=2)
+
+        out_events_path = os.path.join(sim_dir, "events.json")
+        state = WorldSimulationState(
+            simulation_id=sim_id,
+            project_id=project_id,
+            status="preparing",
+            config_path=config_path,
+            events_path=out_events_path,
+            created_at=datetime.now().isoformat(timespec="seconds"),
+            updated_at=datetime.now().isoformat(timespec="seconds"),
+        )
+        state.result = {"meta": {"rollback_base": base.simulation_id, "target_step": target_step}}
+        with cls._lock:
+            cls._states[sim_id] = state
+        cls._save_state(state)
+
+        def run():
+            try:
+                state.status = "running"
+                state.updated_at = datetime.now().isoformat(timespec="seconds")
+                cls._save_state(state)
+                output = cls._run_simulation_subprocess(
+                    config_path=config_path,
+                    events_path=out_events_path,
+                    ipc_dir=sim_dir,
+                    extra_args=[
+                        "--resume-events", resume_events_path,
+                        "--start-step", str(target_step),
+                    ],
+                )
+                if os.path.exists(out_events_path):
+                    with open(out_events_path, "r", encoding="utf-8") as f:
+                        events = json.load(f)
+                    state.result = {
+                        "event_count": len(events),
+                        "events": events,
+                        "log_tail": output[-2000:],
+                        "meta": {"rollback_base": base.simulation_id, "target_step": target_step},
+                    }
+                    state.status = "completed"
+                else:
+                    state.status = "failed"
+                    state.error = f"回滚重推未产出事件文件。输出:\n{output[-2000:]}"
+            except subprocess.TimeoutExpired:
+                state.status = "failed"
+                state.error = "世界模拟回滚重推超时（1 小时）"
+            except Exception as e:
+                logger.error(f"世界模拟回滚重推失败: {e}")
+                state.status = "failed"
+                state.error = str(e)
+            finally:
+                state.updated_at = datetime.now().isoformat(timespec="seconds")
+                cls._save_state(state)
+
+        threading.Thread(target=run, daemon=True).start()
+        return state
+
     # ---------------- 事件回写图谱 ----------------
 
     @classmethod

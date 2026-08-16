@@ -537,6 +537,7 @@
             <button class="mini-btn" @click="playbackPrev">⏮</button>
             <button class="mini-btn" @click="playbackToggle">{{ playbackPlaying ? '⏸' : '▶' }}</button>
             <button class="mini-btn" @click="playbackNext">⏭</button>
+            <button class="mini-btn" :disabled="simStarting" @click="rollbackCurrentStep">↩ {{ $t('world.rollbackWorldline') }}</button>
             <span class="sim-playback-info">
               {{ $t('world.simStepLabel', { step: groupedSimEvents[playbackIndex]?.step || 0 }) }} / {{ groupedSimEvents.length }}
             </span>
@@ -1220,6 +1221,29 @@ function playbackPrev() {
 }
 function playbackNext() {
   playbackIndex.value = Math.min(groupedSimEvents.value.length - 1, playbackIndex.value + 1)
+}
+async function rollbackCurrentStep() {
+  const group = groupedSimEvents.value[playbackIndex.value]
+  const simId = simPollingId || (simHistory.value[0]?.simulation_id)
+  if (!group || !simId) return
+  if (simStarting.value) return
+  simStarting.value = true
+  try {
+    const res = await runAssistantAction(projectId, 'rollback_worldline', {
+      simulation_id: simId,
+      target_step: group.step,
+      additional_steps: 3,
+    })
+    const actionResult = res?.data?.action_result || {}
+    simMsg.value = t('world.msgRollbackStarted', { id: actionResult.simulation_id || '' })
+    simMsgError.value = false
+    loadSimHistory()
+  } catch (e) {
+    simMsg.value = e?.message || t('world.msgUnknownError')
+    simMsgError.value = true
+  } finally {
+    simStarting.value = false
+  }
 }
 const simSection = ref(null)
 const inputSection = ref(null)

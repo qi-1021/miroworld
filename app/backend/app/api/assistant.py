@@ -359,6 +359,32 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
             "continue_base": base_id,
         }
 
+    if action == "rollback_worldline":
+        from ..services.world_simulation import WorldSimulationService
+        base_id = str(params.get("simulation_id") or "").strip()
+        if not base_id:
+            raise ValueError("rollback_worldline 需要 simulation_id")
+        try:
+            target_step = int(params.get("target_step") or 1)
+        except (TypeError, ValueError):
+            target_step = 1
+        try:
+            additional_steps = int(params.get("additional_steps", 3) or 3)
+        except (TypeError, ValueError):
+            additional_steps = 3
+        state = WorldSimulationService.rollback_simulation(
+            base_id,
+            target_step=target_step,
+            additional_steps=additional_steps,
+            goal=str(params.get("goal") or "").strip() or None,
+        )
+        return {
+            "simulation_id": state.simulation_id,
+            "status": state.status,
+            "rollback_base": base_id,
+            "target_step": target_step,
+        }
+
     if action == "get_worldline_summary":
         from ..services.world_simulation import WorldSimulationService
         sim_id = str(params.get("simulation_id") or "").strip()
@@ -439,6 +465,7 @@ _SYSTEM_PROMPT = (
     "list_world_tree()、"
     "continue_world_simulation(simulation_id, additional_steps, goal)、"
     "batch_whatif(simulation_id, questions, steps)、"
+    "rollback_worldline(simulation_id, target_step, additional_steps, goal)、"
     "get_worldline_summary(simulation_id)、"
     "get_project_status()。"
     "否则输出普通中文回答，简洁、分点，不超过 400 字。"

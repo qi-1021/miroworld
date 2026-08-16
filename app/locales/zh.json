@@ -999,6 +999,8 @@
     "batchWhatifPrompt": "输入多个假设，每行一个（将同时发起多条分支推演）：",
     "msgBatchWhatifStarted": "已启动 {count} 条分叉推演",
     "msgSimContinueStarted": "续推已启动：{id}",
+    "rollbackWorldline": "回滚重推",
+    "msgRollbackStarted": "回滚重推已启动：{id}",
     "compareWorldlines": "对比世界线",
     "compare": "对比",
     "noEvents": "暂无事件",

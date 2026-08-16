@@ -999,6 +999,8 @@
     "batchWhatifPrompt": "Enter multiple premises, one per line (multiple branches will start simultaneously):",
     "msgBatchWhatifStarted": "Started {count} branch simulations",
     "msgSimContinueStarted": "Continuation started: {id}",
+    "rollbackWorldline": "Rollback & Re-run",
+    "msgRollbackStarted": "Rollback re-run started: {id}",
     "compareWorldlines": "Compare Worldlines",
     "compare": "Compare",
     "noEvents": "No events",
