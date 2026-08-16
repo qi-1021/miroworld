@@ -988,6 +988,7 @@
     "whatifFlag": "What-if",
     "whatifBtn": "What-if",
     "chronicleBtn": "Chronicle",
+    "loadSimulation": "Load this timeline",
     "whatifBaseTitle": "Hypothetical based on 「{label}」",
     "whatifPlaceholder": "Enter a premise, e.g. If magic demanded a life as its price?",
     "whatifStarting": "Running...",

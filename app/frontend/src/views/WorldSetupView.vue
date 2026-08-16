@@ -625,6 +625,7 @@
             <span class="sim-history-status" :class="h.status">{{ statusLabel(h.status) }}</span>
             <span class="sim-history-count">{{ $t('world.eventCount', { count: (h.result || {}).event_count || 0 }) }}</span>
             <span v-if="(h.result || {}).meta && (h.result || {}).meta.whatif_question" class="sim-history-flag">{{ $t('world.whatifFlag') }}</span>
+            <button class="mini-btn ghost" @click="loadSimulation(h)">{{ $t('world.loadSimulation') }}</button>
             <template v-if="h.status === 'completed' && !((h.result || {}).meta || {}).whatif_question">
               <button class="mini-btn" :disabled="whatIfing === h.simulation_id" @click="startWhatIf(h)">
                 <span v-if="whatIfing === h.simulation_id" class="spinner-xs"></span>
@@ -1809,6 +1810,27 @@ async function loadSimHistory() {
     }
   } catch (e) {
     console.error('加载模拟历史失败', e)
+  }
+}
+
+async function loadSimulation(sim) {
+  try {
+    const res = await getWorldSimulation(projectId, sim.simulation_id)
+    const s = res.simulation
+    simStatus.value = s.status
+    simProgress.value = s.progress || {}
+    simEvents.value = (s.result || {}).events || []
+    simPollingId = s.simulation_id
+    loadCharacters(s.simulation_id)
+    simMsg.value = ''
+    simMsgError.value = false
+    if (s.status === 'running' || s.status === 'preparing' || s.status === 'paused') {
+      startSimPolling(s.simulation_id)
+    }
+    simSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  } catch (e) {
+    simMsg.value = e?.message || t('world.msgUnknownError')
+    simMsgError.value = true
   }
 }
 

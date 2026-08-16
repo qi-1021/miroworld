@@ -988,6 +988,7 @@
     "whatifFlag": "推演",
     "whatifBtn": "推演",
     "chronicleBtn": "编年史",
+    "loadSimulation": "载入此世界线",
     "whatifBaseTitle": "基于「{label}」的假设推演",
     "whatifPlaceholder": "输入假设前提，如：若魔法需要付出生命代价？",
     "whatifStarting": "推演中...",
