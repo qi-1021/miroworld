@@ -149,6 +149,14 @@ def delete_project(project_id: str):
     success = ProjectManager.delete_project(project_id)
 
     if not success:
+        # 历史列表可能残留只存在于缓存/状态里的失败项目占位（proj_xxx 但磁盘已无关联目录）。
+        # 对 MiroFish 项目 ID 做幂等删除，避免首页“错误任务”一直删不掉。
+        if project_id.startswith("proj_"):
+            return jsonify({
+                "success": True,
+                "message": f"项目已删除（原数据已不存在）: {project_id}",
+                "already_absent": True,
+            })
         return jsonify({
             "success": False,
             "error": f"项目不存在或删除失败: {project_id}"
