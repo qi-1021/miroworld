@@ -702,9 +702,10 @@
           <div v-for="root in worldTree" :key="root.simulation_id" class="tree-node root">
             <div class="tree-node-row">
               <button class="mini-btn ghost" @click="toggleRoot(root.simulation_id)">{{ collapsedRoots.has(root.simulation_id) ? '▶' : '▼' }}</button>
-              <span class="tree-node-name">{{ formatTime(root.created_at) }}</span>
+              <span class="tree-node-name">{{ root.result?.meta?.name || formatTime(root.created_at) }}</span>
               <span class="badge" :class="root.status">{{ statusLabel(root.status) }}</span>
               <span class="tree-node-count">{{ $t('world.eventCount', { count: (root.result || {}).event_count || 0 }) }}</span>
+              <button class="mini-btn ghost" @click="editWorldlineMeta(root)">✎</button>
               <button class="mini-btn ghost" @click="loadSimulation(root)">{{ $t('world.loadSimulation') }}</button>
               <button class="mini-btn" :disabled="simStarting" @click="continueSimulation(root)">{{ $t('world.continueSimulation') }}</button>
               <button class="mini-btn ghost" @click="exportSimulation(root)">{{ $t('world.exportSimulation') }}</button>
@@ -715,9 +716,10 @@
               <div v-for="child in root.children" :key="child.simulation_id" class="tree-node child">
               <div class="tree-node-row">
                 <span class="tree-branch">└─</span>
-                <span class="tree-node-name">{{ child.result?.meta?.whatif_question || formatTime(child.created_at) }}</span>
+                <span class="tree-node-name">{{ child.result?.meta?.name || child.result?.meta?.whatif_question || formatTime(child.created_at) }}</span>
                 <span class="badge" :class="child.status">{{ statusLabel(child.status) }}</span>
                 <span class="tree-node-count">{{ $t('world.eventCount', { count: (child.result || {}).event_count || 0 }) }}</span>
+                <button class="mini-btn ghost" @click="editWorldlineMeta(child)">✎</button>
                 <button class="mini-btn ghost" @click="loadSimulation(child)">{{ $t('world.loadSimulation') }}</button>
                 <button class="mini-btn" :disabled="simStarting" @click="continueSimulation(child)">{{ $t('world.continueSimulation') }}</button>
                 <button class="mini-btn ghost" @click="exportSimulation(child)">{{ $t('world.exportSimulation') }}</button>
@@ -2278,6 +2280,28 @@ async function continueSimulation(sim) {
     simMsgError.value = true
   } finally {
     simStarting.value = false
+  }
+}
+
+async function editWorldlineMeta(sim) {
+  const currentName = sim.result?.meta?.name || ''
+  const currentNote = sim.result?.meta?.note || ''
+  const name = window.prompt(t('world.metaNamePrompt'), currentName)
+  if (name === null) return
+  const note = window.prompt(t('world.metaNotePrompt'), currentNote)
+  if (note === null) return
+  try {
+    const res = await runAssistantAction(projectId, 'update_worldline_meta', {
+      simulation_id: sim.simulation_id,
+      name,
+      note,
+    })
+    simMsg.value = t('world.msgMetaSaved')
+    simMsgError.value = false
+    loadSimHistory()
+  } catch (e) {
+    simMsg.value = e?.message || t('world.msgUnknownError')
+    simMsgError.value = true
   }
 }
 

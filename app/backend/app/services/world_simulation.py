@@ -1009,6 +1009,32 @@ class WorldSimulationService:
         threading.Thread(target=run, daemon=True).start()
         return state
 
+    @classmethod
+    def update_simulation_meta(
+        cls,
+        simulation_id: str,
+        name: Optional[str] = None,
+        note: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """更新世界线的展示元信息（name/note/tags），存在 result.meta 中。"""
+        state = cls.get_state(simulation_id)
+        if state is None:
+            raise ValueError("模拟不存在")
+        meta = dict((state.result or {}).get("meta") or {})
+        if name is not None:
+            meta["name"] = str(name).strip()
+        if note is not None:
+            meta["note"] = str(note).strip()
+        if tags is not None:
+            meta["tags"] = [str(t).strip() for t in tags if str(t).strip()]
+        result = dict(state.result or {})
+        result["meta"] = meta
+        state.result = result
+        state.updated_at = datetime.now().isoformat(timespec="seconds")
+        cls._save_state(state)
+        return state.to_dict()
+
     # ---------------- 事件回写图谱 ----------------
 
     @classmethod
