@@ -295,10 +295,13 @@ class ProjectManager:
     @classmethod
     def delete_project(cls, project_id: str) -> bool:
         """
-        删除项目及其所有文件（含世界设定库、时间线、世界模拟、图谱缓存等）。
+        删除项目及其所有文件（含世界设定库、时间线、世界模拟、图谱缓存、媒体模拟）。
 
         兼容“空项目/残缺项目”：即使 uploads/projects/<pid> 目录不存在，
         只要其它关联数据目录存在也会一并清理并返回 True。
+
+        级联媒体模拟：会删除 uploads/simulations 下引用该项目的媒体模拟（state.project_id
+        匹配），避免历史列表残留“错误任务”导致删不掉。
 
         Args:
             project_id: 项目ID
@@ -328,6 +331,17 @@ class ProjectManager:
         try:
             from ..services.world_graph_refill import WORLD_GRAPH_ROOT
             removed_any = cls._remove_if_exists(os.path.join(WORLD_GRAPH_ROOT, project_id)) or removed_any
+        except Exception:
+            pass
+
+        # 级联删除关联的媒体模拟（uploads/simulations/<sim_id>）。否则项目已删、
+        # 但历史列表仍会因残留的媒体模拟 state 而显示“错误任务”且无法通过删除项目移除。
+        try:
+            from ..services.simulation_manager import SimulationManager
+            manager = SimulationManager()
+            for sim in manager.list_simulations(project_id=project_id):
+                if manager.delete_simulation(sim.simulation_id):
+                    removed_any = True
         except Exception:
             pass
 

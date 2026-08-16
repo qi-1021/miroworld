@@ -275,11 +275,38 @@ let isAnimating = false  // 动画锁，防止闪烁
 let expandDebounceTimer = null  // 防抖定时器
 let pendingState = null  // 记录待执行的目标状态
 
-// 卡片布局配置 - 调整为更宽的比例
-const CARDS_PER_ROW = 4
-const CARD_WIDTH = 280
+// 卡片布局配置 - 动态响应式：按视口宽度决定每行列数与卡片宽度
+const breakpoints = [
+  { max: 380, cards: 1, width: 240 },
+  { max: 560, cards: 1, width: 260 },
+  { max: 768, cards: 2, width: 200 },
+  { max: 900, cards: 2, width: 220 },
+  { max: 1200, cards: 3, width: 240 },
+  { max: Infinity, cards: 4, width: 280 }
+]
+const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1200)
+function cardLayout() {
+  const bp = breakpoints.find(b => viewportWidth.value <= b.max) || breakpoints[breakpoints.length - 1]
+  return { cardsPerRow: bp.cards, cardWidth: bp.width }
+}
+const CARDS_PER_ROW = computed(() => cardLayout().cardsPerRow)
+const CARD_WIDTH = computed(() => cardLayout().cardWidth)
 const CARD_HEIGHT = 280
 const CARD_GAP = 24
+const containerWidth = ref(0)
+function measureContainer() {
+  if (historyContainer.value) {
+    // 卡片定位基于最近的定位祖先（.cards-container），其宽度决定居中基准
+    const el = historyContainer.value.querySelector('.cards-container')
+    containerWidth.value = el ? el.clientWidth : window.innerWidth
+  } else {
+    containerWidth.value = window.innerWidth
+  }
+}
+function onViewportResize() {
+  viewportWidth.value = window.innerWidth
+  measureContainer()
+}
 
 // 动态计算容器高度样式
 const containerStyle = computed(() => {
@@ -294,7 +321,7 @@ const containerStyle = computed(() => {
     return { minHeight: '280px' }
   }
 
-  const rows = Math.ceil(total / CARDS_PER_ROW)
+  const rows = Math.ceil(total / CARDS_PER_ROW.value)
   // 计算实际需要的高度：行数 * 卡片高度 + (行数-1) * 间距 + 少量底部间距
   const expandedHeight = rows * CARD_HEIGHT + (rows - 1) * CARD_GAP + 10
 
@@ -304,23 +331,26 @@ const containerStyle = computed(() => {
 // 获取卡片样式
 const getCardStyle = (index) => {
   const total = projects.value.length
+  const cardsPerRow = CARDS_PER_ROW.value
+  const cardWidth = CARD_WIDTH.value
 
   if (isExpanded.value) {
     // 展开态：网格布局
     const transition = 'transform 700ms cubic-bezier(0.23, 1, 0.32, 1), opacity 700ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.3s ease, border-color 0.3s ease'
 
-    const col = index % CARDS_PER_ROW
-    const row = Math.floor(index / CARDS_PER_ROW)
+    const col = index % cardsPerRow
+    const row = Math.floor(index / cardsPerRow)
 
     // 计算当前行的卡片数量，确保每行居中
-    const currentRowStart = row * CARDS_PER_ROW
-    const currentRowCards = Math.min(CARDS_PER_ROW, total - currentRowStart)
+    const currentRowStart = row * cardsPerRow
+    const currentRowCards = Math.min(cardsPerRow, total - currentRowStart)
 
-    const rowWidth = currentRowCards * CARD_WIDTH + (currentRowCards - 1) * CARD_GAP
+    const rowWidth = currentRowCards * cardWidth + (currentRowCards - 1) * CARD_GAP
 
-    const startX = -(rowWidth / 2) + (CARD_WIDTH / 2)
-    const colInRow = index % CARDS_PER_ROW
-    const x = startX + colInRow * (CARD_WIDTH + CARD_GAP)
+    // 以容器宽度为基准居中整行（多卡/单卡都居中），适配手机窄屏
+    const startX = Math.max(0, ((containerWidth.value || cardWidth) - rowWidth) / 2)
+    const colInRow = index % cardsPerRow
+    const x = startX + colInRow * (cardWidth + CARD_GAP)
 
     // 向下展开，增加与标题的间距
     const y = 20 + row * (CARD_HEIGHT + CARD_GAP)
@@ -799,9 +829,15 @@ onMounted(async () => {
   await nextTick()
   await loadHistory()
 
+  // 测量卡片容器宽度，用于展开态居中布局
+  await nextTick()
+  measureContainer()
+
   // 事件驱动的刷新：其它页面（例如世界设定页导入新项目后）派发
   // 'mirofish:history-reload' 即可让首页历史列表即时更新。
   window.addEventListener('mirofish:history-reload', reloadHistoryListener)
+  // 视口宽度变化时重算卡片布局
+  window.addEventListener('resize', onViewportResize)
 
   // 等待 DOM 渲染后初始化观察器
   setTimeout(() => {
@@ -822,6 +858,7 @@ onUnmounted(() => {
   }
   // 清理 event 监听
   window.removeEventListener('mirofish:history-reload', reloadHistoryListener)
+  window.removeEventListener('resize', onViewportResize)
   // 清理防抖定时器
   if (expandDebounceTimer) {
     clearTimeout(expandDebounceTimer)
@@ -990,18 +1027,18 @@ onUnmounted(() => {
   /* min-height 由 JS 动态计算，根据卡片数量自适应 */
 }
 
-/* 项目卡片 —— Liquid Glass 质感：半透明白 + 毛玻璃模糊 + 顶亮边 */
+/* 项目卡片 —— Liquid Glass 质感：更透明半透明 + 毛玻璃模糊 + 顶亮边 */
 .project-card {
   position: absolute;
   width: 280px;
-  background: rgba(255, 255, 255, 0.52);
-  border: 1px solid rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.20);
+  border: 1px solid rgba(255, 255, 255, 0.68);
   border-radius: 14px;
   padding: 14px;
   cursor: pointer;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255,255,255,0.7);
-  backdrop-filter: saturate(190%) blur(22px);
-  -webkit-backdrop-filter: saturate(190%) blur(22px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255,255,255,0.85);
+  backdrop-filter: saturate(180%) blur(16px);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
   transition: box-shadow 0.3s ease, border-color 0.3s ease, transform 700ms cubic-bezier(0.23, 1, 0.32, 1), opacity 700ms cubic-bezier(0.23, 1, 0.32, 1), background 0.3s ease;
   overflow: hidden;
 }
@@ -1017,9 +1054,9 @@ onUnmounted(() => {
 }
 
 .project-card:hover {
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255,255,255,0.8);
-  border-color: rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.66);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255,255,255,0.9);
+  border-color: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.40);
   z-index: 1000 !important;
 }
 
@@ -1459,10 +1496,16 @@ onUnmounted(() => {
   to { transform: rotate(360deg); }
 }
 
-/* 响应式 */
+/* 响应式（卡片布局由 JS 按视口宽度计算，这里同步 CSS 宽度保持一致性） */
 @media (max-width: 1200px) {
   .project-card {
     width: 240px;
+  }
+}
+
+@media (max-width: 900px) {
+  .project-card {
+    width: 220px;
   }
 }
 
@@ -1472,6 +1515,45 @@ onUnmounted(() => {
   }
   .project-card {
     width: 200px;
+    padding: 12px;
+  }
+}
+
+@media (max-width: 560px) {
+  .project-card {
+    width: 260px;
+    padding: 12px;
+  }
+  .section-header {
+    padding: 0 16px;
+    gap: 12px;
+  }
+  .section-title {
+    font-size: 0.7rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .project-card {
+    width: 240px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* 批量选择控制折行 */
+  .hist-batch-ctl {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+  }
+  .hist-batch-btn {
+    padding: 4px 8px;
+    font-size: 10px;
+  }
+  /* 卡片顶部状态图标 / 头部允许换行 */
+  .card-header {
+    flex-wrap: wrap;
+    gap: 6px;
   }
 }
 
@@ -1843,5 +1925,33 @@ onUnmounted(() => {
 .modal-manage-btn.empty:hover {
   border-color: #F5B861;
   background: #FFF7E6;
+}
+
+/* ===== 手机端弹窗 / 布局响应式（置于末尾，确保覆盖上方基础样式） ===== */
+@media (max-width: 480px) {
+  .modal-content {
+    width: 100%;
+    max-width: 100vw;
+    max-height: 94vh;
+    border-radius: 0;
+  }
+  .modal-divider {
+    margin-top: 16px;
+  }
+  .modal-actions {
+    flex-direction: column;
+  }
+  .modal-actions .modal-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 360px) {
+  .modal-btn {
+    padding: 10px 10px;
+  }
+  .modal-section {
+    gap: 8px;
+  }
 }
 </style>

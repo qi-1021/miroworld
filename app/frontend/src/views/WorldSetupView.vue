@@ -21,6 +21,14 @@
     </header>
 
     <div class="world-body">
+      <!-- 液态玻璃模糊源：彩色光晕铺在卡片下，透明玻璃才能透出来 -->
+      <div class="world-glows" aria-hidden="true">
+        <div class="lg-glow g1 wg-1"></div>
+        <div class="lg-glow g2 wg-2"></div>
+        <div class="lg-glow g3 wg-3"></div>
+        <div class="lg-glow g4 wg-4"></div>
+      </div>
+
       <!-- 加载失败提示 + 重试（设定库读取失败时不至于页面空白无解释） -->
       <div v-if="loadError" class="load-error-bar">
         <span>⚠ {{ loadError }}</span>
@@ -1808,6 +1816,7 @@ onUnmounted(() => {
 .world-body {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -1816,6 +1825,26 @@ onUnmounted(() => {
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
+  position: relative;
+}
+/* 液态玻璃模糊源：彩色光晕层（绝对定位铺在卡片下层） */
+.world-glows {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.world-glows .lg-glow { z-index: 0; }
+.wg-1 { width: 380px; height: 380px; left: -140px; top: 60px; }
+.wg-2 { width: 420px; height: 420px; right: -160px; top: 30%; }
+.wg-3 { width: 360px; height: 360px; left: 18%; bottom: 8%; opacity: 0.4; }
+.wg-4 { width: 340px; height: 340px; right: 8%; bottom: -140px; opacity: 0.35; }
+/* 让卡片所在层高于光晕层 */
+.world-body > .step-card,
+.world-body > .load-error-bar {
+  position: relative;
+  z-index: 1;
 }
 .load-error-bar {
   display: flex;
@@ -1841,15 +1870,15 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-/* 卡片（与 Step1 的 step-card 一致；液态玻璃风格） */
+/* 卡片（与 Step1 的 step-card 一致；液态玻璃风格）—— 更透明，透出背景光晕 */
 .step-card {
-  background: rgba(255,255,255,0.62);
+  background: rgba(255,255,255,0.16);
   border-radius: 14px;
   padding: 20px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.7);
-  border: 1px solid rgba(255,255,255,0.6);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.85);
+  border: 1px solid rgba(255,255,255,0.68);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
   transition: all 0.3s ease;
 }
 .card-header {
@@ -3045,4 +3074,71 @@ onUnmounted(() => {
   border-radius: 4px;
   padding: 10px 12px;
 }
+
+/* ================= 手机端响应式 ================= */
+@media (max-width: 768px) {
+  /* 顶栏：按钮过多，压缩间距并允许高度自适应换行 */
+  .app-header {
+    height: auto;
+    min-height: 56px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    gap: 8px;
+  }
+  .header-left { gap: 10px; }
+  .header-right { gap: 8px; flex-wrap: wrap; }
+  .back-btn { padding: 7px 10px; font-size: 11px; }
+  .project-id { font-size: 10px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .brand { font-size: 15px; }
+  .step-name { font-size: 13px; }
+  .world-body { padding: 16px; }
+  .step-card { padding: 16px; }
+  .sim-controls { flex-direction: column; align-items: stretch; }
+  .sim-field-wide { flex-basis: auto; }
+  .sim-start { flex: none; width: 100%; }
+}
+@media (max-width: 480px) {
+  /* 顶栏第二行：project-id / 导出 / 导入 / 助手 / 返回 在很窄时折行 */
+  .app-header { gap: 6px; }
+  .header-left .step-divider,
+  .header-left .workflow-step .step-num { display: none; }
+  .workflow-step { gap: 4px; }
+  /* 卡片内边距与按钮单列 */
+  .step-card { padding: 14px 12px; border-radius: 10px; }
+  .card-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .input-grid { gap: 12px; }
+  .btn-row { flex-direction: column; }
+  .btn-row .action-btn { flex: none; width: 100%; }
+  .world-body { gap: 14px; }
+  /* 冲突项：确认/建议左右对比改为上下堆叠 */
+  .conflict-item { padding: 12px; }
+  .conflict-compare { margin-top: 8px; }
+  .conflict-actions { flex-wrap: wrap; }
+  .mini-btn { flex: 1; min-width: 72px; }
+  .search-row { flex-direction: column; }
+  .search-row .search-btn { padding: 10px; width: 100%; }
+  /* 模拟：字段标签与控件更贴合，事件行允许换行 */
+  .sim-label { font-size: 10px; }
+  .sim-input { width: 100%; }
+  .sim-events { overflow-x: auto; }
+  /* 图论 SVG 自适应宽度 + 信息卡 */
+  .graph-viz-wrap { overflow-x: auto; }
+  .graph-svg { height: auto; }
+  .graph-node-info { padding: 10px; }
+  /* 助手弹窗接近全屏 */
+  .assistant-modal {
+    width: 100%;
+    max-width: 100vw;
+    max-height: 94vh;
+    border-radius: 0;
+    padding: 14px 12px;
+  }
+  .assistant-actions { flex-direction: column; }
+  .assistant-actions .action-btn { width: 100%; }
+}
+@media (max-width: 360px) {
+  .back-btn { font-size: 10px; padding: 6px 8px; }
+  .header-right { gap: 6px; }
+}
+
 </style>

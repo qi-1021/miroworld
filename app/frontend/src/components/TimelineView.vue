@@ -1797,13 +1797,13 @@ onUnmounted(() => {
 
 <style scoped>
 .timeline-view {
-  background: rgba(255,255,255,0.6);
-  border: 1px solid rgba(255,255,255,0.65);
+  background: rgba(255,255,255,0.16);
+  border: 1px solid rgba(255,255,255,0.7);
   border-radius: 14px;
   padding: 14px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.7);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.9);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
   font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
   color: #000;
 }
@@ -1860,13 +1860,13 @@ onUnmounted(() => {
 .batch-count { font-size: 12px; color: #666; font-family: 'JetBrains Mono', monospace; }
 .tl-card-check { width: 14px; height: 14px; accent-color: #FF5722; cursor: pointer; flex-shrink: 0; }
 .future-box { display: flex; gap: 6px; flex: 1; min-width: 240px; }
-.future-input { flex: 1; border: 1px solid #E0E0E0; border-radius: 4px; background: #FAFAFA; font-size: 12px; padding: 8px 10px; color: #000; }
-.future-input:focus { outline: none; border-color: #FF5722; background: #fff; }
+.future-input { flex: 1; border: 1px solid rgba(255,255,255,0.55); border-radius: 4px; background: rgba(255,255,255,0.28); font-size: 12px; padding: 8px 10px; color: #000; backdrop-filter: saturate(150%) blur(6px); -webkit-backdrop-filter: saturate(150%) blur(6px); }
+.future-input:focus { outline: none; border-color: #FF5722; background: rgba(255,255,255,0.45); }
 .tl-btn { border: none; background: #000; color: #FFF; padding: 9px 14px; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
 .tl-btn.primary { background: #000; }
-.tl-btn.ghost { background: #FFF; color: #000; border: 1px solid #000; }
+.tl-btn.ghost { background: rgba(255,255,255,0.32); color: #000; border: 1px solid rgba(255,255,255,0.6); backdrop-filter: saturate(150%) blur(6px); -webkit-backdrop-filter: saturate(150%) blur(6px); }
 .tl-btn:disabled { background: #CCC; cursor: not-allowed; }
-.tl-btn.ghost:disabled { background: #FFF; border-color: #E0E0E0; color: #999; }
+.tl-btn.ghost:disabled { background: rgba(255,255,255,0.4); border-color: rgba(0,0,0,0.15); color: #999; }
 .tl-play-btn { border: 1px solid #E0E0E0; background: #FFF; color: #000; padding: 4px 14px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; }
 .spinner-sm { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.4); border-top-color: #FFF; border-radius: 50%; animation: tlspin 0.8s linear infinite; flex-shrink: 0; }
 .ghost .spinner-sm, .tl-state .spinner-sm { border-color: #CCC; border-top-color: #000; }
@@ -1972,7 +1972,7 @@ onUnmounted(() => {
 /* 编辑/表单 */
 .tl-edit-box { border-top: 1px dashed #E5E7EB; margin-top: 12px; padding-top: 10px; }
 .tl-edit-title { font-size: 12px; font-weight: 600; margin-bottom: 8px; }
-.tl-edit-input { width: 100%; box-sizing: border-box; border: 1px solid #E0E0E0; border-radius: 4px; background: #FAFAFA; font-size: 12px; padding: 8px 10px; resize: vertical; color: #000; }
+.tl-edit-input { width: 100%; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.55); border-radius: 4px; background: rgba(255,255,255,0.28); font-size: 12px; padding: 8px 10px; resize: vertical; color: #000; backdrop-filter: saturate(150%) blur(6px); -webkit-backdrop-filter: saturate(150%) blur(6px); }
 .tl-edit-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .tl-edit-row.block { flex-direction: column; align-items: stretch; gap: 6px; }
 .tl-edit-small { width: 80px; border: 1px solid #E0E0E0; border-radius: 4px; padding: 6px; font-size: 12px; color: #000; }
@@ -2173,5 +2173,58 @@ onUnmounted(() => {
 .tl-net-node.active circle { stroke: #FF5722; stroke-width: 3; }
 .tl-net-preview { max-width: 460px; }
 .tl-net-preview .tl-card { box-shadow: none; }
+
+/* ================= 手机端响应式 ================= */
+@media (max-width: 768px) {
+  .timeline-view { padding: 12px; }
+  .tl-header { flex-direction: column; align-items: stretch; gap: 8px; }
+  .tl-header-actions { display: flex; }
+  .source-tabs { flex: 1; }
+  .source-tab { flex: 1; text-align: center; }
+  .tl-ops { gap: 6px; }
+  .future-box { min-width: 0; }
+  /* 时间条可横向滚动/缩放 */
+  .timeline-bar-wrap { overflow-x: auto; }
+  .timeline-bar { min-width: 560px; }
+  .tl-events { max-height: none; }
+}
+@media (max-width: 480px) {
+  .timeline-view { padding: 10px; border-radius: 10px; }
+  .tl-header { margin-bottom: 10px; }
+  .tl-title-text { font-size: 13px; }
+  /* 操作项单列/紧凑 */
+  .tl-ops { flex-wrap: wrap; }
+  .tl-type-select, .tl-ops .tl-btn { flex: 0 1 auto; }
+  .tl-batch-bar { flex-direction: column; align-items: stretch; }
+  .tl-batch-bar .tl-btn { width: 100%; }
+  .future-box { flex-direction: column; width: 100%; }
+  .future-box .future-input, .future-box .tl-btn { width: 100%; }
+  /* 卡片单列、头部换行 */
+  .tl-card { padding: 9px 10px; }
+  .tl-card-head { gap: 6px; }
+  .tl-card-summary { font-size: 12.5px; }
+  .tl-card-actions { gap: 4px; }
+  .tl-card-actions .tl-btn { flex: 1; justify-content: center; }
+  /* 泳道 / 树 / 网状 */
+  .lane-block { border-radius: 8px; }
+  .lane-head { padding: 6px 10px; flex-wrap: wrap; }
+  .lane-cards { padding: 6px 10px; }
+  .tl-tree { padding: 8px; }
+  .tl-tree-toolbar { flex-wrap: wrap; }
+  .tl-net-svg { min-width: 480px; }
+  /* 弹窗接近全屏 */
+  .tl-modal {
+    width: 100%;
+    max-width: 100vw;
+    max-height: 94vh;
+    border-radius: 0;
+    padding: 14px 12px;
+  }
+  .tl-modal.structure { width: 100%; }
+  .compare-list { max-height: none; }
+}
+@media (max-width: 360px) {
+  .tl-title-text { display: none; }
+}
 
 </style>

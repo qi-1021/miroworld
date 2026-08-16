@@ -294,26 +294,27 @@ const heroGlassRoot = ref(null)
 const featureGlassRoot = ref(null)
 const consoleGlassRoot = ref(null)
 let glassInstances = []
-// 轻量默认参数：静态首页无 data-dynamic，玻璃卡 blur/refraction 适度以保可读性
+// 玻璃更明显/更透明：静态首页无 data-dynamic，玻璃卡 blur/refraction 适度上调
+// 让折射、色差、边缘高光、高光肉眼可见，同时保持可读性。
 const GLASS_DEFAULTS = {
-  blurAmount: 0.15,
-  refraction: 0.35,
-  chromAberration: 0.04,
-  edgeHighlight: 0.06,
-  specular: 0.05,
-  fresnel: 0.6,
-  distortion: 0,
+  blurAmount: 0.32,
+  refraction: 0.50,
+  chromAberration: 0.05,
+  edgeHighlight: 0.10,
+  specular: 0.15,
+  fresnel: 0.65,
+  distortion: 0.02,
   cornerRadius: 22,
   zRadius: 18,
   opacity: 1,
-  saturation: 0,
-  tintStrength: 0,
-  brightness: 0,
-  shadowOpacity: 0.18,
+  saturation: 0.12,
+  tintStrength: 0.05,
+  brightness: 0.02,
+  shadowOpacity: 0.15,
   shadowSpread: 8,
   shadowOffsetY: 1,
   floating: false,
-  button: false
+  button: true
 }
 async function initLiquidGlass() {
   // 每类玻璃卡用一个根；根必须是其 glass 卡片的直接父级方可被库接受
@@ -1052,12 +1053,12 @@ onUnmounted(() => {
 .console-card {
   position: relative;
   z-index: 1;
-  background: rgba(255,255,255,0.50);
+  background: rgba(255,255,255,0.16);
   border-radius: 24px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.72);
-  border: 1px solid rgba(255,255,255,0.60);
-  backdrop-filter: saturate(200%) blur(26px);
-  -webkit-backdrop-filter: saturate(200%) blur(26px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.85);
+  border: 1px solid rgba(255,255,255,0.68);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
   max-width: 900px;
   margin: 0 auto;
   padding: 48px;
@@ -1197,14 +1198,72 @@ onUnmounted(() => {
   .hero { padding: 72px 20px 0; }
   .features { padding: 0 20px 72px; }
   .console-section, .history-section { padding-left: 20px; padding-right: 20px; }
-  .console-card { padding: 32px 24px; }
+  .console-card { padding: 36px 28px; }
   .nav { padding: 14px 20px; }
+}
+@media (max-width: 768px) {
+  .nav { gap: 12px; }
+  .nav-right { gap: 14px; }
+  .hero-title { font-size: clamp(36px, 9vw, 52px); }
+  .hero-desc { font-size: 17px; max-width: 100%; }
+  .hero-visual { padding: 40px 16px; }
+  .feature-card { padding: 26px 18px; }
+  .section-title { font-size: 32px; }
 }
 @media (max-width: 560px) {
   .feature-grid { grid-template-columns: 1fr; }
-  .tl-main { gap: 28px; }
+  .tl-main { gap: 24px; }
   .tl-branch { display: none; }
 }
+@media (max-width: 480px) {
+  /* 手机：导航堆叠成两行，品牌词在首行，右侧操作按钮折到次行 */
+  .nav {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 12px 16px;
+  }
+  .nav-right {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    width: 100%;
+  }
+  .nav-brand {
+    flex: 1 1 auto;
+  }
+  .hero { padding: 56px 16px 0; }
+  .hero-title { font-size: clamp(32px, 10vw, 44px); margin-bottom: 18px; }
+  .hero-desc { font-size: 16px; margin-bottom: 28px; }
+  .hero-kicker { font-size: 12px; margin-bottom: 16px; }
+  .hero-cta { margin-bottom: 56px; }
+  .hero-visual {
+    padding: 32px 12px;
+    margin-bottom: 56px;
+  }
+  .hero-visual::before { background-size: 140% 140%; }
+  .tl-main { gap: 18px; }
+  .dot { width: 11px; height: 11px; }
+  .dot.now { width: 14px; height: 14px; box-shadow: 0 0 0 5px rgba(161, 197, 10, 0.18); }
+  .tl-caption { max-width: 85%; font-size: 12px; margin-top: 20px; }
+  .lg-root-hero { margin-bottom: 56px; }
+  .feature-grid { gap: 14px; }
+  .feature-card { padding: 24px 16px; }
+  .section-title { font-size: 28px; }
+  .section-desc { font-size: 15px; }
+  /* 控制台卡片内边距与表单在手机宽度下更贴合 */
+  .console-card { padding: 24px 16px; border-radius: 18px; }
+  .console-head { margin-bottom: 24px; }
+  .mode-tabs { width: 100%; justify-content: center; }
+  .mode-tab { flex: 1; padding: 8px 10px; }
+  .media-toggle { margin-left: 0; margin-top: 12px; }
+  .form-row { margin-bottom: 24px; }
+  .field-label { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .field-meta { font-size: 11px; }
+  .upload-zone { padding: 22px 16px; }
+  .upload-zone.compact { padding: 18px 14px; }
+  /* 浅色光晕过大会引起横向滚动，收敛尺寸 */
+  .console-section, .features, .history-section { padding-left: 12px; padding-right: 12px; }
+}
+
 </style>
 
 <style>
