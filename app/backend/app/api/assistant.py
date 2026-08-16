@@ -42,6 +42,20 @@ def _record_agent_task(project_id: str, action: str, status: str, result=None, e
         if len(_AGENT_TASKS) > 200:
             for k in list(_AGENT_TASKS)[:len(_AGENT_TASKS) - 200]:
                 _AGENT_TASKS.pop(k, None)
+        # 审计日志（落盘）
+        try:
+            log_dir = os.path.join(os.path.dirname(__file__), "..", "..", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            with open(os.path.join(log_dir, "agent-audit.jsonl"), "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "task_id": task_id,
+                    "project_id": project_id,
+                    "action": action,
+                    "status": status,
+                    "timestamp": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+                }, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
         return task_id
 
 
@@ -672,3 +686,14 @@ def get_agent_task(task_id: str):
     if task is None:
         return jsonify({"success": False, "error": "任务不存在"}), 404
     return jsonify({"success": True, "data": {"task": task}})
+
+
+@assistant_bp.route("/audit", methods=["GET"])
+def agent_audit():
+    """读取 Agent 审计日志（最近 200 条）。"""
+    log_path = os.path.join(os.path.dirname(__file__), "..", "..", "logs", "agent-audit.jsonl")
+    lines = []
+    if os.path.exists(log_path):
+        with open(log_path, "r", encoding="utf-8") as f:
+            lines = [json.loads(l) for l in f if l.strip()]
+    return jsonify({"success": True, "data": {"audit": lines[-200:]}})
