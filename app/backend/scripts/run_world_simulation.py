@@ -128,10 +128,12 @@ class WorldEvent:
     action_type: str       # move / talk / use / wait / ...
     action_desc: str       # 自然语言描述
     result: str            # 执行结果
+    id: str = ""
     location: str = ""
     target_id: str = ""
     approved: bool = True  # 规则校验是否通过
     detail: Dict[str, Any] = field(default_factory=dict)
+    links: List[str] = field(default_factory=list)  # 关联的最近事件 id（因果/剧情链）
 
     def to_dict(self):
         return asdict(self)
@@ -588,39 +590,41 @@ class WorldEnv:
             self.advance_clock()
             print(f"\n{'='*56}\n第 {step} 步 · {self.time_str()}\n{'='*56}")
 
-            for char in self.characters.values():
-                if not char.active:
-                    continue
-                # 每个角色决策前处理 IPC 命令（暂停/停止可即时生效，采访即时响应）
-                if await self._process_ipc(llm_call):
-                    _stopped = True
-                    break
-                if self.ipc and self.ipc.paused:
-                    if await self._wait_while_paused(llm_call):
-                        _stopped = True
-                        break
-                # 1. 感知
+            active_chars = [c for c in self.characters.values() if c.active]
+            # 1. 感知与提示词准备（本地计算，顺序执行；过滤信息按角色留存）
+            prepared = []
+            for char in active_chars:
                 observation = self.observe(char)
-                # 2. 决策（LLM）
+                filtered = list(self._last_filtered)
+                _goal = (char.goal or "").strip() or "按人设自然行动"
+                _recent = self._recent_context(char)
+                _world = self._global_context()
+                prompt = (
+                    f"你是{char.name}。{char.persona}\n"
+                    f"当前目标：{_goal}\n"
+                    f"你的身份知识：{'、'.join(char.knowledge) if char.knowledge else '无'}\n"
+                    f"你亲身经历/目睹的最近事：\n{_recent or '（暂无）'}\n\n"
+                    f"世界最新动态（你可能听说或需要留意）：\n{_world or '（暂无）'}\n\n"
+                    f"{observation}\n"
+                    f"请严格以{char.name}的身份与性格行动：语气、价值观、口癖都符合人物设定（persona），"
+                    f"动作要尽量衔接上面提到的最近事件和世界动态，推动剧情连贯发展，"
+                    f"不要说出超出其身份与见闻的内容。"
+                )
+                prepared.append((char, observation, prompt, filtered))
+
+            # 2. 同一步内多角色并行 LLM 决策（大幅提升效率）
+            async def _decide(prompt):
                 try:
-                    _goal = (char.goal or "").strip() or "按人设自然行动"
-                    _recent = self._recent_context(char)
-                    _world = self._global_context()
-                    decision = await llm_call(
-                        f"你是{char.name}。{char.persona}\n"
-                        f"当前目标：{_goal}\n"
-                        f"你的身份知识：{'、'.join(char.knowledge) if char.knowledge else '无'}\n"
-                        f"你亲身经历/目睹的最近事：\n{_recent or '（暂无）'}\n\n"
-                        f"世界最新动态（你可能听说或需要留意）：\n{_world or '（暂无）'}\n\n"
-                        f"{observation}\n"
-                        f"请严格以{char.name}的身份与性格行动：语气、价值观、口癖都符合人物设定（persona），"
-                        f"动作要尽量衔接上面提到的最近事件和世界动态，推动剧情连贯发展，"
-                        f"不要说出超出其身份与见闻的内容。"
-                    )
+                    return await llm_call(prompt)
                 except Exception as e:
-                    print(f"  ⚠ {char.name} LLM 调用失败: {e}")
-                    decision = "我停下来等待。"
-                # 3. 解析
+                    print(f"  ⚠ LLM 调用失败: {e}")
+                    return "我停下来等待。"
+
+            decisions = await asyncio.gather(*(_decide(p) for _, _, p, _ in prepared))
+
+            # 3. 顺序执行动作（决策基于同一时刻世界状态，执行串行保证状态一致）
+            for (char, observation, _prompt, filtered), decision in zip(prepared, decisions):
+                # 解析
                 action = parse_action(decision)
                 # 3b. 修正：move 的目标是角色名 → 实际是交谈
                 if action["type"] == "move":
@@ -646,12 +650,14 @@ class WorldEnv:
                     action_type=action["type"],
                     action_desc=decision.strip(),
                     result=result,
+                    id=f"ev_{step}_{char.id}_{len(self.events)}",
                     location=self.locations.get(char.location, WorldLocation("?", "?")).name,
                     approved=approved,
                     detail={
                         "rule_check": reason,
-                        "filtered": list(self._last_filtered),
+                        "filtered": filtered,
                     },
+                    links=[e.id for e in self.events[-3:] if e.id],
                 )
                 self.events.append(event)
                 self.history.append(event.to_text())
