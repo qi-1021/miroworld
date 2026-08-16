@@ -527,13 +527,21 @@
         <!-- 事件流（按 step 分组，更清晰） -->
         <div v-if="simEvents.length" class="sim-events">
           <div class="sim-events-title">{{ $t('world.eventStream') }}</div>
+          <div class="sim-playback">
+            <button class="mini-btn" @click="playbackPrev">⏮</button>
+            <button class="mini-btn" @click="playbackToggle">{{ playbackPlaying ? '⏸' : '▶' }}</button>
+            <button class="mini-btn" @click="playbackNext">⏭</button>
+            <span class="sim-playback-info">
+              {{ $t('world.simStepLabel', { step: groupedSimEvents[playbackIndex]?.step || 0 }) }} / {{ groupedSimEvents.length }}
+            </span>
+          </div>
           <div v-if="stepSummaries.length" class="sim-summary">
             <div v-for="s in stepSummaries" :key="s.step" class="sim-summary-item">
               <span class="sim-summary-step">{{ $t('world.simStepLabel', { step: s.step }) }}</span>
               <span class="sim-summary-text">{{ s.text }}</span>
             </div>
           </div>
-          <div v-for="(group, gi) in groupedSimEvents" :key="gi" class="sim-step-group">
+          <div v-for="(group, gi) in groupedSimEvents" :key="gi" class="sim-step-group" :class="{ active: gi === playbackIndex }">
             <div class="sim-step-head">
               {{ $t('world.simStepLabel', { step: group.step }) }} · {{ group.time }}
             </div>
@@ -1169,6 +1177,43 @@ const graphPosMap = computed(() => {
   return m
 })
 const selectedGraphEvent = ref('')
+
+// 事件回放/时间轴播放器
+const playbackIndex = ref(0)
+const playbackPlaying = ref(false)
+let playbackTimer = null
+function playbackToggle() {
+  if (playbackPlaying.value) {
+    stopPlayback()
+  } else {
+    startPlayback()
+  }
+}
+function startPlayback() {
+  if (!groupedSimEvents.value.length) return
+  if (playbackIndex.value >= groupedSimEvents.value.length) playbackIndex.value = 0
+  playbackPlaying.value = true
+  playbackTimer = setInterval(() => {
+    if (playbackIndex.value < groupedSimEvents.value.length - 1) {
+      playbackIndex.value++
+    } else {
+      stopPlayback()
+    }
+  }, 2000)
+}
+function stopPlayback() {
+  playbackPlaying.value = false
+  if (playbackTimer) {
+    clearInterval(playbackTimer)
+    playbackTimer = null
+  }
+}
+function playbackPrev() {
+  playbackIndex.value = Math.max(0, playbackIndex.value - 1)
+}
+function playbackNext() {
+  playbackIndex.value = Math.min(groupedSimEvents.value.length - 1, playbackIndex.value + 1)
+}
 const simSection = ref(null)
 const inputSection = ref(null)
 const timelineSection = ref(null)
@@ -2475,6 +2520,7 @@ onUnmounted(() => {
   if (refillPollTimerId) { clearInterval(refillPollTimerId); refillPollTimerId = null }
   if (simPollTimer) { clearInterval(simPollTimer); simPollTimer = null }
   if (whatIfPollTimer) { clearInterval(whatIfPollTimer); whatIfPollTimer = null }
+  if (playbackTimer) { clearInterval(playbackTimer); playbackTimer = null }
 })
 </script>
 
@@ -3002,6 +3048,23 @@ onUnmounted(() => {
   font-weight: 700;
   color: #a1c50a;
   border-bottom: 1px solid #F0F0F0;
+}
+.sim-playback {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #FAFAFA;
+  border-bottom: 1px solid #F0F0F0;
+}
+.sim-playback-info {
+  font-size: 11px;
+  color: #666;
+  font-family: 'JetBrains Mono', monospace;
+}
+.sim-step-group.active {
+  background: #F7F9E8;
+  box-shadow: inset 3px 0 0 #a1c50a;
 }
 .sim-summary {
   padding: 10px 12px;
