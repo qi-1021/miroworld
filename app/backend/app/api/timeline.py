@@ -11,7 +11,7 @@
 注意：/status、/extract、/future 等静态路由必须在动态路由 /<project_id> 之前注册，
 否则会被动态路由吞掉（历史教训：/api/simulation/history 曾被吞成 404）。
 """
-from flask import request, jsonify
+from flask import request, jsonify, send_file
 
 from . import timeline_bp
 from ..services import timeline_service
@@ -270,6 +270,77 @@ def compare_branch(project_id):
     except Exception as e:
         logger.error(f"对比分支失败: {e}")
         return jsonify({"success": False, "error": f"对比失败: {e}"}), 500
+
+
+@timeline_bp.route('/<project_id>/final-report', methods=['POST'])
+def generate_final_report(project_id):
+    """（重新）生成项目的最终时间线报告：梗概 + 小说正文（确定性聚合，不联网）。
+
+    返回 { success, data: { project_id, generated_at, format,
+    deterministic, goal, structure, best_flow, events_count, synopsis, novel } }。
+    """
+    try:
+        from ..services import timeline_report
+        report = timeline_report.generate_report(project_id)
+        return jsonify({"success": True, "data": report})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"生成最终时间线报告失败: {e}")
+        return jsonify({"success": False, "error": f"生成失败: {e}"}), 500
+
+
+@timeline_bp.route('/<project_id>/final-report', methods=['GET'])
+def get_final_report(project_id):
+    """读取已生成的项目最终时间线报告；未生成返回 200 + has_report=false。"""
+    try:
+        from ..services import timeline_report
+        report = timeline_report.load_report(project_id)
+        if report is None:
+            return jsonify({
+                "success": True,
+                "data": {
+                    "project_id": project_id,
+                    "has_report": False,
+                },
+            })
+        report["has_report"] = True
+        return jsonify({"success": True, "data": report})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"读取最终时间线报告失败: {e}")
+        return jsonify({"success": False, "error": f"读取失败: {e}"}), 500
+
+
+@timeline_bp.route('/<project_id>/final-report/download', methods=['GET'])
+def download_final_report(project_id):
+    """下载项目最终时间线报告的 Markdown 文件。"""
+    import os
+    try:
+        from ..services import timeline_report
+        report = timeline_report.load_report(project_id)
+        if report is None:
+            return jsonify({"success": False, "error": "报告尚未生成，请先 POST 生成"}), 404
+        md_path = timeline_report._report_md_path(project_id)
+        if not os.path.exists(md_path):
+            # 兜底：临时渲染并返回
+            from flask import make_response
+            resp = make_response(timeline_report.render_markdown(report))
+            resp.headers["Content-Type"] = "text/markdown; charset=utf-8"
+            resp.headers["Content-Disposition"] = "attachment; filename=final-report.md"
+            return resp
+        return send_file(
+            md_path,
+            as_attachment=True,
+            download_name=f"final-report-{project_id}.md",
+            mimetype="text/markdown",
+        )
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"下载最终时间线报告失败: {e}")
+        return jsonify({"success": False, "error": f"下载失败: {e}"}), 500
 
 
 @timeline_bp.route('/<project_id>/characters', methods=['GET'])

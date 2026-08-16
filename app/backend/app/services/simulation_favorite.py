@@ -213,6 +213,26 @@ class SimulationFavoriteService:
                 if self._norm(entry).get("favorite")
             ]
 
+    def find_best_flow(self, project_id: str) -> Optional[Dict[str, Any]]:
+        """查找某项目的最佳流向（is_best_flow=True 且归属该项目的模拟）。
+
+        返回 {simulation_id, favorite, is_best_flow, remark} 或 None。
+        """
+        if not project_id:
+            return None
+        with self._data_lock:
+            data = self._load()
+            for sid, entry in data.items():
+                meta = self._norm(entry)
+                if meta.get("is_best_flow") and meta.get("project_id") == project_id:
+                    return {
+                        "simulation_id": sid,
+                        "favorite": meta.get("favorite", False),
+                        "is_best_flow": True,
+                        "remark": meta.get("remark", ""),
+                    }
+        return None
+
     # ---------------- 项目归属解析 ----------------
 
     @staticmethod
