@@ -42,7 +42,7 @@ From serious predictions to playful simulations, we let every "what if" see its 
 
 ## 🌐 Live Demo
 
-Welcome to visit our online demo environment and experience a prediction simulation on trending public opinion events we've prepared for you: [mirofish-live-demo](https://666ghj.github.io/mirofish-demo/)
+Welcome to visit our online demo environment and experience a prediction simulation on trending events we've prepared for you: [mirofish-live-demo](https://666ghj.github.io/mirofish-demo/)
 
 ## 📸 Screenshots
 
@@ -65,12 +65,12 @@ Welcome to visit our online demo environment and experience a prediction simulat
 
 ## 🎬 Demo Videos
 
-### 1. Wuhan University Public Opinion Simulation + MiroFish Project Introduction
+### 1. Wuhan University Event Simulation + MiroFish Project Introduction
 
 <div align="center">
 <a href="https://www.bilibili.com/video/BV1VYBsBHEMY/" target="_blank"><img src="./static/image/武大模拟演示封面.png" alt="MiroFish Demo Video" width="75%"/></a>
 
-Click the image to watch the complete demo video for prediction using BettaFish-generated "Wuhan University Public Opinion Report"
+Click the image to watch the complete demo video for prediction using BettaFish-generated "Wuhan University Event Report"
 </div>
 
 ### 2. Dream of the Red Chamber Lost Ending Simulation

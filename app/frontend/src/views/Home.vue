@@ -334,7 +334,7 @@ const openModelSettings = () => {
   window.dispatchEvent(new CustomEvent('open-model-settings'))
 }
 
-// ============ 模式选择：世界推演（第一优先）/ 舆情分析（第二，可隐藏） ============
+// 首页只保留世界推演主流程，旧媒体分析入口不再向用户暴露。
 const activeMode = ref('world')
 // Legacy media analysis is opt-in; world simulation is the default workflow.
 const mediaModeEnabled = ref(false)

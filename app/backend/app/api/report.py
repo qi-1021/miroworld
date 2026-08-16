@@ -474,7 +474,7 @@ def chat_with_report_agent():
     请求（JSON）：
         {
             "simulation_id": "sim_xxxx",        // 必填，模拟ID
-            "message": "请解释一下舆情走向",    // 必填，用户消息
+"message": "请解释一下事件走向",    // 必填，用户消息
             "chat_history": [                   // 可选，对话历史
                 {"role": "user", "content": "..."},
                 {"role": "assistant", "content": "..."}

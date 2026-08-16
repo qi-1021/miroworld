@@ -42,7 +42,7 @@ MiroFish 致力于打造映射现实的群体智能镜像，通过捕捉个体�
 
 ## 🌐 在线体验
 
-欢迎访问在线 Demo 演示环境，体验我们为你准备的一次关于热点舆情事件的推演预测：[mirofish-live-demo](https://666ghj.github.io/mirofish-demo/)
+欢迎访问在线 Demo 演示环境，体验我们为你准备的一次热点事件世界推演：[mirofish-live-demo](https://666ghj.github.io/mirofish-demo/)
 
 ## 📸 系统截图
 
@@ -65,12 +65,12 @@ MiroFish 致力于打造映射现实的群体智能镜像，通过捕捉个体�
 
 ## 🎬 演示视频
 
-### 1. 武汉大学舆情推演预测 + MiroFish项目讲解
+### 1. 武汉大学事件推演 + MiroFish项目讲解
 
 <div align="center">
 <a href="https://www.bilibili.com/video/BV1VYBsBHEMY/" target="_blank"><img src="./static/image/武大模拟演示封面.png" alt="MiroFish Demo Video" width="75%"/></a>
 
-点击图片查看使用微舆BettaFish生成的《武大舆情报告》进行预测的完整演示视频
+点击图片查看使用微舆BettaFish生成的《武大事件报告》进行预测的完整演示视频
 </div>
 
 ### 2. 《红楼梦》失传结局推演预测
