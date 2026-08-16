@@ -275,6 +275,9 @@ const breakpoints = [
   { max: Infinity, cards: 4, width: 280 }
 ]
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1200)
+// 移动端断点：≤768px 走文档流静态布局（禁 JS 定位与位移动画）。
+// 用 matchMedia 做分支比实时 window.innerWidth 更稳，地址栏收起/展开不触发重排。
+const isMobile = ref(typeof window !== 'undefined' ? window.matchMedia('(max-width:768px)').matches : false)
 function cardLayout() {
   const bp = breakpoints.find(b => viewportWidth.value <= b.max) || breakpoints[breakpoints.length - 1]
   return { cardsPerRow: bp.cards, cardWidth: bp.width }
@@ -293,13 +296,28 @@ function measureContainer() {
     containerWidth.value = window.innerWidth
   }
 }
+let resizeTimer = null
 function onViewportResize() {
-  viewportWidth.value = window.innerWidth
-  measureContainer()
+  clearTimeout(resizeTimer)
+  resizeTimer = setTimeout(() => {
+    // 移动断点通过 matchMedia 判定，比 innerWidth 更稳
+    const mobile = typeof window !== 'undefined' && window.matchMedia('(max-width:768px)').matches
+    const newWidth = typeof window !== 'undefined' ? window.innerWidth : 1200
+    if (mobile !== isMobile.value) {
+      isMobile.value = mobile
+    }
+    // 只响应宽度真实变化；手机地址栏收起/展开只改高度时不重排
+    if (newWidth !== viewportWidth.value) {
+      viewportWidth.value = newWidth
+      measureContainer()
+    }
+  }, 150)
 }
 
-// 动态计算容器高度样式
+// 动态计算容器高度样式（移动端走文档流，不由 JS 撑高）
 const containerStyle = computed(() => {
+  if (isMobile.value) return {}
+
   if (!isExpanded.value) {
     // 折叠态：固定高度
     return { minHeight: '420px' }
@@ -321,6 +339,9 @@ const containerStyle = computed(() => {
 // 获取卡片样式
 const getCardStyle = (index) => {
   const total = projects.value.length
+  // 移动端文档流布局：不返回 transform/transition，纯静态，交给 CSS 断点处理
+  if (isMobile.value) return {}
+
   const cardsPerRow = CARDS_PER_ROW.value
   const cardWidth = CARD_WIDTH.value
 
@@ -853,6 +874,10 @@ onUnmounted(() => {
   if (expandDebounceTimer) {
     clearTimeout(expandDebounceTimer)
     expandDebounceTimer = null
+  }
+  if (resizeTimer) {
+    clearTimeout(resizeTimer)
+    resizeTimer = null
   }
 })
 </script>
@@ -1447,18 +1472,29 @@ onUnmounted(() => {
 }
 
 @media (max-width: 768px) {
+  /* 移动端：禁 JS 定位与位移动画，改文档流静态布局（卡片纵向堆叠） */
   .cards-container {
-    padding: 0 20px;
+    display: block;
+    padding: 0 12px;
+    min-height: 0 !important;
+    transition: none;
   }
   .project-card {
-    width: 200px;
-    padding: 12px;
+    position: relative; /* 保留 relative 供卡内 absolute 装饰（勾选/取景框/底线）定位 */
+    width: 100%;
+    max-width: none;
+    margin-bottom: 20px;
+    /* 禁用 700ms 位移动画与 JS transform，避免滚动/地址栏抖动 */
+    transform: none !important;
+    opacity: 1 !important;
+    transition: box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease;
   }
 }
 
 @media (max-width: 560px) {
   .project-card {
-    width: 260px;
+    width: 100%;
+    max-width: none;
     padding: 12px;
   }
   .section-header {
@@ -1472,7 +1508,8 @@ onUnmounted(() => {
 
 @media (max-width: 380px) {
   .project-card {
-    width: 240px;
+    width: 100%;
+    max-width: none;
   }
 }
 
