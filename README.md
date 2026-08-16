@@ -163,7 +163,7 @@ A: 首次启动需要下载 Neo4j 和依赖（~1GB）。之后离线也可运行
 
 ## 🤝 贡献
 
-基于上游 Miroworld 项目：https://github.com/tt-a1i/MiroFish-local
+基于上游项目 MiroFish-local：https://github.com/tt-a1i/MiroFish-local
 
 ---
 
