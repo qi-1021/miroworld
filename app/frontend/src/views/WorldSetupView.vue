@@ -31,6 +31,22 @@
         <span class="ws-num">Step{{ i + 1 }}</span>
         <span class="ws-label">{{ s.label }}</span>
       </button>
+      <div class="world-search">
+        <input
+          v-model="globalSearch"
+          class="world-search-input"
+          :placeholder="$t('world.globalSearchPlaceholder')"
+          @input="runGlobalSearch"
+          @focus="globalSearchOpen = true"
+          @blur="setTimeout(() => globalSearchOpen = false, 200)"
+        />
+        <div v-if="globalSearchOpen && globalSearchResults.length" class="world-search-results">
+          <div v-for="(r, i) in globalSearchResults" :key="i" class="world-search-result">
+            <span class="wsr-type">{{ r.type }}</span>
+            <span class="wsr-text">{{ r.text }}</span>
+          </div>
+        </div>
+      </div>
     </nav>
 
     <div class="world-body">
@@ -1136,6 +1152,9 @@ const saveMsg = ref('')
 const saveMsgError = ref(false)
 const loadError = ref('')
 const showGuide = ref(false)
+const globalSearch = ref('')
+const globalSearchResults = ref([])
+const globalSearchOpen = ref(false)
 const stats = ref(null)
 const report = ref(null)
 const justifyingId = ref('')
@@ -2573,6 +2592,29 @@ async function exportAllWorldlines() {
   }
 }
 
+function runGlobalSearch() {
+  const q = globalSearch.value.trim().toLowerCase()
+  if (!q) {
+    globalSearchResults.value = []
+    return
+  }
+  const results = []
+  ;(simEvents.value || []).forEach((e) => {
+    const hay = `${e.character_name || ''} ${e.action_desc || ''} ${e.result || ''} ${e.location || ''}`.toLowerCase()
+    if (hay.includes(q)) {
+      results.push({ type: 'sim', step: e.step, time: e.time, text: `${e.character_name}：${e.action_desc || ''}` })
+    }
+  })
+  ;(simTimelineEvents.value || []).forEach((e) => {
+    const hay = `${e.summary || ''} ${e.characters || ''}`.toLowerCase()
+    if (hay.includes(q)) {
+      results.push({ type: 'timeline', time: e.time_text || '', text: (e.summary || '').slice(0, 80) })
+    }
+  })
+  globalSearchResults.value = results.slice(0, 30)
+  globalSearchOpen.value = true
+}
+
 function closeGuide() {
   localStorage.setItem('miroworld.guide.v1', '1')
   showGuide.value = false
@@ -3011,6 +3053,52 @@ onUnmounted(() => {
 }
 .ws-label {
   color: #10203a;
+}
+.world-search {
+  position: relative;
+  margin-left: auto;
+  min-width: 200px;
+}
+.world-search-input {
+  width: 100%;
+  border: 1px solid #E0E0E0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: rgba(255,255,255,0.8);
+  color: #10203a;
+}
+.world-search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: #fff;
+  border: 1px solid #EAEAEA;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+  max-height: 260px;
+  overflow-y: auto;
+  z-index: 200;
+}
+.world-search-result {
+  display: flex;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  border-bottom: 1px solid #F5F5F5;
+  cursor: default;
+}
+.wsr-type {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #a1c50a;
+  font-weight: 700;
+}
+.wsr-text {
+  color: #333;
+  line-height: 1.4;
 }
 
 /* Body */

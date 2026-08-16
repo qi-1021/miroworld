@@ -832,6 +832,7 @@
     "guideTitle": "欢迎来到镜世界",
     "guideText": "按顺序完成 5 步：先设定世界，再看时间线与图谱，然后推演、分叉、深入互动。",
     "guideStart": "开始设定世界",
+    "globalSearchPlaceholder": "搜索事件 / 角色 / 地点…",
     "backProject": "返回项目",
     "exportSnapshot": "导出快照",
     "importSnapshot": "导入快照",
