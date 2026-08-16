@@ -1077,6 +1077,7 @@
     "emptyAnswer": "Agent returned an empty answer. Please retry.",
     "failed": "Agent call failed",
     "quickStatus": "Check Project",
+    "quickGraph": "Build World Graph",
     "quickSim": "Start World Sim",
     "quickCharacters": "Generate Characters",
     "quickReport": "Generate Final Report",

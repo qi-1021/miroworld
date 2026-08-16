@@ -290,6 +290,30 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
             "generated_at": (report or {}).get("generated_at"),
         }
 
+    if action == "build_world_graph":
+        from flask import current_app
+        client = current_app.test_client()
+        try:
+            batch_size = int(params.get("batch_size", 4) or 4)
+        except (TypeError, ValueError):
+            batch_size = 4
+        try:
+            max_workers = int(params.get("max_workers", 1) or 1)
+        except (TypeError, ValueError):
+            max_workers = 1
+        payload = {
+            "goal": str(params.get("goal") or "").strip() or None,
+            "force": bool(params.get("force", False)),
+            "resume": bool(params.get("resume", True)),
+            "batch_size": batch_size,
+            "max_workers": max_workers,
+        }
+        resp = client.post(f"/api/world/{project_id}/graph/build", json=payload)
+        data = resp.get_json() or {}
+        if not data.get("success"):
+            raise ValueError(data.get("error") or "建图失败")
+        return data
+
     if action == "list_simulations":
         from ..services.world_simulation import WorldSimulationService
         sims = WorldSimulationService.list_simulations(project_id, limit=int(params.get("limit", 20) or 20))
@@ -324,6 +348,7 @@ _SYSTEM_PROMPT = (
     "start_world_simulation(goal, total_steps, time_mode, time_jumps, include_timeline, from_event_id)、"
     "generate_novel(simulation_id)、"
     "start_timeline_extraction(source, resume, force)、"
+    "build_world_graph(goal, force, resume, batch_size, max_workers)、"
     "generate_final_report(regenerate)、"
     "list_simulations(limit)、"
     "get_project_status()。"
