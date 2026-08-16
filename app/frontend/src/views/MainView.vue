@@ -88,12 +88,14 @@
           <!-- 环境搭建子面板：并入 Step1 主线采集 -->
           <Step2EnvSetup
             v-else
+            :simulationId="simulationId"
             :projectData="projectData"
             :graphData="graphData"
             :systemLogs="systemLogs"
             @go-back="handleGoBack"
             @next-step="handleNextStep"
             @add-log="addLog"
+            @update-status="updateStatus"
           />
         </template>
       </div>
@@ -102,13 +104,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step1GraphBuild from '../components/Step1GraphBuild.vue'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
 import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
+import { createSimulation, listSimulations } from '../api/simulation'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 
@@ -124,6 +127,10 @@ const currentStep = ref(1) // 1: 主线采集, 2: 世界模拟, 3: 最终时间�
 const stepNames = computed(() => tm('main.stepNames'))
 // Step1 主线采集中子面板：mainline(图谱构建) | env(环境搭建)
 const subPanel = ref('mainline')
+
+// env 子面板需要的 simulationId：切入环境搭建时创建/复用，缓存以便多次切换复用同一 sim
+const simulationId = ref('')
+let envStatus = ref('idle') // idle | creating | ready
 
 // Data State
 const currentProjectId = ref(route.params.projectId)
@@ -208,6 +215,60 @@ const handleGoBack = () => {
     addLog(t('log.returnToStep', { step: currentStep.value, name: stepNames.value[currentStep.value - 1] }))
   }
 }
+
+// 状态回调（Step2EnvSetup emit update-status）；MainView 以 currentPhase 驱动状态展示，此处仅兜底记录
+const updateStatus = (status) => {
+  if (status && status === 'error') {
+    // 透出错误以便排查；MainView 自身状态仍由 currentPhase 管理
+    addLog('[env] 状态异常: ' + String(status))
+  }
+}
+
+// ---------- env 子面板：创建/复用 simulationId ----------
+// 仅在切入"环境搭建"时惰性创建一次，并缓存到当前项目；多次切换复用同一 sim，
+// 避免人设生成/准备环境时因缺失 simulation_id 而必然失败。
+const ensureSimulation = async () => {
+  if (!currentProjectId.value || currentProjectId.value === 'new') return
+  if (simulationId.value) return // 已复用/创建
+  if (envStatus.value === 'creating') return
+  envStatus.value = 'creating'
+  try {
+    // 1) 优先复用该项目已存在的模拟
+    const list = await listSimulations(currentProjectId.value)
+    const existing = list?.data?.data || []
+    if (existing.length) {
+      simulationId.value = existing[0].simulation_id || existing[0].id || ''
+      if (simulationId.value) {
+        addLog('复用已有模拟：' + simulationId.value)
+        envStatus.value = 'ready'
+        return
+      }
+    }
+    // 2) 无则创建
+    const created = await createSimulation({
+      project_id: currentProjectId.value,
+      graph_id: projectData.value?.graph_id || undefined
+    })
+    simulationId.value = created?.data?.data?.simulation_id || created?.data?.simulation_id || ''
+    if (simulationId.value) {
+      addLog('创建模拟：' + simulationId.value)
+      envStatus.value = 'ready'
+    } else {
+      addLog('创建模拟失败：未返回 simulation_id')
+      envStatus.value = 'idle'
+    }
+  } catch (e) {
+    addLog('创建/复用模拟失败：' + (e?.message || String(e)))
+    envStatus.value = 'idle'
+  }
+}
+
+// 切入环境搭建子面板时，惰性创建/复用 simulationId
+watch(subPanel, async (val) => {
+  if (val === 'env') {
+    await ensureSimulation()
+  }
+})
 
 // --- Data Logic ---
 

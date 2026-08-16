@@ -283,32 +283,57 @@ const year = new Date().getFullYear()
 // 空字符串表示已通过；非空表示需要引导用户前往模型设置
 const modelConfigAlert = ref('')
 
+// 模型配置校验成功缓存：60s 内不重复请求，手机隧道慢连接下避免反复误判
+let _modelCheckedAt = 0
+const _MODEL_CACHE_MS = 60_000
+
 /**
  * 提交前校验：注册表中是否存在已通过连接验证（verified）的模型。
  * 媒体分析 / 世界模拟两种模式共用。
+ * 手机隧道下网络慢：超时放宽到 25s，查询失败重试 1 次，成功结果缓存 60s，
+ * 避免把"慢"误判成"未配置模型"。
  * @return {Promise<boolean>} true=可用，可继续；false=无可用模型，已弹出引导
  */
 const ensureModelConfigured = async () => {
-  try {
-    // 8 秒超时：避免模型注册表接口异常时按钮长时间无反馈
-    const res = await Promise.race([
-      getModelRegistry(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
-    ])
+  // 成功缓存：60s 内已确认有可用模型，直接通过
+  const now = Date.now()
+  if (_modelCheckedAt && now - _modelCheckedAt < _MODEL_CACHE_MS) {
+    return true
+  }
+
+  const query = () => Promise.race([
+    getModelRegistry(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 25000))
+  ])
+
+  const parse = (res) => {
     const registry = res?.data || res || {}
     const models = registry.models || []
-    const hasVerified = models.some(item => item.verified)
-    if (hasVerified) {
-      modelConfigAlert.value = ''
-      return true
-    }
-    modelConfigAlert.value = t('home.modelConfigRequired')
-    return false
-  } catch (e) {
-    // 查询失败/超时时同样视为未就绪并引导配置，避免提交后连接凭空失败
-    modelConfigAlert.value = t('home.modelConfigCheckFailed')
-    return false
+    return models.some(item => item.verified)
   }
+
+  let lastError = null
+  // 最多 2 次尝试（首次 + 1 次重试）
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 600)) // 重试前短暂停顿
+      const res = await query()
+      const hasVerified = parse(res)
+      if (hasVerified) {
+        _modelCheckedAt = Date.now() // 缓存成功
+        modelConfigAlert.value = ''
+        return true
+      }
+      modelConfigAlert.value = t('home.modelConfigRequired')
+      return false
+    } catch (e) {
+      lastError = e
+      modelConfigAlert.value = t('home.modelConfigCheckFailed')
+    }
+  }
+  // 两次都失败/超时：视为未就绪并引导配置，避免提交后连接凭空失败
+  void lastError
+  return false
 }
 
 // 一键打开模型设置（App.vue 监听 open-model-settings 事件）
