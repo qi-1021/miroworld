@@ -15,7 +15,7 @@
         <button class="back-btn" :disabled="snapshotBusy" @click="exportSnapshot">{{ $t('world.exportSnapshot') }}</button>
         <button class="back-btn" :disabled="snapshotBusy" @click="importFileInput.click()">{{ $t('world.importSnapshot') }}</button>
         <input ref="importFileInput" type="file" accept=".json,.miroworld.json,application/json" style="display:none" @change="onImportSnapshot" />
-        <button class="back-btn" @click="assistantOpen = true; loadAgentTasks()">{{ $t('assistant.open') }}</button>
+        <button class="back-btn" @click="assistantOpen = true; loadAgentTasks(); loadAgentTools()">{{ $t('assistant.open') }}</button>
         <button class="back-btn" @click="goBack">← {{ $t('world.backProject') }}</button>
       </div>
     </header>
@@ -986,6 +986,15 @@
             </div>
             <div v-if="assistantAnswer" class="assistant-answer">{{ assistantAnswer }}</div>
             <div v-if="assistantMsg" class="msg-line" :class="{ error: assistantMsgError }">{{ assistantMsg }}</div>
+            <details class="agent-tools">
+              <summary>{{ $t('assistant.toolList') }} ({{ Object.keys(agentTools).length }})</summary>
+              <div class="agent-tools-grid">
+                <div v-for="(tool, name) in agentTools" :key="name" class="agent-tool-item">
+                  <span class="agent-tool-name">{{ name }}</span>
+                  <span class="agent-tool-desc">{{ tool.description }}</span>
+                </div>
+              </div>
+            </details>
             <div class="agent-tasks">
               <div class="agent-tasks-title">{{ $t('assistant.taskList') }}</div>
               <div v-if="agentTasks.length" class="agent-tasks-list">
@@ -1067,7 +1076,7 @@ import {
   refillWorldGraphEdges
 } from '../api/world'
 import { getTaskStatus, exportProjectSnapshot, importProjectSnapshot } from '../api/graph'
-import { askAssistant, runAssistantAction, listAgentTasks } from '../api/assistant'
+import { askAssistant, runAssistantAction, listAgentTasks, listAgentTools } from '../api/assistant'
 import { getTimeline, generateTimelineCharacters } from '../api/timeline'
 import TimelineView from '../components/TimelineView.vue'
 
@@ -1084,12 +1093,21 @@ const assistantAnswer = ref('')
 const assistantMsg = ref('')
 const assistantMsgError = ref(false)
 const agentTasks = ref([])
+const agentTools = ref({})
 async function loadAgentTasks() {
   try {
     const res = await listAgentTasks()
     agentTasks.value = res?.data?.tasks || []
   } catch (e) {
     agentTasks.value = []
+  }
+}
+async function loadAgentTools() {
+  try {
+    const res = await listAgentTools()
+    agentTools.value = res?.data?.tools || {}
+  } catch (e) {
+    agentTools.value = {}
   }
 }
 
@@ -4948,6 +4966,42 @@ onUnmounted(() => {
   color: #999;
   font-family: 'JetBrains Mono', monospace;
   margin-left: auto;
+}
+.agent-tools {
+  border: 1px solid #EAEAEA;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #FCFCFC;
+}
+.agent-tools summary {
+  font-size: 11px;
+  font-weight: 700;
+  color: #666;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.agent-tools-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  margin-top: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.agent-tool-item {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  padding: 3px 0;
+  border-bottom: 1px solid #F5F5F5;
+}
+.agent-tool-name {
+  font-weight: 700;
+  color: #10203a;
+  font-family: 'JetBrains Mono', monospace;
+}
+.agent-tool-desc {
+  color: #888;
 }
 
 /* 世界线对比 */

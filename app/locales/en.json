@@ -1113,6 +1113,7 @@
     "failed": "Agent call failed",
     "taskList": "Task Log",
     "taskEmpty": "No tasks yet",
+    "toolList": "Available Tools",
     "quickStatus": "Check Project",
     "quickGraph": "Build World Graph",
     "quickExtract": "Extract Timeline",

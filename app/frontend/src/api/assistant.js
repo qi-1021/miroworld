@@ -21,6 +21,13 @@ export function askAssistant(projectId, question) {
  * @param {Object} params - 动作参数
  * @returns {Promise} { success, data: { answer, action, action_result, context } }
  */
+export function listAgentTools() {
+  return service({
+    url: '/api/assistant/tools',
+    method: 'get'
+  })
+}
+
 export function listAgentTasks() {
   return service({
     url: '/api/assistant/tasks',

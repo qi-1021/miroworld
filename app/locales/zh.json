@@ -1113,6 +1113,7 @@
     "failed": "Agent 调用失败",
     "taskList": "任务记录",
     "taskEmpty": "暂无任务记录",
+    "toolList": "可用工具",
     "quickStatus": "检查项目状态",
     "quickGraph": "构建世界图谱",
     "quickExtract": "抽取时间线",
