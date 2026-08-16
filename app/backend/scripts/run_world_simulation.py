@@ -412,6 +412,16 @@ class WorldEnv:
             lines.append("- " + body.replace("\n", " "))
         return "\n".join(lines)
 
+    def _world_memory(self, max_len: int = 300) -> str:
+        """世界记忆层：作者设定的世界名、地点、规则等长期事实。"""
+        lines = [f"世界：{self.world_name}"]
+        if self.locations:
+            lines.append("地点：" + "、".join(l.name for l in list(self.locations.values())[:10]))
+        if self.rules:
+            lines.append("规则：" + "；".join(r.description for r in self.rules[:6]))
+        text = "\n".join(lines)
+        return text[:max_len]
+
     def _story_context(self, limit: int = 4, max_len: int = 80) -> str:
         """返回最近几步的剧情脉络摘要（长程记忆），帮助角色把握主线。"""
         lines = []
@@ -640,15 +650,17 @@ class WorldEnv:
                 filtered = list(self._last_filtered)
                 _goal = (char.goal or "").strip() or "按人设自然行动"
                 _recent = self._recent_context(char)
-                _world = self._global_context()
+                _global = self._global_context()
                 _story = self._story_context()
+                _world_mem = self._world_memory()
                 prompt = (
                     f"你是{char.name}。{char.persona}\n"
                     f"当前目标：{_goal}\n"
                     f"你的身份知识：{'、'.join(char.knowledge) if char.knowledge else '无'}\n"
-                    f"你亲身经历/目睹的最近事：\n{_recent or '（暂无）'}\n\n"
+                    f"你亲身经历/目睹的最近事（角色记忆）：\n{_recent or '（暂无）'}\n\n"
                     f"故事脉络（最近几步）：\n{_story or '（暂无）'}\n\n"
-                    f"世界最新动态（你可能听说或需要留意）：\n{_world or '（暂无）'}\n\n"
+                    f"世界最新动态（你可能听说或需要留意）：\n{_global or '（暂无）'}\n\n"
+                    f"世界记忆（作者设定与规则）：\n{_world_mem or '（暂无）'}\n\n"
                     f"{observation}\n"
                     f"请严格以{char.name}的身份与性格行动：语气、价值观、口癖都符合人物设定（persona），"
                     f"动作要尽量衔接上面提到的最近事件和世界动态，推动剧情连贯发展，"
