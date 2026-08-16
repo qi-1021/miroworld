@@ -35,8 +35,6 @@
 
       <!-- 产品视觉：纯 CSS 时间线示意图（主线 + 橙色分支）+ 真实 WebGL 液态玻璃 -->
       <div class="lg-root-hero">
-        <div class="lg-glow g2 hg-left" aria-hidden="true"></div>
-        <div class="lg-glow g1 hg-right" aria-hidden="true"></div>
         <div class="hero-visual liquid-glass" aria-hidden="false">
         <div class="tl-demo">
           <div class="tl-main">
@@ -66,17 +64,11 @@
 
     <!-- 特性 -->
     <section class="features">
-      <div class="lg-bg features-bg">
-        <div class="lg-glow g2 fg-left"></div>
-        <div class="lg-glow g1 fg-right"></div>
-      </div>
       <div class="features-head">
         <h2 class="section-title">{{ $t('home.featuresTitle') }}</h2>
         <p class="section-desc">{{ $t('home.featuresDesc') }}</p>
       </div>
       <div class="feature-grid lg-root-grid">
-        <div class="lg-glow g2 fgrid-left" aria-hidden="true"></div>
-        <div class="lg-glow g1 fgrid-right" aria-hidden="true"></div>
         <div class="feature-card liquid-glass">
           <div class="f-icon">▤</div>
           <h3 class="f-title">{{ $t('home.f1Title') }}</h3>
@@ -102,12 +94,7 @@
 
     <!-- 控制台 -->
     <section class="console-section" ref="consoleRef">
-      <div class="lg-bg console-bg">
-        <div class="lg-glow g3 cg-left"></div>
-        <div class="lg-glow g4 cg-top"></div>
-        <div class="lg-glow g2 cg-right"></div>
-        <div class="lg-glow g1 cg-bottom"></div>
-      </div>      <div class="console-head">
+      <div class="console-head">
         <h2 class="section-title">{{ $t('home.consoleTitle') }}</h2>
         <div class="mode-tabs">
           <button class="mode-tab" :class="{ active: activeMode === 'world' }" @click="activeMode = 'world'">
@@ -707,25 +694,9 @@ onMounted(() => {
 }
 @keyframes import-rotate { to { transform: rotate(360deg); } }
 
-/* 真实 WebGL 液态玻璃：三个根容器（hero / feature-grid / console） */
+/* 真实 WebGL 液态玻璃：hero 视觉（时间线示意图）容器定位 */
 .lg-root-hero { position: relative; max-width: 900px; margin: 0 auto 96px; }
-.lg-root-hero .lg-glow { z-index: 0; }
 .lg-root-hero .hero-visual { z-index: 1; position: relative; margin-bottom: 0; }
-.hg-left { width: 360px; height: 360px; left: -140px; top: -30px; }
-.hg-right { width: 400px; height: 400px; right: -170px; bottom: -60px; }
-/* feature-grid 作为根：光晕铺满所有网格单元、置于卡片下层 */
-.lg-root-grid { position: relative; }
-.lg-root-grid .fgrid-left,
-.lg-root-grid .fgrid-right {
-  pointer-events: none;
-  grid-area: 1 / 1 / -1 / -1;
-  justify-self: center;
-  align-self: center;
-  z-index: 0;
-}
-.lg-root-grid .feature-card { position: relative; z-index: 1; }
-.fgrid-left { width: 420px; height: 420px; transform: translate(-50%,-50%); left: 0; top: 0; }
-.fgrid-right { width: 460px; height: 460px; transform: translate(50%,50%); right: 0; bottom: 0; }
 
 /* ---------- 按钮 ---------- */
 .btn {
@@ -871,15 +842,6 @@ onMounted(() => {
   max-width: 1100px;
   margin: 0 auto;
 }
-.features-bg {
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  max-width: 1100px;
-  min-height: 100%;
-}
-.fg-left { width: 380px; height: 380px; left: -160px; top: -60px; }
-.fg-right { width: 420px; height: 420px; right: -180px; bottom: -80px; }
 .features-head {
   position: relative;
   z-index: 1;
@@ -942,15 +904,6 @@ onMounted(() => {
   background: var(--canvas-alt);
   padding: 72px 40px 80px;
 }
-.console-bg {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-.cg-left  { width: 460px; height: 460px; left: -140px;  top: 20%;  }
-.cg-top   { width: 340px; height: 340px; left: 30%;     top: -140px; }
-.cg-right { width: 420px; height: 420px; right: -160px; bottom: 10%; }
-.cg-bottom{ width: 360px; height: 360px; left: 12%;     bottom: -140px; opacity: 0.4; }
 .console-head {
   position: relative;
   z-index: 1;

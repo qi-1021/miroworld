@@ -21,14 +21,6 @@
     </header>
 
     <div class="world-body">
-      <!-- 液态玻璃模糊源：彩色光晕铺在卡片下，透明玻璃才能透出来 -->
-      <div class="world-glows" aria-hidden="true">
-        <div class="lg-glow g1 wg-1"></div>
-        <div class="lg-glow g2 wg-2"></div>
-        <div class="lg-glow g3 wg-3"></div>
-        <div class="lg-glow g4 wg-4"></div>
-      </div>
-
       <!-- 加载失败提示 + 重试（设定库读取失败时不至于页面空白无解释） -->
       <div v-if="loadError" class="load-error-bar">
         <span>⚠ {{ loadError }}</span>
@@ -1881,25 +1873,6 @@ onUnmounted(() => {
   margin: 0 auto;
   box-sizing: border-box;
   position: relative;
-}
-/* 液态玻璃模糊源：彩色光晕层（绝对定位铺在卡片下层） */
-.world-glows {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-.world-glows .lg-glow { z-index: 0; }
-.wg-1 { width: 380px; height: 380px; left: -140px; top: 60px; }
-.wg-2 { width: 420px; height: 420px; right: -160px; top: 30%; }
-.wg-3 { width: 360px; height: 360px; left: 18%; bottom: 8%; opacity: 0.4; }
-.wg-4 { width: 340px; height: 340px; right: 8%; bottom: -140px; opacity: 0.35; }
-/* 让卡片所在层高于光晕层 */
-.world-body > .step-card,
-.world-body > .load-error-bar {
-  position: relative;
-  z-index: 1;
 }
 .load-error-bar {
   display: flex;

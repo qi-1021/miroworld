@@ -4,16 +4,6 @@
     :class="{ 'no-projects': projects.length === 0 && !loading }"
     ref="historyContainer"
   >
-    <!-- 背景装饰：技术网格线 + 彩色光晕（Liquid Glass 模糊源） -->
-    <div v-if="projects.length > 0 || loading" class="tech-grid-bg">
-      <div class="grid-pattern"></div>
-      <div class="gradient-overlay"></div>
-      <div class="glass-glow glow-1"></div>
-      <div class="glass-glow glow-2"></div>
-      <div class="glass-glow glow-3"></div>
-      <div class="glass-glow glow-4"></div>
-    </div>
-
     <!-- 标题区域 -->
     <div class="section-header">
       <div class="section-line"></div>
@@ -883,60 +873,6 @@ onUnmounted(() => {
   min-height: auto;
   padding: 40px 0 20px;
 }
-
-/* 技术网格背景 */
-.tech-grid-bg {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-/* 使用CSS背景图案创建固定间距的正方形网格 */
-.grid-pattern {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-image:
-    linear-gradient(to right, rgba(0, 0, 0, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
-  background-size: 50px 50px;
-  /* 从左上角开始定位，高度变化时只在底部扩展，不影响已有网格位置 */
-  background-position: top left;
-}
-
-.gradient-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background:
-    linear-gradient(to right, rgba(255, 255, 255, 0.9) 0%, transparent 15%, transparent 85%, rgba(255, 255, 255, 0.9) 100%),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.8) 0%, transparent 20%, transparent 80%, rgba(255, 255, 255, 0.8) 100%);
-  pointer-events: none;
-}
-
-/* 彩色光晕：为 backdrop-filter 提供可模糊的彩色内容（Liquid Glass 模糊源） */
-.glass-glow {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(70px);
-  pointer-events: none;
-}
-.glow-1 { width: 420px; height: 420px; left: -120px; top: -100px;
-  background: radial-gradient(circle, rgba(255,183,107,0.55), transparent 70%); }
-.glow-2 { width: 500px; height: 500px; right: -160px; top: 10%;
-  background: radial-gradient(circle, rgba(158,167,255,0.5), transparent 70%); }
-.glow-3 { width: 380px; height: 380px; left: 20%; bottom: -140px;
-  background: radial-gradient(circle, rgba(107,240,198,0.45), transparent 70%); }
-.glow-4 { width: 360px; height: 360px; right: 12%; bottom: -120px;
-  background: radial-gradient(circle, rgba(255,143,208,0.4), transparent 70%); }
 
 /* 标题区域 */
 .section-header {

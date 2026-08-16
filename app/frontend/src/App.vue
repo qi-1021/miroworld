@@ -222,21 +222,6 @@ button { font-family: inherit; }
   transform: translateY(-2px);
 }
 
-/* LGGC 彩色光晕（放在玻璃卡父容器，为 backdrop-filter 提供可模糊内容） */
-.lg-bg { position: relative; overflow: hidden; }
-.lg-glow {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(60px);
-  opacity: 0.5;
-  pointer-events: none;
-  z-index: 0;
-}
-.lg-glow.g1 { background: radial-gradient(circle, #ffb76b, rgba(255,183,107,0)); }
-.lg-glow.g2 { background: radial-gradient(circle, #9ea7ff, rgba(158,167,255,0)); }
-.lg-glow.g3 { background: radial-gradient(circle, #6bf0c6, rgba(107,240,198,0)); }
-.lg-glow.g4 { background: radial-gradient(circle, #ff8fd0, rgba(208,143,255,0)); }
-
 /* ============================================================
    通用控件玻璃化（按钮 / 输入框 / 下拉 / 文本域）：
    与 LGGC 液态玻璃卡片保持同一通透质感，文字高对比保证可读。
@@ -332,7 +317,6 @@ input[type="email"], input[type="search"] {
     backdrop-filter: saturate(150%) blur(5px);
     -webkit-backdrop-filter: saturate(150%) blur(5px);
   }
-  .lg-glow { opacity: 0.35; filter: blur(40px); }
   #app {
     background-color: #f5f5f7;
     background-image: none;
