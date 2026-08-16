@@ -504,7 +504,8 @@ def test_decision_prompt_contains_goal_memory_and_persona():
     assert "严格以" in first and "人物设定" in first
     # 卡拉第二轮（calls[2]）的提示词应包含第一步的事件记忆（该角色相关）
     kara_round2 = calls[2]
-    assert "最近发生的事" in kara_round2
+    assert "你亲身经历/目睹的最近事" in kara_round2
+    assert "世界最新动态" in kara_round2  # 全局动态注入，帮助剧情连贯
     assert "卡拉" in kara_round2  # 记忆里出现角色名
     assert "（暂无）" not in kara_round2  # 已有记忆，不再是空
 

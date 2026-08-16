@@ -397,6 +397,16 @@ class WorldEnv:
             lines.append(line)
         return "\n".join(lines)
 
+    def _global_context(self, limit: int = 8, max_len: int = 80) -> str:
+        """返回最近全局事件摘要（不限角色），让角色感知世界其他地方发生了什么。"""
+        lines = []
+        for ev in self.events[-limit:]:
+            body = f"{ev.character_name} 在 {ev.location}：{ev.action_desc or ''} {ev.result or ''}".strip()
+            if len(body) > max_len:
+                body = body[:max_len] + "…"
+            lines.append("- " + body.replace("\n", " "))
+        return "\n".join(lines)
+
     def observe(self, character: WorldCharacter) -> str:
         """角色感知：位置 + 在场角色 + 环境 + 规则 + 时间（含视角过滤与知识边界）
 
@@ -595,13 +605,16 @@ class WorldEnv:
                 try:
                     _goal = (char.goal or "").strip() or "按人设自然行动"
                     _recent = self._recent_context(char)
+                    _world = self._global_context()
                     decision = await llm_call(
                         f"你是{char.name}。{char.persona}\n"
                         f"当前目标：{_goal}\n"
                         f"你的身份知识：{'、'.join(char.knowledge) if char.knowledge else '无'}\n"
-                        f"最近发生的事：\n{_recent or '（暂无）'}\n\n"
+                        f"你亲身经历/目睹的最近事：\n{_recent or '（暂无）'}\n\n"
+                        f"世界最新动态（你可能听说或需要留意）：\n{_world or '（暂无）'}\n\n"
                         f"{observation}\n"
                         f"请严格以{char.name}的身份与性格行动：语气、价值观、口癖都符合人物设定（persona），"
+                        f"动作要尽量衔接上面提到的最近事件和世界动态，推动剧情连贯发展，"
                         f"不要说出超出其身份与见闻的内容。"
                     )
                 except Exception as e:
@@ -768,7 +781,7 @@ def create_llm_caller(config: Dict[str, Any]):
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": "你是世界模拟中的角色。根据你的身份和观察，用一句中文描述你接下来要做的动作。不要解释，直接输出动作。"},
+                {"role": "system", "content": "你是世界模拟中的角色。根据你的身份、观察、最近经历和世界动态，用一句中文描述你接下来要做的动作。动作要自然衔接最近发生的事，推动剧情连贯发展；不要解释，直接输出动作。"},
                 {"role": "user", "content": text},
             ],
             "temperature": 0.8,

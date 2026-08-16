@@ -945,6 +945,7 @@
     "simStatusFailed": "失败",
     "simStatusHint": "独立模式 · 非社交平台",
     "simProgress": "第 {current}/{total} 步",
+    "simStepLabel": "第 {step} 步",
     "simDesc": "从设定库自动提取角色/地点/规则，在独立世界中按时间步运行。与社交媒体模拟无关。",
     "simGoalLabel": "任务目标（可选 · 决定推演走向）",
     "simGoalPlaceholder": "例：推演三年后谁将统一大陆？不填则按设定自然推演",

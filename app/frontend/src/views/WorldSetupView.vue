@@ -524,15 +524,19 @@
 
         <div v-if="simMsg" class="msg-line" :class="{ error: simMsgError }">{{ simMsg }}</div>
 
-        <!-- 事件流 -->
+        <!-- 事件流（按 step 分组，更清晰） -->
         <div v-if="simEvents.length" class="sim-events">
           <div class="sim-events-title">{{ $t('world.eventStream') }}</div>
-          <div v-for="(e, i) in simEvents" :key="i" class="sim-event">
-            <span class="sim-event-time">{{ e.time }}</span>
-            <span class="sim-event-who">{{ e.character_name }}</span>
-            <span class="sim-event-where">{{ e.location }}</span>
-            <span class="sim-event-what">{{ e.action_desc }}</span>
-            <span class="sim-event-result">{{ e.result }}</span>
+          <div v-for="(group, gi) in groupedSimEvents" :key="gi" class="sim-step-group">
+            <div class="sim-step-head">
+              {{ $t('world.simStepLabel', { step: group.step }) }} · {{ group.time }}
+            </div>
+            <div v-for="(e, ei) in group.events" :key="ei" class="sim-event">
+              <span class="sim-event-who">{{ e.character_name }}</span>
+              <span class="sim-event-where">{{ e.location }}</span>
+              <span class="sim-event-what">{{ e.action_desc }}</span>
+              <span class="sim-event-result">{{ e.result }}</span>
+            </div>
           </div>
         </div>
 
@@ -1038,6 +1042,22 @@ const worldTree = computed(() => {
   }
   sortRec(roots)
   return roots
+})
+
+// 把世界模拟事件按 step 分组，避免一长串杂乱平铺
+const groupedSimEvents = computed(() => {
+  const groups = []
+  const map = new Map()
+  for (const e of simEvents.value || []) {
+    const key = `${e.step || 0}-${e.time || ''}`
+    if (!map.has(key)) {
+      const g = { step: e.step || 0, time: e.time || '', events: [] }
+      map.set(key, g)
+      groups.push(g)
+    }
+    map.get(key).events.push(e)
+  }
+  return groups
 })
 const simSection = ref(null)
 const inputSection = ref(null)
@@ -2776,7 +2796,7 @@ onUnmounted(() => {
 }
 .sim-event {
   display: grid;
-  grid-template-columns: 74px 72px 90px 1fr;
+  grid-template-columns: 72px 90px 1fr;
   gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid #F0F0F0;
@@ -2785,6 +2805,17 @@ onUnmounted(() => {
 }
 .sim-event:last-child {
   border-bottom: none;
+}
+.sim-step-group {
+  border-bottom: 1px solid #F0F0F0;
+}
+.sim-step-head {
+  padding: 6px 12px;
+  background: #FAFAFA;
+  font-size: 11px;
+  font-weight: 700;
+  color: #a1c50a;
+  border-bottom: 1px solid #F0F0F0;
 }
 .sim-event-time {
   color: #999;
