@@ -75,6 +75,13 @@ export function getGraphData(graphId) {
  * @param {String} projectId - 项目ID
  * @returns {Promise}
  */
+export function listProjects() {
+  return service({
+    url: '/api/graph/project/list',
+    method: 'get'
+  })
+}
+
 export function getProject(projectId) {
   return service({
     url: `/api/graph/project/${projectId}`,

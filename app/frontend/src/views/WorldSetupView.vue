@@ -12,6 +12,9 @@
       </div>
       <div class="header-right">
         <button class="back-btn ghost" @click="highContrast = !highContrast">{{ highContrast ? $t('world.contrastOff') : $t('world.contrastOn') }}</button>
+        <select class="project-switcher" :value="projectId" @change="switchProject">
+          <option v-for="p in projects" :key="p.project_id" :value="p.project_id">{{ p.name || p.project_id }}</option>
+        </select>
         <span class="project-id">{{ projectId }}</span>
         <button class="back-btn" :disabled="snapshotBusy" @click="exportSnapshot">{{ $t('world.exportSnapshot') }}</button>
         <button class="back-btn" :disabled="snapshotBusy" @click="importFileInput.click()">{{ $t('world.importSnapshot') }}</button>
@@ -1135,7 +1138,7 @@ import {
   getWorldGraph,
   refillWorldGraphEdges
 } from '../api/world'
-import { getTaskStatus, exportProjectSnapshot, importProjectSnapshot } from '../api/graph'
+import { getTaskStatus, exportProjectSnapshot, importProjectSnapshot, listProjects } from '../api/graph'
 import { askAssistant, runAssistantAction, listAgentTasks, listAgentTools } from '../api/assistant'
 import { getTimeline, generateTimelineCharacters } from '../api/timeline'
 import TimelineView from '../components/TimelineView.vue'
@@ -1144,6 +1147,22 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const projectId = route.params.projectId
+const projects = ref([])
+async function loadProjects() {
+  try {
+    const res = await listProjects()
+    const data = res?.data || res || {}
+    projects.value = data.projects || data || []
+  } catch (e) {
+    projects.value = []
+  }
+}
+function switchProject(e) {
+  const id = e.target.value
+  if (id && id !== projectId) {
+    router.push(`/world/${id}`)
+  }
+}
 const snapshotBusy = ref(false)
 const importFileInput = ref(null)
 const assistantOpen = ref(false)
@@ -2954,6 +2973,7 @@ onMounted(() => {
   loadAll()
   loadSimHistory()
   loadSimTimelineEvents()
+  loadProjects()
 
   // 新手引导：首次进入显示 5 步说明
   if (!localStorage.getItem('miroworld.guide.v1')) {
@@ -3059,6 +3079,15 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+.project-switcher {
+  border: 1px solid #E0E0E0;
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 12px;
+  background: #fff;
+  color: #10203a;
+  max-width: 180px;
 }
 .project-id {
   font-family: 'JetBrains Mono', monospace;
