@@ -228,7 +228,11 @@
     "mediaEmptyHint": "Upload documents and set a goal first",
     "worldEmptyHint": "Add background or story material first (upload or paste)",
     "modelConfigRequired": "No usable model configured. Please set up a model first.",
-    "modelConfigCheckFailed": "Model check failed or timed out. Please set up a model first."
+    "modelConfigCheckFailed": "Model check failed or timed out. Please set up a model first.",
+    "importSnapshot": "Import Snapshot (.mirofish.json)",
+    "importSnapshotDone": "Snapshot imported, entering new world…",
+    "importSnapshotFailed": "Snapshot import failed",
+    "importSnapshotInvalid": "Snapshot file is not valid JSON"
   },
   "main": {
     "layoutGraph": "Graph",

@@ -158,20 +158,22 @@ button {
 }
 
 /* Apple Liquid Glass 通用卡片类：
-   增强版 —— 提高透明度的同时保留可读性，配合背景彩色光晕让
-   backdrop-filter 的模糊/加饱和效果肉眼可见，呈现真正 Liquid Glass 质感。 */
+   轻量版 —— 降低全局 backdrop-filter 的 GPU 开销（blur 28px → 10px、saturate 200% → 160%），
+   保留半透明可读性。启用 @ybouane/liquidglass 的真实 WebGL 液态玻璃后，
+   此处作为不支持 WebGL 时的 CSS 降级兜底。 */
 .liquid-glass {
-  background: rgba(255,255,255,0.42);
-  border: 1px solid rgba(255,255,255,0.55);
+  background: rgba(255,255,255,0.45);
+  border: 1px solid rgba(255,255,255,0.5);
   border-radius: 20px;
   box-shadow:
-    0 8px 32px rgba(0,0,0,0.10),
-    inset 0 1px 0 rgba(255,255,255,0.75),
-    inset 0 -1px 0 rgba(255,255,255,0.20);
-  backdrop-filter: saturate(200%) blur(28px);
-  -webkit-backdrop-filter: saturate(200%) blur(28px);
+    0 8px 32px rgba(0,0,0,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.7),
+    inset 0 -1px 0 rgba(255,255,255,0.15);
+  backdrop-filter: saturate(160%) blur(10px);
+  -webkit-backdrop-filter: saturate(160%) blur(10px);
   /* 玻璃高光：一条沿顶部的细亮线模拟反射 */
   position: relative;
+  transition: backdrop-filter 0.2s ease;
 }
 .liquid-glass::before {
   content: '';

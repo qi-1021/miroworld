@@ -12,6 +12,8 @@
       <div class="nav-right">
         <LanguageSwitcher />
         <button class="nav-link nav-btn" @click="openWorldLibrary">{{ $t('home.openWorldLibrary') }}</button>
+        <button class="nav-link nav-btn" :disabled="importingSnapshot" @click="triggerSnapshotImport">{{ $t('home.importSnapshot') }}</button>
+        <input ref="snapshotInput" type="file" accept=".json,.mirofish.json" style="display:none" @change="handleSnapshotFile" />
         <a class="nav-link" :href="BRAND.repo" target="_blank" rel="noopener">{{ $t('nav.visitGithub') }}<span class="arrow">↗</span></a>
       </div>
     </nav>
@@ -27,9 +29,15 @@
       <div class="hero-cta">
         <button class="btn btn-primary" @click="scrollToConsole">{{ $t('home.ctaStart') }}</button>
       </div>
+      <div v-if="importMsg" class="hero-import-msg" :class="{ error: importMsgError }">
+        <span v-if="importingSnapshot" class="import-spin"></span>{{ importMsg }}
+      </div>
 
-      <!-- 产品视觉：纯 CSS 时间线示意图（主线 + 橙色分支） -->
-      <div class="hero-visual" aria-hidden="true">
+      <!-- 产品视觉：纯 CSS 时间线示意图（主线 + 橙色分支）+ 真实 WebGL 液态玻璃 -->
+      <div class="lg-root-hero" ref="heroGlassRoot">
+        <div class="lg-glow g2 hg-left" aria-hidden="true"></div>
+        <div class="lg-glow g1 hg-right" aria-hidden="true"></div>
+        <div class="hero-visual liquid-glass" ref="heroGlass" aria-hidden="false">
         <div class="tl-demo">
           <div class="tl-main">
             <span class="dot done"></span>
@@ -52,6 +60,7 @@
             <span class="cap future-label">{{ $t('home.visualFuture') }}</span>
           </div>
         </div>
+        </div>
       </div>
     </header>
 
@@ -65,23 +74,25 @@
         <h2 class="section-title">{{ $t('home.featuresTitle') }}</h2>
         <p class="section-desc">{{ $t('home.featuresDesc') }}</p>
       </div>
-      <div class="feature-grid">
-        <div class="feature-card liquid-glass">
+      <div class="feature-grid lg-root-grid" ref="featureGlassRoot">
+        <div class="lg-glow g2 fgrid-left" aria-hidden="true"></div>
+        <div class="lg-glow g1 fgrid-right" aria-hidden="true"></div>
+        <div class="feature-card liquid-glass" ref="featureGlass_0">
           <div class="f-icon">▤</div>
           <h3 class="f-title">{{ $t('home.f1Title') }}</h3>
           <p class="f-desc">{{ $t('home.f1Desc') }}</p>
         </div>
-        <div class="feature-card liquid-glass">
+        <div class="feature-card liquid-glass" ref="featureGlass_1">
           <div class="f-icon">⑃</div>
           <h3 class="f-title">{{ $t('home.f2Title') }}</h3>
           <p class="f-desc">{{ $t('home.f2Desc') }}</p>
         </div>
-        <div class="feature-card liquid-glass">
+        <div class="feature-card liquid-glass" ref="featureGlass_2">
           <div class="f-icon">◉</div>
           <h3 class="f-title">{{ $t('home.f3Title') }}</h3>
           <p class="f-desc">{{ $t('home.f3Desc') }}</p>
         </div>
-        <div class="feature-card liquid-glass">
+        <div class="feature-card liquid-glass" ref="featureGlass_3">
           <div class="f-icon">✎</div>
           <h3 class="f-title">{{ $t('home.f4Title') }}</h3>
           <p class="f-desc">{{ $t('home.f4Desc') }}</p>
@@ -90,14 +101,13 @@
     </section>
 
     <!-- 控制台 -->
-    <section class="console-section" ref="consoleRef">
+    <section class="console-section" ref="consoleGlassRoot">
       <div class="lg-bg console-bg">
         <div class="lg-glow g3 cg-left"></div>
         <div class="lg-glow g4 cg-top"></div>
         <div class="lg-glow g2 cg-right"></div>
         <div class="lg-glow g1 cg-bottom"></div>
-      </div>
-      <div class="console-head">
+      </div>      <div class="console-head">
         <h2 class="section-title">{{ $t('home.consoleTitle') }}</h2>
         <div class="mode-tabs">
           <button class="mode-tab" :class="{ active: activeMode === 'world' }" @click="activeMode = 'world'">
@@ -249,13 +259,14 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { LiquidGlass } from '@ybouane/liquidglass'
 import HistoryDatabase from '../components/HistoryDatabase.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import { BRAND } from '../config/brand'
-import { createProject } from '../api/graph'
+import { createProject, importProjectSnapshot } from '../api/graph'
 import { saveWorldInputMultipart } from '../api/world'
 import { getModelRegistry } from '../api/models'
 
@@ -277,6 +288,62 @@ const error = ref('')
 const isDragOver = ref(false)
 const consoleRef = ref(null)
 const year = new Date().getFullYear()
+
+// ============ 真实 WebGL 液态玻璃（@ybouane/liquidglass） ============
+const heroGlassRoot = ref(null)
+const featureGlassRoot = ref(null)
+const consoleGlassRoot = ref(null)
+let glassInstances = []
+// 轻量默认参数：静态首页无 data-dynamic，玻璃卡 blur/refraction 适度以保可读性
+const GLASS_DEFAULTS = {
+  blurAmount: 0.15,
+  refraction: 0.35,
+  chromAberration: 0.04,
+  edgeHighlight: 0.06,
+  specular: 0.05,
+  fresnel: 0.6,
+  distortion: 0,
+  cornerRadius: 22,
+  zRadius: 18,
+  opacity: 1,
+  saturation: 0,
+  tintStrength: 0,
+  brightness: 0,
+  shadowOpacity: 0.18,
+  shadowSpread: 8,
+  shadowOffsetY: 1,
+  floating: false,
+  button: false
+}
+async function initLiquidGlass() {
+  // 每类玻璃卡用一个根；根必须是其 glass 卡片的直接父级方可被库接受
+  const specs = [
+    { root: heroGlassRoot.value, selector: '.hero-visual' },
+    { root: featureGlassRoot.value, selector: '.feature-card' },
+    { root: consoleGlassRoot.value, selector: '.console-card' }
+  ]
+  for (const spec of specs) {
+    if (!spec.root) continue
+    const glassEls = Array.from(spec.root.querySelectorAll(spec.selector))
+      .filter(el => el.parentElement === spec.root)
+    if (!glassEls.length) continue
+    try {
+      const inst = await LiquidGlass.init({
+        root: spec.root,
+        glassElements: glassEls,
+        defaults: GLASS_DEFAULTS
+      })
+      if (inst && inst.destroy) glassInstances.push(inst)
+    } catch (err) {
+      // WebGL 不可用或初始化失败：静默降级到 CSS backdrop-filter，不阻塞页面
+      console.warn('[LiquidGlass] init failed, fallback to CSS:', spec.selector, err)
+    }
+  }
+}
+function destroyLiquidGlass() {
+  glassInstances.forEach(inst => { try { inst.destroy() } catch (e) { /* noop */ } })
+  glassInstances = []
+}
 
 // ============ 模型配置前置校验 ============
 // 空字符串表示已通过；非空表示需要引导用户前往模型设置
@@ -518,6 +585,59 @@ const startSimulation = async () => {
     })
   })
 }
+
+// 首页快照导入入口
+const snapshotInput = ref(null)
+const importMsg = ref('')
+const importMsgError = ref(false)
+const importingSnapshot = ref(false)
+function triggerSnapshotImport() {
+  if (importingSnapshot.value) return
+  snapshotInput.value?.click()
+}
+async function handleSnapshotFile(event) {
+  const file = event.target.files && event.target.files[0]
+  // 允许再次选择同一文件
+  event.target.value = ''
+  if (!file) return
+  if (importingSnapshot.value) return
+  importingSnapshot.value = true
+  importMsg.value = ''
+  importMsgError.value = false
+  try {
+    const text = await file.text()
+    let snapshot
+    try {
+      snapshot = JSON.parse(text)
+    } catch (e) {
+      importMsg.value = t('home.importSnapshotInvalid')
+      importMsgError.value = true
+      return
+    }
+    const res = await importProjectSnapshot(snapshot)
+    const project = res?.data || {}
+    const pid = project.project_id || project.id
+    if (!pid) throw new Error(t('home.importSnapshotFailed'))
+    // 通知历史列表刷新 + 跳到新项目世界页
+    window.dispatchEvent(new CustomEvent('mirofish:history-reload'))
+    importMsg.value = t('home.importSnapshotDone')
+    if (pid) {
+      router.push(`/world/${pid}`)
+    }
+  } catch (err) {
+    importMsg.value = err?.response?.data?.error?.message || err?.message || t('home.importSnapshotFailed')
+    importMsgError.value = true
+  } finally {
+    importingSnapshot.value = false
+  }
+}
+
+onMounted(() => {
+  nextTick(() => initLiquidGlass())
+})
+onUnmounted(() => {
+  destroyLiquidGlass()
+})
 </script>
 
 <style scoped>
@@ -616,6 +736,47 @@ const startSimulation = async () => {
   margin: 0 auto 36px;
 }
 .hero-cta { margin-bottom: 80px; }
+.hero-import-msg {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin: -56px auto 20px;
+  color: var(--ink-muted);
+  justify-content: center;
+  position: relative;
+  z-index: 2;
+}
+.hero-import-msg.error { color: #b91c1c; }
+.import-spin {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(0,0,0,0.15);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: import-rotate 0.7s linear infinite;
+}
+@keyframes import-rotate { to { transform: rotate(360deg); } }
+
+/* 真实 WebGL 液态玻璃：三个根容器（hero / feature-grid / console） */
+.lg-root-hero { position: relative; max-width: 900px; margin: 0 auto 96px; }
+.lg-root-hero .lg-glow { z-index: 0; }
+.lg-root-hero .hero-visual { z-index: 1; position: relative; margin-bottom: 0; }
+.hg-left { width: 360px; height: 360px; left: -140px; top: -30px; }
+.hg-right { width: 400px; height: 400px; right: -170px; bottom: -60px; }
+/* feature-grid 作为根：光晕铺满所有网格单元、置于卡片下层 */
+.lg-root-grid { position: relative; }
+.lg-root-grid .fgrid-left,
+.lg-root-grid .fgrid-right {
+  pointer-events: none;
+  grid-area: 1 / 1 / -1 / -1;
+  justify-self: center;
+  align-self: center;
+  z-index: 0;
+}
+.lg-root-grid .feature-card { position: relative; z-index: 1; }
+.fgrid-left { width: 420px; height: 420px; transform: translate(-50%,-50%); left: 0; top: 0; }
+.fgrid-right { width: 460px; height: 460px; transform: translate(50%,50%); right: 0; bottom: 0; }
 
 /* ---------- 按钮 ---------- */
 .btn {

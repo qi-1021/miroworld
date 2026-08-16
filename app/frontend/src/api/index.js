@@ -37,16 +37,20 @@ service.interceptors.response.use(
     return res
   },
   error => {
-    console.error('Response error:', error)
-
-    // 处理超时
-    if (error.code === 'ECONNABORTED' && error.message.includes('timeout')) {
-      console.error('Request timeout')
-    }
-
-    // 处理网络错误
-    if (error.message === 'Network Error') {
-      console.error('Network error - please check your connection')
+    // 轻量提示，不阻断页面：视图层各自处理错误分支；这里仅记录一行摘要，
+    // 避免后台轮询（状态查询/任务不存在 404 等）的高频失败刷屏完整堆栈。
+    const status = error?.response?.status
+    const url = error?.config?.url || ''
+    if (status === 404) {
+      console.warn(`[api] 404 ${url}`)
+    } else if (error.code === 'ECONNABORTED' && error.message.includes('timeout')) {
+      console.warn(`[api] timeout ${url}`)
+    } else if (error.message === 'Network Error') {
+      console.warn(`[api] network error ${url}`)
+    } else if (status) {
+      console.warn(`[api] ${status} ${url}`, error?.config?.method ? error.config.method.toUpperCase() : '')
+    } else {
+      console.warn(`[api] error ${url}:`, error?.message || error)
     }
 
     return Promise.reject(error)

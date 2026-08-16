@@ -228,7 +228,11 @@
     "mediaEmptyHint": "请先上传文档并填写任务目标",
     "worldEmptyHint": "请先填写背景资料或章节正文（支持上传文件或直接粘贴）",
     "modelConfigRequired": "尚未配置可用模型，请先完成模型设置",
-    "modelConfigCheckFailed": "模型配置检查失败或超时，请先完成模型设置"
+    "modelConfigCheckFailed": "模型配置检查失败或超时，请先完成模型设置",
+    "importSnapshot": "导入快照 (.mirofish.json)",
+    "importSnapshotDone": "快照导入成功，正在进入新世界…",
+    "importSnapshotFailed": "快照导入失败",
+    "importSnapshotInvalid": "快照文件不是有效的 JSON"
   },
   "main": {
     "layoutGraph": "图谱",
