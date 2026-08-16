@@ -319,6 +319,20 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
         sims = WorldSimulationService.list_simulations(project_id, limit=int(params.get("limit", 20) or 20))
         return {"simulations": sims}
 
+    if action == "list_world_tree":
+        from ..services.world_simulation import WorldSimulationService
+        sims = WorldSimulationService.list_simulations(project_id, limit=100)
+        by_id = {s["simulation_id"]: {**s, "children": []} for s in sims}
+        roots = []
+        for sid, node in by_id.items():
+            meta = (node.get("result") or {}).get("meta") or {}
+            base = meta.get("whatif_base")
+            if base and base in by_id:
+                by_id[base]["children"].append(node)
+            else:
+                roots.append(node)
+        return {"roots": roots}
+
     if action == "get_project_status":
         context = _build_project_context(project_id)
         return {"context": context}
@@ -351,6 +365,7 @@ _SYSTEM_PROMPT = (
     "build_world_graph(goal, force, resume, batch_size, max_workers)、"
     "generate_final_report(regenerate)、"
     "list_simulations(limit)、"
+    "list_world_tree()、"
     "get_project_status()。"
     "否则输出普通中文回答，简洁、分点，不超过 400 字。"
 )
