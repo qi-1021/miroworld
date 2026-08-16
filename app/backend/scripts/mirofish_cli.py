@@ -25,9 +25,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import socket
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -378,6 +380,38 @@ def cmd_worldline(args) -> dict:
             _json.dump(result, f, ensure_ascii=False, indent=2)
         return {"saved_to": args.out, "simulation_id": result.get("simulation_id")}
     return result
+
+
+def cmd_backup(args) -> dict:
+    """自动备份核心数据：world-sim / world / timeline / 模型注册表等。"""
+    root = BACKEND_DIR.parent  # app/
+    data_dirs = [
+        root / "backend" / "data",
+        root / "data",
+    ]
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_dir = Path(getattr(args, "output", "") or root.parent / "backups" / f"miroworld-backup-{ts}")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    copied = []
+    for d in data_dirs:
+        if d.exists():
+            target = out_dir / d.name
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(d, target)
+            copied.append(str(target))
+    # 配置与日志
+    for f in [root / ".env.example", BACKEND_DIR / "logs"]:
+        if f.exists():
+            target = out_dir / f.name
+            if f.is_dir():
+                if target.exists():
+                    shutil.rmtree(target)
+                shutil.copytree(f, target)
+            else:
+                shutil.copy2(f, target)
+            copied.append(str(target))
+    return {"backup_dir": str(out_dir), "copied": copied}
 
 
 def cmd_health(args) -> dict:
@@ -843,6 +877,9 @@ def _parser() -> argparse.ArgumentParser:
 
     h = _add_json(sub.add_parser("health"))
     h.add_argument("--detailed", action="store_true", help="附加模型注册表 verified 检查")
+
+    bk = _add_json(sub.add_parser("backup"))
+    bk.add_argument("--output", default="", help="备份输出目录（默认 backups/ 下自动命名）")
     return parser
 
 
@@ -893,6 +930,8 @@ def main(argv=None) -> int:
             result = cmd_models(args)
         elif args.command == "health":
             result = cmd_health(args)
+        elif args.command == "backup":
+            result = cmd_backup(args)
         else:
             raise ValueError(f"未知命令: {args.command}")
         _out({"success": True, "data": result}, as_json)
