@@ -588,6 +588,31 @@ _SYSTEM_PROMPT = (
     "否则输出普通中文回答，简洁、分点，不超过 400 字。"
 )
 
+# Agent 工具注册表（工具调用协议）
+AGENT_TOOLS = {
+    "get_project_status": {"description": "查看项目状态", "params": {}},
+    "save_world_input": {"description": "保存世界设定", "params": {"background": "str", "story": "str"}},
+    "start_timeline_extraction": {"description": "启动时间线抽取", "params": {"source": "str", "resume": "bool", "force": "bool"}},
+    "build_world_graph": {"description": "构建世界图谱", "params": {"goal": "str", "force": "bool", "resume": "bool", "batch_size": "int", "max_workers": "int"}},
+    "start_world_simulation": {"description": "启动世界模拟", "params": {"goal": "str", "total_steps": "int", "time_mode": "str", "time_jumps": "list", "story_summary_mode": "str", "max_concurrency": "int"}},
+    "continue_world_simulation": {"description": "续推世界线", "params": {"simulation_id": "str", "additional_steps": "int"}},
+    "rollback_worldline": {"description": "回滚重推世界线", "params": {"simulation_id": "str", "target_step": "int", "additional_steps": "int"}},
+    "batch_whatif": {"description": "批量 What-if 分叉", "params": {"simulation_id": "str", "questions": "list", "steps": "int"}},
+    "merge_worldlines": {"description": "合并两条世界线", "params": {"base_simulation_id": "str", "branch_simulation_id": "str"}},
+    "copy_worldline": {"description": "跨项目复制世界线", "params": {"simulation_id": "str", "target_project_id": "str"}},
+    "export_worldline": {"description": "导出单条世界线", "params": {"simulation_id": "str"}},
+    "export_all_worldlines": {"description": "导出全部世界线", "params": {}},
+    "get_worldline_summary": {"description": "获取世界线摘要", "params": {"simulation_id": "str"}},
+    "update_worldline_meta": {"description": "更新世界线名称/备注", "params": {"simulation_id": "str", "name": "str", "note": "str"}},
+    "generate_final_report": {"description": "生成最终报告", "params": {"regenerate": "bool"}},
+    "generate_novel": {"description": "生成小说续写", "params": {"simulation_id": "str"}},
+}
+
+
+@assistant_bp.route("/tools", methods=["GET"])
+def agent_tools():
+    return jsonify({"success": True, "data": {"tools": AGENT_TOOLS}})
+
 
 @assistant_bp.route("/ask", methods=["POST"])
 def ask():
