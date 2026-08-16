@@ -770,7 +770,8 @@ const parallelLanes = computed(() => {
   return Array.from(map.values())
     .map(lane => ({ ...lane, events: lane.events.slice().sort((a, b) => sortNum(a) - sortNum(b)) }))
 })
-const LANE_COLORS = ['#7C3AED', '#0EA5E9', '#16A34A', '#DC2626', '#D97706', '#DB2777', '#4F46E5', '#0D9488', '#A855F7', '#F59E0B']
+// 受限调色板：柑橘强调 + 墨色灰阶 + 语义红（冲突）
+const LANE_COLORS = ['#a1c50a', '#10203a', '#536078', '#7b879e', '#b9c2d0', '#c5283d', '#374a63', '#9aa5b8', '#67748a', '#d8dee8']
 function laneStyle(lane) {
   const i = filteredEvents.value.findIndex(ev => (threadKey(ev) || 'main') === lane.key)
   const idx = i < 0 ? lane.key.length || 0 : i
@@ -2479,7 +2480,7 @@ onUnmounted(() => {
 .tl-linear-mode .timeline-bar-wrap { margin-top: 2px; }
 .tl-parallel-mode { display: flex; flex-direction: column; gap: 12px; }
 .lane-block { border: 1px solid #EEE; border-radius: 10px; overflow: hidden; background: #FFF; }
-.lane-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-left: 4px solid #7C3AED; background: #FAFAFA; font-weight: 700; font-size: 12px; }
+.lane-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-left: 4px solid #a1c50a; background: #FAFAFA; font-weight: 700; font-size: 12px; }
 .lane-count { margin-left: auto; color: #999; font-weight: 500; font-size: 11px; }
 .lane-cards { display: flex; flex-direction: column; gap: 8px; padding: 8px 12px; }
 .tl-tree-mode { display: flex; flex-direction: column; gap: 8px; }

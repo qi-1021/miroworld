@@ -372,7 +372,6 @@ const renderGraph = () => {
   }))
 
   const nodeIds = new Set(nodes.map(n => n.id))
-  const nodeByUuid = new Map(nodesData.map(n => [n.uuid, n]))
 
   // 处理边数据，计算同一对节点间的边数量和索引
   const edgePairCount = {}
