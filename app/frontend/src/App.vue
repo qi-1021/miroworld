@@ -182,22 +182,23 @@ button { font-family: inherit; }
 .liquid-glass {
   --lggc-radius: 22px;
   --lggc-padding: 1.5rem 1.75rem;
-  --lggc-bg: rgba(255, 255, 255, 0.30);
-  --lggc-border: rgba(255, 255, 255, 0.55);
+  --lggc-bg: rgba(255, 255, 255, 0.72);
+  --lggc-border: rgba(255, 255, 255, 0.9);
   --lggc-blur: 16px;
-  --lggc-highlight: rgba(255, 255, 255, 0.95);
+  --lggc-highlight: rgba(255, 255, 255, 1);
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.9);
   border-radius: var(--lggc-radius);
   background: var(--lggc-bg);
   color: var(--mf-ink);
-  backdrop-filter: blur(calc(var(--lggc-blur) * 0.5)) saturate(200%);
-  -webkit-backdrop-filter: blur(calc(var(--lggc-blur) * 0.5)) saturate(200%);
+  backdrop-filter: blur(calc(var(--lggc-blur) * 0.5)) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(var(--lggc-blur) * 0.5)) saturate(180%);
   box-shadow:
-    inset 2px -2px 1px -1px rgba(255, 255, 255, 0.92),
-    inset -2px 2px 1px -1px rgba(255, 255, 255, 0.92),
-    inset 0 0 6px rgba(255, 255, 255, 0.5),
-    0 18px 40px rgba(16, 32, 58, 0.12);
+    0 0 0 1px rgba(16, 32, 58, 0.09),
+    0 22px 44px rgba(16, 32, 58, 0.16),
+    0 6px 16px rgba(16, 32, 58, 0.10),
+    inset 2px -2px 1px -1px rgba(255, 255, 255, 1),
+    inset -2px 2px 1px -1px rgba(255, 255, 255, 1);
   transition: box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
 }
 .liquid-glass::before {
@@ -205,17 +206,19 @@ button { font-family: inherit; }
   position: absolute;
   top: 0; left: 8%; right: 8%;
   height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.98), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 1), transparent);
   pointer-events: none;
   border-radius: inherit;
   z-index: 1;
 }
 .liquid-glass:hover {
-  background: rgba(255, 255, 255, 0.40);
+  background: rgba(255, 255, 255, 0.82);
   box-shadow:
+    0 0 0 1px rgba(16, 32, 58, 0.10),
+    0 30px 56px rgba(16, 32, 58, 0.20),
+    0 8px 20px rgba(16, 32, 58, 0.12),
     inset 2px -2px 1px -1px rgba(255, 255, 255, 1),
-    inset -2px 2px 1px -1px rgba(255, 255, 255, 1),
-    0 26px 50px rgba(16, 32, 58, 0.16);
+    inset -2px 2px 1px -1px rgba(255, 255, 255, 1);
   transform: translateY(-2px);
 }
 

@@ -653,7 +653,7 @@ onMounted(() => {
 
 /* ---------- Hero ---------- */
 .hero {
-  padding: 96px 40px 0;
+  padding: 64px 40px 0;
   text-align: center;
 }
 .hero-kicker {
@@ -681,7 +681,7 @@ onMounted(() => {
   max-width: 640px;
   margin: 0 auto 36px;
 }
-.hero-cta { margin-bottom: 80px; }
+.hero-cta { margin-bottom: 52px; }
 .hero-import-msg {
   display: inline-flex;
   align-items: center;
@@ -754,23 +754,25 @@ onMounted(() => {
 /* ---------- Hero 视觉：时间线示意图 ---------- */
 .hero-visual {
   position: relative;
-  background: linear-gradient(135deg, rgba(255,240,214,0.55), rgba(217,220,255,0.55) 45%, rgba(210,250,236,0.55));
-  border: 1px solid rgba(255,255,255,0.55);
+  background: linear-gradient(135deg, rgba(255,244,222,0.55), rgba(224,228,255,0.55) 45%, rgba(216,250,238,0.55));
+  border: 1px solid rgba(255, 255, 255, 0.75);
   border-radius: 24px;
-  padding: 64px 24px;
+  padding: 56px 24px;
   max-width: 900px;
-  margin: 0 auto 96px;
+  margin: 0 auto 64px;
   overflow: hidden;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.7);
+  box-shadow: 0 0 0 1px rgba(16,32,58,0.05), 0 20px 48px rgba(16,32,58,0.12), inset 0 1px 0 rgba(255,255,255,0.9);
+  backdrop-filter: saturate(180%) blur(10px);
+  -webkit-backdrop-filter: saturate(180%) blur(10px);
 }
 .hero-visual::before {
   content: '';
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 15% 20%, rgba(255,183,107,0.35), transparent 45%),
-    radial-gradient(circle at 85% 75%, rgba(158,167,255,0.35), transparent 45%),
-    radial-gradient(circle at 60% 15%, rgba(107,240,198,0.25), transparent 45%);
+    radial-gradient(circle at 15% 20%, rgba(255,183,107,0.30), transparent 45%),
+    radial-gradient(circle at 85% 75%, rgba(158,167,255,0.30), transparent 45%),
+    radial-gradient(circle at 60% 15%, rgba(107,240,198,0.22), transparent 45%);
   pointer-events: none;
 }
 .tl-demo { position: relative; z-index: 1; }
@@ -864,7 +866,7 @@ onMounted(() => {
 /* ---------- 特性 ---------- */
 .features {
   position: relative;
-  padding: 0 40px 96px;
+  padding: 0 40px 64px;
   max-width: 1100px;
   margin: 0 auto;
 }
@@ -881,7 +883,7 @@ onMounted(() => {
   position: relative;
   z-index: 1;
   text-align: center;
-  margin-bottom: 56px;
+  margin-bottom: 40px;
 }
 .section-title {
   font-size: 40px;
@@ -904,15 +906,15 @@ onMounted(() => {
 }
 .feature-card {
   /* 基础（.liquid-glass 的 LGGC 效果在全局覆盖透明背景/亮边框） */
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.6);
   border-radius: var(--radius);
-  padding: 32px 24px;
+  padding: 28px 22px;
   transition: box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
 }
 .feature-card:hover {
   box-shadow: var(--card-shadow);
   transform: translateY(-2px);
-  background: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.72);
 }
 .f-icon {
   font-size: 26px;
@@ -937,7 +939,7 @@ onMounted(() => {
 .console-section {
   position: relative;
   background: var(--canvas-alt);
-  padding: 96px 40px;
+  padding: 72px 40px 80px;
 }
 .console-bg {
   position: absolute;
@@ -998,15 +1000,15 @@ onMounted(() => {
 .console-card {
   position: relative;
   z-index: 1;
-  background: rgba(255,255,255,0.16);
+  background: rgba(255, 255, 255, 0.35);
   border-radius: 24px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.85);
-  border: 1px solid rgba(255,255,255,0.68);
-  backdrop-filter: saturate(180%) blur(14px);
-  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  box-shadow: 0 0 0 1px rgba(16,32,58,0.05), 0 20px 44px rgba(16,32,58,0.12), inset 0 1px 0 rgba(255,255,255,0.9);
+  border: 1px solid rgba(255,255,255,0.75);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
   max-width: 900px;
   margin: 0 auto;
-  padding: 48px;
+  padding: 44px 48px;
 }
 .form-row { margin-bottom: 32px; }
 .field-label {
@@ -1123,14 +1125,14 @@ onMounted(() => {
 }
 
 /* ---------- 历史项目 ---------- */
-.history-section { padding: 96px 40px 0; }
+.history-section { padding: 72px 40px 0; }
 
 /* ---------- Footer ---------- */
 .footer {
   border-top: 1px solid var(--hairline);
-  padding: 36px 40px 48px;
+  padding: 28px 40px 36px;
   text-align: center;
-  margin-top: 96px;
+  margin-top: 72px;
 }
 .footer-note {
   font-size: 12px;
