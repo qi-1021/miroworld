@@ -558,6 +558,7 @@ class WorldEnv:
         # 若绑定了 IPC，标记为运行状态
         if self.ipc:
             self.ipc.update_status("running")
+            self.ipc.write_progress(0, self.total_steps, "准备开始")
 
         _stopped = False
         for step in range(1, self.total_steps + 1):
@@ -572,6 +573,8 @@ class WorldEnv:
                     break
 
             self.current_step = step
+            if self.ipc:
+                self.ipc.write_progress(step, self.total_steps, f"第 {step}/{self.total_steps} 步")
             self.advance_clock()
             print(f"\n{'='*56}\n第 {step} 步 · {self.time_str()}\n{'='*56}")
 
@@ -687,6 +690,17 @@ class WorldIPCHandler:
             json.dump({
                 "status": status,
                 "paused": self.paused,
+                "timestamp": datetime.now().isoformat(),
+            }, f, ensure_ascii=False, indent=2)
+
+    def write_progress(self, current_step: int, total_steps: int, message: str = ""):
+        """写进度文件，供后端轮询展示“第 X 步 / 共 Y 步”"""
+        progress_file = os.path.join(self.simulation_dir, "progress.json")
+        with open(progress_file, 'w', encoding='utf-8') as f:
+            json.dump({
+                "current_step": current_step,
+                "total_steps": total_steps,
+                "message": message,
                 "timestamp": datetime.now().isoformat(),
             }, f, ensure_ascii=False, indent=2)
 

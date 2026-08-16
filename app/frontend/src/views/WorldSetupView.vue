@@ -460,6 +460,14 @@
           {{ $t('world.simDesc') }}
         </p>
 
+        <!-- 推演进度 -->
+        <div v-if="(simStatus === 'running' || simStatus === 'preparing' || simStatus === 'paused') && simProgress.total_steps" class="sim-progress">
+          <div class="sim-progress-bar">
+            <div class="sim-progress-fill" :style="{ width: Math.min(100, ((simProgress.current_step || 0) / simProgress.total_steps) * 100) + '%' }"></div>
+          </div>
+          <span class="sim-progress-text">{{ simProgress.message || $t('world.simProgress', { current: simProgress.current_step || 0, total: simProgress.total_steps }) }}</span>
+        </div>
+
         <div class="sim-controls">
           <div class="sim-field sim-field-wide">
             <label class="sim-label">{{ $t('world.simGoalLabel') }}</label>
@@ -874,8 +882,8 @@ import {
   refillWorldGraphEdges
 } from '../api/world'
 import { getTaskStatus, exportProjectSnapshot, importProjectSnapshot } from '../api/graph'
-import { askAssistant } from '../api/assistant'
-import { getTimeline } from '../api/timeline'
+import { askAssistant, runAssistantAction } from '../api/assistant'
+import { getTimeline, generateTimelineCharacters } from '../api/timeline'
 import TimelineView from '../components/TimelineView.vue'
 
 const route = useRoute()
@@ -933,6 +941,7 @@ const simMsg = ref('')
 const simMsgError = ref(false)
 const simEvents = ref([])
 const simHistory = ref([])
+const simProgress = ref({})
 const simSection = ref(null)
 const inputSection = ref(null)
 const timelineSection = ref(null)
@@ -1372,9 +1381,43 @@ async function askAssistantNow() {
   }
 }
 
-function quickAsk(key) {
-  assistantQuestion.value = t(key)
-  askAssistantNow()
+async function quickAsk(key) {
+  if (assistantAsking.value) return
+  assistantAsking.value = true
+  assistantAnswer.value = ''
+  assistantMsg.value = ''; assistantMsgError.value = false
+  try {
+    let res
+    if (key === 'assistant.quickStatus') {
+      res = await runAssistantAction(projectId, 'get_project_status')
+    } else if (key === 'assistant.quickSim') {
+      res = await runAssistantAction(projectId, 'start_world_simulation', {
+        goal: simGoal.value.trim() || undefined,
+        total_steps: simSteps.value,
+        time_mode: simTimeMode.value,
+        time_jumps: simTimeMode.value === 'narrative'
+          ? simTimeJumps.value.split(/[,，]/).map(s => s.trim()).filter(Boolean)
+          : [],
+      })
+    } else if (key === 'assistant.quickCharacters') {
+      res = await generateTimelineCharacters(projectId)
+    } else if (key === 'assistant.quickReport') {
+      res = await runAssistantAction(projectId, 'generate_final_report', { regenerate: true })
+    } else if (key === 'assistant.quickExport') {
+      res = await runAssistantAction(projectId, 'export_snapshot')
+    } else {
+      assistantQuestion.value = t(key)
+      return askAssistantNow()
+    }
+    const answer = res?.data?.answer || res?.message || t('assistant.emptyAnswer')
+    const actionResult = res?.data?.action_result || res?.data || {}
+    assistantAnswer.value = answer + (Object.keys(actionResult).length ? '\n\n' + JSON.stringify(actionResult, null, 2) : '')
+  } catch (e) {
+    assistantMsg.value = e?.message || t('assistant.failed')
+    assistantMsgError.value = true
+  } finally {
+    assistantAsking.value = false
+  }
 }
 
 // ---------------- 文件选择与拖拽 ----------------
@@ -1751,11 +1794,13 @@ async function loadSimHistory() {
     const latest = simHistory.value[0]
     if (latest && (latest.status === 'preparing' || latest.status === 'running' || latest.status === 'paused')) {
       simStatus.value = latest.status
+      simProgress.value = latest.progress || {}
       simPollingId = latest.simulation_id
       loadCharacters(latest.simulation_id)
       startSimPolling(latest.simulation_id)
     } else if (latest && latest.status === 'completed') {
       simStatus.value = 'completed'
+      simProgress.value = latest.progress || { current_step: 1, total_steps: 1, message: '完成' }
       simEvents.value = (latest.result || {}).events || []
       loadCharacters(latest.simulation_id)
     }
@@ -1789,9 +1834,11 @@ function startSimPolling(simulationId) {
       const res = await getWorldSimulation(projectId, simulationId)
       const sim = res.simulation
       simStatus.value = sim.status
+      simProgress.value = sim.progress || {}
       if (sim.status === 'completed') {
         clearInterval(simPollTimer)
         simPollTimer = null
+        simProgress.value = sim.progress || { current_step: 1, total_steps: 1, message: '完成' }
         simEvents.value = (sim.result || {}).events || []
         characters.value = extractCharacters(simEvents.value)
         simMsg.value = t('world.msgSimDone', { count: (sim.result || {}).event_count || 0 })
@@ -2462,6 +2509,30 @@ onUnmounted(() => {
   color: #666;
   line-height: 1.6;
   margin-bottom: 12px;
+}
+.sim-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.sim-progress-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: #F0F0F0;
+  overflow: hidden;
+}
+.sim-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #a1c50a;
+  transition: width 0.3s ease;
+}
+.sim-progress-text {
+  font-size: 11px;
+  color: #666;
+  white-space: nowrap;
 }
 .sim-controls {
   display: flex;

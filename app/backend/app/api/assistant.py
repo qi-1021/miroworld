@@ -267,6 +267,34 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
             "text_preview": str(novel.get("text") or "")[:200],
         }
 
+    if action == "start_timeline_extraction":
+        from ..services import timeline_service
+        source = str(params.get("source") or "bg").strip()
+        resume = params.get("resume")
+        force = bool(params.get("force", False))
+        task_id = timeline_service.start_extract(
+            project_id,
+            source=source,
+            resume=resume,
+            force=force,
+        )
+        return {"task_id": task_id, "source": source}
+
+    if action == "generate_final_report":
+        from ..services.timeline_report import generate_report
+        report = generate_report(project_id, regenerate=bool(params.get("regenerate", True)))
+        return {
+            "project_id": project_id,
+            "has_report": bool(report),
+            "events_count": (report or {}).get("events_count"),
+            "generated_at": (report or {}).get("generated_at"),
+        }
+
+    if action == "list_simulations":
+        from ..services.world_simulation import WorldSimulationService
+        sims = WorldSimulationService.list_simulations(project_id, limit=int(params.get("limit", 20) or 20))
+        return {"simulations": sims}
+
     if action == "get_project_status":
         context = _build_project_context(project_id)
         return {"context": context}
@@ -295,6 +323,9 @@ _SYSTEM_PROMPT = (
     "update_conflict_status(conflict_id, status, note)、"
     "start_world_simulation(goal, total_steps, time_mode, time_jumps, include_timeline, from_event_id)、"
     "generate_novel(simulation_id)、"
+    "start_timeline_extraction(source, resume, force)、"
+    "generate_final_report(regenerate)、"
+    "list_simulations(limit)、"
     "get_project_status()。"
     "否则输出普通中文回答，简洁、分点，不超过 400 字。"
 )
@@ -307,14 +338,29 @@ def ask():
         data = request.get_json(silent=True) or {}
         project_id = str(data.get("project_id") or "").strip()
         question = str(data.get("question") or "").strip()
+        direct_action = str(data.get("direct_action") or "").strip()
+        direct_params = data.get("params") or {}
         if not project_id:
             return jsonify({"success": False, "error": "缺少 project_id"}), 400
-        if not question:
+        if not question and not direct_action:
             return jsonify({"success": False, "error": "缺少 question"}), 400
 
         context = _build_project_context(project_id)
         if context == "项目不存在。":
             return jsonify({"success": False, "error": "项目不存在"}), 404
+
+        # 直接执行指定动作（前端快捷操作/Agent 工具调用，不经过 LLM 决策）
+        if direct_action:
+            action_result = _execute_assistant_action(project_id, direct_action, direct_params)
+            return jsonify({
+                "success": True,
+                "data": {
+                    "answer": f"已执行操作：{direct_action}",
+                    "action": direct_action,
+                    "action_result": action_result,
+                    "context": context,
+                },
+            })
 
         llm = _build_llm_client_for_project(project_id)
         user = f"项目上下文：\n{context}\n\n用户问题：{question}"

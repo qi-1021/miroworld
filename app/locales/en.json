@@ -944,6 +944,7 @@
     "simStatusCompleted": "Completed",
     "simStatusFailed": "Failed",
     "simStatusHint": "Standalone · Non-social platform",
+    "simProgress": "Step {current}/{total}",
     "simDesc": "Automatically extracts characters / places / rules from the library and runs them in an independent world by time steps. Unrelated to social-media simulation.",
     "simGoalLabel": "Goal (optional · drives the trajectory)",
     "simGoalPlaceholder": "e.g. Who will unify the continent in 3 years? Leave blank for natural progression",

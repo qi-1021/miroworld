@@ -103,6 +103,7 @@ class WorldSimulationState:
     config_path: str = ""
     events_path: str = ""
     result: Dict[str, Any] = field(default_factory=dict)
+    progress: Dict[str, Any] = field(default_factory=dict)
     error: str = ""
     created_at: str = ""
     updated_at: str = ""
@@ -141,10 +142,24 @@ class WorldSimulationService:
             return None
 
     @classmethod
+    def _attach_progress(cls, state: "WorldSimulationState"):
+        """把子进程写入的 progress.json 合并进 state.progress（不落 state.json，避免频繁写盘）。"""
+        try:
+            progress_path = os.path.join(
+                WORLD_SIM_ROOT, state.project_id, state.simulation_id, "progress.json"
+            )
+            if os.path.exists(progress_path):
+                with open(progress_path, "r", encoding="utf-8") as f:
+                    state.progress = json.load(f)
+        except Exception:
+            pass
+
+    @classmethod
     def get_state(cls, simulation_id: str) -> Optional[WorldSimulationState]:
         with cls._lock:
             state = cls._states.get(simulation_id)
         if state:
+            cls._attach_progress(state)
             return state
         # 从磁盘查找（遍历项目目录）
         if os.path.isdir(WORLD_SIM_ROOT):
@@ -153,6 +168,7 @@ class WorldSimulationService:
                 if os.path.exists(path):
                     state = cls._load_state_file(path)
                     if state is not None:
+                        cls._attach_progress(state)
                         with cls._lock:
                             cls._states[simulation_id] = state
                     return state
@@ -173,6 +189,7 @@ class WorldSimulationService:
             if os.path.exists(state_path):
                 state = cls._load_state_file(state_path)
                 if state and state.project_id == project_id:
+                    cls._attach_progress(state)
                     results.append(state.to_dict())
                     if len(results) >= limit:
                         break
