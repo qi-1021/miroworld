@@ -319,6 +319,25 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
         sims = WorldSimulationService.list_simulations(project_id, limit=int(params.get("limit", 20) or 20))
         return {"simulations": sims}
 
+    if action == "batch_whatif":
+        from ..services.world_simulation import WorldSimulationService
+        base_id = str(params.get("simulation_id") or "").strip()
+        if not base_id:
+            raise ValueError("batch_whatif 需要 simulation_id")
+        raw = params.get("questions") or []
+        if isinstance(raw, str):
+            questions = [s.strip() for s in raw.replace("\n", ",").replace("，", ",").split(",") if s.strip()]
+        else:
+            questions = [str(s).strip() for s in raw if str(s).strip()]
+        if not questions:
+            raise ValueError("batch_whatif 需要 questions 数组")
+        try:
+            steps = int(params.get("steps", 3) or 3)
+        except (TypeError, ValueError):
+            steps = 3
+        started = WorldSimulationService.batch_whatif(base_id, questions, steps=steps)
+        return {"started": started}
+
     if action == "continue_world_simulation":
         from ..services.world_simulation import WorldSimulationService
         base_id = str(params.get("simulation_id") or params.get("base_simulation_id") or "").strip()
@@ -418,6 +437,7 @@ _SYSTEM_PROMPT = (
     "list_simulations(limit)、"
     "list_world_tree()、"
     "continue_world_simulation(simulation_id, additional_steps, goal)、"
+    "batch_whatif(simulation_id, questions, steps)、"
     "get_worldline_summary(simulation_id)、"
     "get_project_status()。"
     "否则输出普通中文回答，简洁、分点，不超过 400 字。"

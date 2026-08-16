@@ -1093,6 +1093,27 @@ class WorldSimulationService:
         threading.Thread(target=run, daemon=True).start()
         return state
 
+    @classmethod
+    def batch_whatif(
+        cls,
+        base_simulation_id: str,
+        questions: List[str],
+        steps: int = 3,
+    ) -> List[Dict[str, Any]]:
+        """批量 What-if 分叉：从同一条基础世界线同时发起多个假设推演。"""
+        started = []
+        for q in questions:
+            q = (q or "").strip()
+            if not q:
+                continue
+            state = cls.simulate_whatif(base_simulation_id, q, steps=steps)
+            started.append({
+                "simulation_id": state.simulation_id,
+                "question": q,
+                "status": state.status,
+            })
+        return started
+
     @staticmethod
     def _run_simulation_subprocess(
         config_path: str,

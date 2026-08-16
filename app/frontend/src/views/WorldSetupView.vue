@@ -674,6 +674,7 @@
               <button class="mini-btn" :disabled="simStarting" @click="continueSimulation(root)">{{ $t('world.continueSimulation') }}</button>
               <button class="mini-btn ghost" @click="exportSimulation(root)">{{ $t('world.exportSimulation') }}</button>
               <button v-if="root.status === 'completed' && !((root.result || {}).meta || {}).whatif_question" class="mini-btn" @click="startWhatIf(root)">{{ $t('world.whatifBtn') }}</button>
+              <button v-if="root.status === 'completed' && !((root.result || {}).meta || {}).whatif_question" class="mini-btn ghost" @click="batchWhatIf(root)">{{ $t('world.batchWhatif') }}</button>
             </div>
             <div v-for="child in root.children" :key="child.simulation_id" class="tree-node child">
               <div class="tree-node-row">
@@ -2119,6 +2120,31 @@ async function continueSimulation(sim) {
     })
     const actionResult = res?.data?.action_result || {}
     simMsg.value = t('world.msgSimContinueStarted', { id: actionResult.simulation_id || sim.simulation_id })
+    simMsgError.value = false
+    loadSimHistory()
+  } catch (e) {
+    simMsg.value = e?.message || t('world.msgUnknownError')
+    simMsgError.value = true
+  } finally {
+    simStarting.value = false
+  }
+}
+
+async function batchWhatIf(sim) {
+  const input = window.prompt(t('world.batchWhatifPrompt'))
+  if (!input) return
+  const questions = input.split('\n').map(s => s.trim()).filter(Boolean)
+  if (!questions.length) return
+  if (simStarting.value) return
+  simStarting.value = true
+  try {
+    const res = await runAssistantAction(projectId, 'batch_whatif', {
+      simulation_id: sim.simulation_id,
+      questions,
+      steps: 3,
+    })
+    const started = res?.data?.action_result?.started || []
+    simMsg.value = t('world.msgBatchWhatifStarted', { count: started.length })
     simMsgError.value = false
     loadSimHistory()
   } catch (e) {
