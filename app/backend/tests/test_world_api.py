@@ -621,7 +621,7 @@ def test_simulate_passes_goal(client, monkeypatch):
     captured = {}
 
     def fake_start(cls, project_id, total_steps=6, time_step_minutes=30, goal=None,
-                   time_mode="minutes", time_jumps=None, include_timeline=False, from_event_id=None):
+                   time_mode="minutes", time_jumps=None, include_timeline=False, from_event_id=None, story_summary_mode="rule", max_concurrency=None):
         captured["goal"] = goal
         captured["time_mode"] = time_mode
         captured["time_jumps"] = time_jumps
@@ -650,7 +650,7 @@ def test_simulate_goal_default_none(client, monkeypatch):
     captured = {}
 
     def fake_start(cls, project_id, total_steps=6, time_step_minutes=30, goal=None,
-                   time_mode="minutes", time_jumps=None, include_timeline=False, from_event_id=None):
+                   time_mode="minutes", time_jumps=None, include_timeline=False, from_event_id=None, story_summary_mode="rule", max_concurrency=None):
         captured["goal"] = goal
         from app.services.world_simulation import WorldSimulationState
         return WorldSimulationState(
@@ -670,7 +670,7 @@ def test_simulate_passes_narrative_time_mode(client, monkeypatch):
     captured = {}
 
     def fake_start(cls, project_id, total_steps=6, time_step_minutes=30, goal=None,
-                   time_mode="minutes", time_jumps=None, include_timeline=False, from_event_id=None):
+                   time_mode="minutes", time_jumps=None, include_timeline=False, from_event_id=None, story_summary_mode="rule", max_concurrency=None):
         captured["time_mode"] = time_mode
         captured["time_jumps"] = time_jumps
         from app.services.world_simulation import WorldSimulationState
@@ -695,7 +695,7 @@ def test_simulate_passes_include_timeline(client, monkeypatch):
     captured = {}
 
     def fake_start(cls, project_id, total_steps=6, time_step_minutes=30, goal=None,
-                   time_mode="minutes", time_jumps=None, include_timeline=False, from_event_id=None):
+                   time_mode="minutes", time_jumps=None, include_timeline=False, from_event_id=None, story_summary_mode="rule", max_concurrency=None):
         captured["include_timeline"] = include_timeline
         from app.services.world_simulation import WorldSimulationState
         return WorldSimulationState(
@@ -715,7 +715,7 @@ def test_simulate_passes_from_event_id(client, monkeypatch):
     captured = {}
 
     def fake_start(cls, project_id, total_steps=6, time_step_minutes=30, goal=None,
-                   time_mode="minutes", time_jumps=None, include_timeline=False, from_event_id=None):
+                   time_mode="minutes", time_jumps=None, include_timeline=False, from_event_id=None, story_summary_mode="rule", max_concurrency=None):
         captured["from_event_id"] = from_event_id
         from app.services.world_simulation import WorldSimulationState
         return WorldSimulationState(
