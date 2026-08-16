@@ -868,7 +868,7 @@ def delete_simulation(simulation_id: str):
                 removed_any = manager.delete_simulation(sid)
                 deleted.append({"simulation_id": sid, "scope": "media-cache-only"})
             else:
-                # 对 MiroFish 标识（sim_/worldsim_/world_）做幂等删除：
+                # 对 Miroworld 标识（sim_/worldsim_/world_）做幂等删除：
                 # 历史列表可能来自内存/状态缓存，而数据目录已不存在，此时也视为删除成功。
                 if sid.startswith(("sim_", "worldsim_", "world_")):
                     return jsonify({

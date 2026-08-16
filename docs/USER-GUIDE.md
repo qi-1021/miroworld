@@ -1,6 +1,6 @@
-# MiroFish 使用指南
+# Miroworld 使用指南
 
-MiroFish 是一个本地优先的小说世界推演工具：读取背景设定与正文，抽取多线时间线、构建知识图谱、检测设定冲突，并进行世界模拟推演。本文面向普通使用者。
+Miroworld 是一个本地优先的小说世界推演工具：读取背景设定与正文，抽取多线时间线、构建知识图谱、检测设定冲突，并进行世界模拟推演。本文面向普通使用者。
 
 ---
 
@@ -8,7 +8,7 @@ MiroFish 是一个本地优先的小说世界推演工具：读取背景设定�
 
 ### macOS / Linux
 ```bash
-cd mirofish-portable
+cd miroworld
 bash scripts/setup-env.sh   # 首次/更新环境
 bash scripts/start.sh       # 启动完整服务
 bash scripts/smoke.sh       # 可选：全流程冒烟
@@ -17,7 +17,7 @@ bash scripts/stop.sh --all  # 停止全部
 
 ### Windows
 ```bat
-cd mirofish-portable
+cd miroworld
 scripts\setup-env.bat
 scripts\start.bat
 scripts\smoke.bat
@@ -73,7 +73,7 @@ scripts\stop.bat --all
 
 ## 4. 时间线
 
-时间线是 MiroFish 的核心：
+时间线是 Miroworld 的核心：
 
 - **抽取**：点击“抽取时间线”，按“人物故事 / 背景设定”分别抽取。
 - **线程/维度**：如果背景是多国、多势力、多线并行，事件会带有 `thread_name` 和 `dimension`；时间线上方可以用“线程/维度”过滤。

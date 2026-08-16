@@ -15,7 +15,7 @@
     @updated="handleModelUpdate"
   />
   <!--
-    MiroFish 液态玻璃 SVG 滤镜定义（隐藏，供 CSS 通过 url(#...) 引用）。
+    Miroworld 液态玻璃 SVG 滤镜定义（隐藏，供 CSS 通过 url(#...) 引用）。
     以 GitHub nikdelvin/liquid-glass（纯 CSS+SVG 复刻 Apple iOS 26 Liquid Glass）为蓝本：
       - #lg-morph  ：feTurbulence 位移扰动，还原玻璃表面的"液态折射"边缘。
       - #lg-gloss  ：feSpecularLighting 镜面高光，还原玻璃光泽。
@@ -142,7 +142,7 @@ onUnmounted(() => {
 
 <style>
 /* ============================================================
-   MiroFish 全站视觉（frontend-dev）
+   Miroworld 全站视觉（frontend-dev）
    设计语言：LGGC 液态玻璃升级版（蓝本 nikdelvin/liquid-glass 纯 CSS+SVG）
    - 保持 #f5f5f7 浅画布 + 柑橘强调色 #a1c50a
    - glass 纯 CSS + 内联 SVG 滤镜（#lg-morph 位移扰动 / #lg-gloss 镜面高光）

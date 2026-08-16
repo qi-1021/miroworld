@@ -139,8 +139,8 @@
     "prefSaveFailed": "Failed to save"
   },
   "meta": {
-    "title": "MiroFish - Predict Everything",
-    "description": "MiroFish - Social Media Opinion Simulation System"
+    "title": "Miroworld - Predict Everything",
+    "description": "Miroworld - Social Media Opinion Simulation System"
   },
   "nav": {
     "visitGithub": "Visit our Github page"
@@ -152,7 +152,7 @@
     "heroTitle1": "Any story can become",
     "heroTitle2": "a timeline that branches.",
     "heroDesc": "From a single document, {brand} extracts reality seeds to auto-generate a parallel world with up to {agentScale}. Inject variables from a god's-eye view to find the {optimalSolution} in complex group dynamics.",
-    "heroDescBrand": "MiroFish",
+    "heroDescBrand": "Miroworld",
     "heroDescAgentScale": "million-scale Agents",
     "heroDescOptimalSolution": "\"local optimum\"",
     "slogan": "Let Agents rehearse the future, let decisions prevail",
@@ -303,7 +303,7 @@
     "setupComplete": "Setup Complete",
     "setupCompleteDesc": "Simulation environment is ready. You can now start the simulation.",
     "roundsConfig": "Simulation Rounds Configuration",
-    "roundsConfigDesc": "MiroFish auto-plans to simulate {hours} real-world hours, each round representing {minutesPerRound} minutes of elapsed time",
+    "roundsConfigDesc": "Miroworld auto-plans to simulate {hours} real-world hours, each round representing {minutesPerRound} minutes of elapsed time",
     "customToggle": "Custom",
     "roundsUnit": "rounds",
     "estimatedDuration": "For 100 Agents: est. ~{minutes} minutes",
@@ -415,7 +415,7 @@
     "selectChatTarget": "Select chat target",
     "sendSurvey": "Send survey to the world",
     "reportAgentChat": "Report Agent - Chat",
-    "reportAgentDesc": "A conversational version of the report generation agent with access to 4 professional tools and MiroFish's complete memory",
+    "reportAgentDesc": "A conversational version of the report generation agent with access to 4 professional tools and Miroworld's complete memory",
     "toolInsightForge": "InsightForge Deep Attribution",
     "toolInsightForgeDesc": "Aligns real-world seed data with simulation state, combining Global/Local Memory for cross-temporal deep attribution analysis",
     "toolPanoramaSearch": "PanoramaSearch Full Tracking",

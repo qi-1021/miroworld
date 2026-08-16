@@ -22,7 +22,7 @@ def _sanitize_env_var(key: str) -> None:
     os.environ[key] = cleaned
 
 # 加载项目根目录的 .env 文件
-# 路径: MiroFish/.env (相对于 backend/app/config.py)
+# 路径: app/.env (相对于 backend/app/config.py)
 project_root_env = os.path.join(os.path.dirname(__file__), '../../.env')
 
 if os.path.exists(project_root_env):
@@ -53,7 +53,7 @@ class Config:
     """Flask配置类"""
 
     # Flask配置
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'mirofish-secret-key')
+    SECRET_KEY = os.environ.get('SECRET_KEY', 'miroworld-dev-secret-key')
     # 默认关 DEBUG（禁用 Flask 自动重载），避免开发期改代码触发 worker 重启，
     # 把跑到一半的长任务（建图/时间线抽取）杀掉；需要时可 FLASK_DEBUG=true 显式开启。
     DEBUG = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'

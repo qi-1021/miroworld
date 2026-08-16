@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MiroFish 命令行工具（面向 AI Agent / 自动化操作）。
+"""Miroworld 命令行工具（面向 AI Agent / 自动化操作）。
 
 所有子命令支持 --json 输出，便于脚本与 Agent 解析；成功输出 {"success":true,"data":...}，
 失败输出 {"success":false,"error":...}；退出码 0=成功、非 0=失败。
@@ -266,7 +266,7 @@ def cmd_graph(args) -> dict:
     task_id = builder.build_graph_async(
         text=text,
         ontology=project.ontology,
-        graph_name=args.graph_name or project.name or "MiroFish Graph",
+        graph_name=args.graph_name or project.name or "Miroworld Graph",
         chunk_size=args.chunk_size,
         chunk_overlap=args.chunk_overlap,
     )
@@ -642,7 +642,7 @@ def _add_json(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="mirofish", description="MiroFish CLI")
+    parser = argparse.ArgumentParser(prog="mirofish", description="Miroworld CLI")
     _add_json(parser)
     sub = parser.add_subparsers(dest="command", required=True)
 

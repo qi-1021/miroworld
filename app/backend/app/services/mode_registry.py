@@ -1,7 +1,7 @@
 """
 模式注册表（Mode Registry）
 
-把"世界/MiroFish 的用途模式"登记为结构化规格，供前端按需选择、
+把"世界/Miroworld 的用途模式"登记为结构化规格，供前端按需选择、
 后端在 /input 时把 mode 透传进 metadata。目前三种内置模式：
 
 - novel-world：小说世界推演（现状默认行为）

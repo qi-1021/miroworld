@@ -1,5 +1,5 @@
 """
-MiroFish Backend - Flask应用工厂
+Miroworld Backend - Flask应用工厂
 """
 
 import gzip
@@ -37,7 +37,7 @@ def create_app(config_class=Config):
 
     if should_log_startup:
         logger.info("=" * 50)
-        logger.info("MiroFish Backend 启动中...")
+        logger.info("Miroworld Backend 启动中...")
         logger.info("=" * 50)
 
     # 启用CORS
@@ -109,12 +109,12 @@ def create_app(config_class=Config):
     # 健康检查
     @app.route('/health')
     def health():
-        return {'status': 'ok', 'service': 'MiroFish Backend'}
+        return {'status': 'ok', 'service': 'Miroworld Backend'}
 
     @app.route('/api/health')
     def api_health():
         """兼容 /api/health 别名，方便 CLI/Agent 统一使用。"""
-        return {'status': 'ok', 'service': 'MiroFish Backend'}
+        return {'status': 'ok', 'service': 'Miroworld Backend'}
 
     @app.route('/api/health/detailed')
     def detailed_health():
@@ -128,7 +128,7 @@ def create_app(config_class=Config):
 
         checks = {
             "status": "ok",
-            "service": "MiroFish Backend",
+            "service": "Miroworld Backend",
             "timestamp": datetime.now().isoformat(timespec="seconds"),
         }
 
@@ -268,6 +268,6 @@ def create_app(config_class=Config):
         return response
 
     if should_log_startup:
-        logger.info("MiroFish Backend 启动完成")
+        logger.info("Miroworld Backend 启动完成")
 
     return app

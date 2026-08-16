@@ -1,9 +1,9 @@
-# 🐟 MiroFish 可移植版 (Portable Edition)
+# 🐟 Miroworld 可移植版 (Portable Edition)
 
-完全独立、即插即用的 MiroFish 部署方案。
+完全独立、即插即用的 Miroworld 部署方案。
 
-**它是什么？** 一个完整的、可在任何设备上快速启动的 MiroFish 群体智能引擎，包含：
-- ✨ MiroFish 应用（前端 + 后端）
+**它是什么？** 一个完整的、可在任何设备上快速启动的 Miroworld 群体智能引擎，包含：
+- ✨ Miroworld 应用（前端 + 后端）
 - 🗄️ Neo4j 本地数据库（自动安装）
 - 🔄 跨平台启动脚本（macOS/Linux/Windows）
 - 💾 完全可移植（支持移动硬盘部署）
@@ -15,14 +15,14 @@
 
 ### macOS/Linux
 ```bash
-cd mirofish-portable
+cd miroworld
 chmod +x scripts/*.sh
 ./scripts/start.sh
 ```
 
 ### Windows
 ```cmd
-cd mirofish-portable
+cd miroworld
 scripts\setup-env.bat   REM 首次/更新：主环境 Graphiti + OASIS 隔离环境
 scripts\start.bat
 scripts\smoke.bat       REM 可选：全流程冒烟
@@ -54,8 +54,8 @@ scripts\stop.bat --all  REM 停止前端/后端/Neo4j
 ## 📦 项目结构
 
 ```
-mirofish-portable/
-├── app/                  # MiroFish 应用代码
+miroworld/
+├── app/                  # Miroworld 应用代码
 │   ├── backend/         # 后端 (Flask + Graphiti)
 │   ├── frontend/        # 前端 (Vue 3)
 │   └── .env            # 环境变量
@@ -97,15 +97,15 @@ mirofish-portable/
 
 ## 💾 可移植部署
 
-复制整个 `mirofish-portable` 文件夹到移动硬盘：
+复制整个 `miroworld` 文件夹到移动硬盘：
 
 ```bash
-cp -r mirofish-portable /Volumes/MyDrive/
+cp -r miroworld /Volumes/MyDrive/
 ```
 
 在任何设备上启动：
 ```bash
-cd /Volumes/MyDrive/mirofish-portable
+cd /Volumes/MyDrive/miroworld
 ./scripts/start.sh
 ```
 
@@ -144,7 +144,7 @@ cd /Volumes/MyDrive/mirofish-portable
 
 - **[快速启动](docs/QUICK-START.md)** - 3 步启动指南
 - **[完整部署文档](docs/DEPLOYMENT.md)** - 详细配置和故障排查
-- **[MiroFish 原始文档](app/LOCAL-STARTUP.md)** - 官方启动指南
+- **[Miroworld 原始文档](app/LOCAL-STARTUP.md)** - 官方启动指南
 
 ---
 
@@ -163,7 +163,7 @@ A: 首次启动需要下载 Neo4j 和依赖（~1GB）。之后离线也可运行
 
 ## 🤝 贡献
 
-基于 MiroFish 官方项目：https://github.com/tt-a1i/MiroFish-local
+基于上游 Miroworld 项目：https://github.com/tt-a1i/MiroFish-local
 
 ---
 

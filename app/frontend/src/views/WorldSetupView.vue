@@ -3,7 +3,7 @@
     <!-- 顶部导航（与主界面一致） -->
     <header class="app-header">
       <div class="header-left">
-        <div class="brand" @click="goBack">MIROFISH</div>
+        <div class="brand" @click="goBack">MIROWORLD</div>
         <div class="step-divider"></div>
         <div class="workflow-step">
           <span class="step-num">WORLD</span>

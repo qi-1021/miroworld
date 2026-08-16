@@ -150,7 +150,7 @@ def delete_project(project_id: str):
 
     if not success:
         # 历史列表可能残留只存在于缓存/状态里的失败项目占位（proj_xxx 但磁盘已无关联目录）。
-        # 对 MiroFish 项目 ID 做幂等删除，避免首页“错误任务”一直删不掉。
+        # 对 Miroworld 项目 ID 做幂等删除，避免首页“错误任务”一直删不掉。
         if project_id.startswith("proj_"):
             return jsonify({
                 "success": True,
@@ -446,7 +446,7 @@ def build_graph():
             project.error = None
 
         # 获取配置
-        graph_name = data.get('graph_name', project.name or 'MiroFish Graph')
+        graph_name = data.get('graph_name', project.name or 'Miroworld Graph')
         chunk_size = data.get('chunk_size', project.chunk_size or Config.DEFAULT_CHUNK_SIZE)
         chunk_overlap = data.get('chunk_overlap', project.chunk_overlap or Config.DEFAULT_CHUNK_OVERLAP)
 

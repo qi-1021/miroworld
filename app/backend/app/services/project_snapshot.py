@@ -117,7 +117,7 @@ def import_project_snapshot(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(snapshot, dict):
         raise ValueError("快照必须是 JSON 对象")
     if snapshot.get("format") != SNAPSHOT_FORMAT:
-        raise ValueError("不是有效的 MiroFish 项目快照")
+        raise ValueError("不是有效的 Miroworld 项目快照")
     old_project = snapshot.get("project") or {}
     if not isinstance(old_project, dict):
         raise ValueError("快照缺少 project 元数据")

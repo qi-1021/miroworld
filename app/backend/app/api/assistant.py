@@ -275,7 +275,7 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
 
 
 _SYSTEM_PROMPT = (
-    "你是 MiroFish 的内置项目助手。你非常了解这个工具的功能分区："
+    "你是 Miroworld 的内置项目助手。你非常了解这个工具的功能分区："
     "「世界设定库」负责输入背景/正文、冲突检测、图谱、时间线、模拟；"
     "「时间线」负责抽取/修正/分叉/批量编辑；「模型设置」负责模型接入与向量；"
     "「图谱」负责本体与 Graphiti/Neo4j 建图。"

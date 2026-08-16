@@ -5,8 +5,8 @@
  * home.engineBadge 等硬编码品牌文案），首页与全站品牌即完成切换。
  */
 export const BRAND = {
-  name: 'MiroFish',
-  repo: 'https://github.com/666ghj/MiroFish',
+  name: 'Miroworld',
+  repo: 'https://github.com/qi-1021/miroworld',
   // 一句话定位
   positioning: '时间线 · 分叉推演 · 人物设定',
 }

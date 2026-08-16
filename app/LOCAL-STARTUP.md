@@ -1,6 +1,6 @@
-# MiroFish 本地版启动指南
+# Miroworld 本地版启动指南
 
-本文档说明如何启动 MiroFish 本地版（使用 graphiti-core + Neo4j 替代 Zep Cloud）。
+本文档说明如何启动 Miroworld 本地版（使用 graphiti-core + Neo4j 替代 Zep Cloud）。
 
 ## 架构概览
 

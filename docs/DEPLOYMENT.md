@@ -1,12 +1,12 @@
-# MiroFish 可移植部署指南
+# Miroworld 可移植部署指南
 
-完全独立的 MiroFish 部署方案，可直接复制到移动硬盘，在任何设备上快速启动。
+完全独立的 Miroworld 部署方案，可直接复制到移动硬盘，在任何设备上快速启动。
 
 ## 📦 项目结构
 
 ```
-mirofish-portable/
-├── app/                    # MiroFish 应用代码
+miroworld/
+├── app/                    # Miroworld 应用代码
 │   ├── backend/           # Python 后端 (Flask)
 │   ├── frontend/          # Vue 3 前端
 │   ├── package.json
@@ -30,7 +30,7 @@ mirofish-portable/
 
 ```bash
 # 1. 进入项目目录
-cd mirofish-portable
+cd miroworld
 
 # 2. 赋予执行权限
 chmod +x scripts/*.sh
@@ -223,14 +223,14 @@ rm -rf neo4j/neo4j/data
 
 ```bash
 # 假设移动硬盘挂载在 /Volumes/MyDrive
-cp -r ~/Desktop/mirofish-portable /Volumes/MyDrive/
+cp -r ~/Desktop/miroworld /Volumes/MyDrive/
 ```
 
 ### 步骤 2：在不同设备上启动
 
 ```bash
 # 挂载移动硬盘后
-cd /Volumes/MyDrive/mirofish-portable
+cd /Volumes/MyDrive/miroworld
 
 # macOS/Linux
 ./scripts/start.sh
@@ -268,7 +268,7 @@ scripts\start.bat
 ## 📞 获取帮助
 
 - 查看项目原始文档：`app/LOCAL-STARTUP.md`
-- MiroFish 官方：https://github.com/tt-a1i/MiroFish-local
+- 上游项目：https://github.com/tt-a1i/MiroFish-local
 - Neo4j 文档：https://neo4j.com/docs/
 
 ---

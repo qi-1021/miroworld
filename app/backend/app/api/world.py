@@ -88,7 +88,7 @@ def list_modes():
     """
     列出可用的用途模式（novel-world / character-card / timeline 等）。
 
-    供前端在选择"世界/MiroFish 用途"时展示。模式经 POST /api/world/<id>/input
+    供前端在选择"世界/Miroworld 用途"时展示。模式经 POST /api/world/<id>/input
     的可选 mode 参数透传进 metadata['mode']。
 
     返回：

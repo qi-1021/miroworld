@@ -312,7 +312,7 @@ deactivate
 **解决**：
 ```bash
 # 确保进入正确目录
-cd /Volumes/MyDrive/mirofish-portable
+cd /Volumes/MyDrive/miroworld
 
 # 检查脚本权限
 ls -la scripts/
@@ -363,7 +363,7 @@ rm neo4j/neo4j/data/test.txt
    ./scripts/start.sh 2>&1 | tee startup.log
    ```
 
-2. 检查原项目文档：https://github.com/tt-a1i/MiroFish-local
+2. 检查上游项目文档：https://github.com/tt-a1i/MiroFish-local
 
 3. 报告问题时包含：
    - 操作系统和版本

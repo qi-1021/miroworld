@@ -171,7 +171,7 @@ class GraphitiClient(ZepClientAdapter):
     Graphiti 本地客户端实现
 
     使用 graphiti-core 库连接 Neo4j 图数据库。
-    通过 group_id 参数实现多图谱隔离（对应 MiroFish 的 graph_id）。
+    通过 group_id 参数实现多图谱隔离（对应 Miroworld 的 graph_id）。
     """
 
     def __init__(

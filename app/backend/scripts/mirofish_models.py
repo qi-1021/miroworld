@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MiroFish 模型配置命令行工具。"""
+"""Miroworld 模型配置命令行工具。"""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ from app.services.model_registry import (  # noqa: E402
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="mirofish-models", description="管理 MiroFish 模型连接、模型和任务绑定"
+        prog="mirofish-models", description="管理 Miroworld 模型连接、模型和任务绑定"
     )
     parser.add_argument("--json", action="store_true", dest="as_json")
     parser.add_argument("--data-dir", help=argparse.SUPPRESS)

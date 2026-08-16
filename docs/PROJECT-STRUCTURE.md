@@ -1,9 +1,9 @@
 # 项目结构说明
 
-本文帮助你快速理解 MiroFish 的目录组织。
+本文帮助你快速理解 Miroworld 的目录组织。
 
 ```
-mirofish-portable/
+miroworld/
 ├── README.md                  # 总览与快速开始
 ├── docs/                      # 文档中心
 │   ├── USER-GUIDE.md          # 使用者指南（推荐先读）

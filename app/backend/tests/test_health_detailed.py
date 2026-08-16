@@ -10,7 +10,7 @@ def test_detailed_health_returns_checks():
         r = c.get("/api/health/detailed")
         assert r.status_code == 200
         data = r.get_json()
-        assert data["service"] == "MiroFish Backend"
+        assert data["service"] == "Miroworld Backend"
         assert "neo4j" in data  # ok 或 unavailable 都允许
         assert "models" in data
         assert "verified" in data["models"]

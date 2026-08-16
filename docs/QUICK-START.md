@@ -11,7 +11,7 @@
 ### macOS / Linux
 
 ```bash
-cd mirofish-portable
+cd miroworld
 chmod +x scripts/*.sh
 ./scripts/start.sh
 ```
@@ -19,7 +19,7 @@ chmod +x scripts/*.sh
 ### Windows
 
 ```cmd
-cd mirofish-portable
+cd miroworld
 scripts\start.bat
 ```
 
@@ -52,7 +52,7 @@ Neo4j: http://localhost:7474 ✓
 A: 脚本会自动提示。如果缺少 Node.js 或 Python，请先安装它们。
 
 **Q: 能在移动硬盘上运行吗？**  
-A: 是的！只需将整个 `mirofish-portable` 文件夹复制到移动硬盘。各台设备上只需有 Node.js 和 Python 3.11+。
+A: 是的！只需将整个 `miroworld` 文件夹复制到移动硬盘。各台设备上只需有 Node.js 和 Python 3.11+。
 
 **Q: 需要 Docker 吗？**  
 A: 不需要！Neo4j 会自动安装在 `neo4j/neo4j/` 目录。

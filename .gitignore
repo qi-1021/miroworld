@@ -1,6 +1,35 @@
 # 本地系统文件
 .DS_Store
 
+# 内部工作文件（不上传 GitHub）
+.agent-teams/
+output/
+.mkdir-test-delete-me/
+ACCEPTANCE-REPORT.md
+CLEANUP-PLAN.md
+CLEANUP-REPORT.md
+ERROR-FIX-REPORT.md
+EXPERIMENT_REPORT.md
+PROJECT-SUMMARY.md
+RUNNING-STATUS.md
+STARTUP-FROM-DISK2.md
+STARTUP-SUCCESS-REPORT.md
+WARNING-EXPLANATION.md
+monitor-errors.sh
+app/docs/superpowers/
+app/docs/issues/
+app/docs/zep-localization/
+app/docs/zep-localization-evaluation.md
+app/docs/zep-localization-plan.md
+app/static/image/QQ群.png
+docs/ITERATION-SUMMARY.md
+docs/PRACTICALITY-RESEARCH.md
+docs/RESEARCH-PERF-ROUND2.md
+docs/RESEARCH-PERF.md
+docs/RESEARCH-STABILITY.md
+docs/DADI-VALIDATION.md
+docs/GITHUB-SYNC.md
+
 # 临时与备份
 .backup/
 .superpowers/

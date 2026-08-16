@@ -219,7 +219,7 @@ def probe_local_model(name: str, sample_texts: Optional[List[str]] = None) -> Di
     model_dir = safe_model_dir(name)
     if not _runtime_available():
         raise LocalRuntimeMissingError()
-    texts = sample_texts or ["MiroFish 本地向量模型测试", "The quick brown fox jumps over the lazy dog"]
+    texts = sample_texts or ["Miroworld 本地向量模型测试", "The quick brown fox jumps over the lazy dog"]
     embedder = LocalSentenceTransformerEmbedder(str(model_dir))
     t0 = time.time()
     vectors = embedder._encode(texts)
