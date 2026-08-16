@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """MiroFish 命令行工具（面向 AI Agent / 自动化操作）。
 
-所有子命令支持 --json 输出，便于脚本与 Agent 解析。
+所有子命令支持 --json 输出，便于脚本与 Agent 解析；成功输出 {"success":true,"data":...}，
+失败输出 {"success":false,"error":...}；退出码 0=成功、非 0=失败。
+
+命令：project / models / health / world / timeline / conflict / graph / sim / assistant。
+完整用法与 AI 全流程见 docs/CLI.md。
 
 示例：
+  python scripts/mirofish_cli.py models registry --json
+  python scripts/mirofish_cli.py health --detailed --json
   python scripts/mirofish_cli.py project list --json
   python scripts/mirofish_cli.py world save --project-id proj_xxx --background "..." --story "..."
   python scripts/mirofish_cli.py timeline extract --project-id proj_xxx --source bg --wait
-  python scripts/mirofish_cli.py timeline get --project-id proj_xxx --json
-  python scripts/mirofish_cli.py conflict detect --project-id proj_xxx
-  python scripts/mirofish_cli.py sim start --project-id proj_xxx --steps 6 --time-mode narrative --time-jumps "数日后,三个月后"
+  python scripts/mirofish_cli.py timeline final-report --project-id proj_xxx --action generate --json
+  python scripts/mirofish_cli.py conflict corrections --project-id proj_xxx --regenerate --json
+  python scripts/mirofish_cli.py graph build-world --project-id proj_xxx --wait --json
+  python scripts/mirofish_cli.py sim favorite --simulation-id sim_xxx --value 1 --json
   python scripts/mirofish_cli.py assistant ask --project-id proj_xxx --question "..."
 """
 
@@ -111,6 +118,8 @@ def cmd_world(args) -> dict:
         if bible is None:
             return {"bible": None}
         return {"bible": bible.to_dict()}
+    if args.action == "settings":
+        return _cmd_world_settings(args.project_id)
     raise ValueError(f"未知 world 动作: {args.action}")
 
 
@@ -170,10 +179,22 @@ def cmd_timeline(args) -> dict:
         )
         return {"structure": structure, "threads_hint": thread_hint != "",
                 "event_count": len(events), "events": events}
+    if args.action == "final-report":
+        return _cmd_timeline_final_report(args.project_id, args.final_report_action)
     raise ValueError(f"未知 timeline 动作: {args.action}")
 
 
 def cmd_conflict(args) -> dict:
+    if args.action == "list":
+        return _cmd_conflict_list(args.project_id)
+    if args.action == "history":
+        return _cmd_conflict_history(args.project_id)
+    if args.action == "corrections":
+        return _cmd_conflict_corrections(
+            args.project_id, getattr(args, "conflict_id", None),
+            force=getattr(args, "force", False),
+            regenerate=not getattr(args, "read", False),
+        )
     from app.services.conflict_detector import ConflictDetector, save_conflict_report
     from app.services.world_bible import WorldBibleService
     bible = WorldBibleService.get_bible(args.project_id)
@@ -192,6 +213,18 @@ def cmd_conflict(args) -> dict:
 
 
 def cmd_graph(args) -> dict:
+    if args.action == "status":
+        return _cmd_graph_status(args.project_id)
+    if args.action == "get":
+        return _cmd_graph_get(args.project_id)
+    if args.action == "build-world":
+        return _cmd_graph_build_world(
+            args.project_id,
+            resume=getattr(args, "resume", True),
+            skip_auto_refill=getattr(args, "skip_auto_refill", True),
+            wait=getattr(args, "wait", False),
+            timeout=getattr(args, "timeout", 1800.0),
+        )
     from app.services.graph_builder import GraphBuilderService
     from app.services.text_processor import TextProcessor
     from app.models.project import ProjectManager
@@ -224,6 +257,17 @@ def cmd_graph(args) -> dict:
 
 
 def cmd_sim(args) -> dict:
+    if args.action == "list":
+        return _cmd_sim_list(args.project_id)
+    if args.action == "history":
+        return _cmd_sim_history(args.project_id, favorited_only=getattr(args, "favorited_only", False))
+    if args.action == "favorite":
+        return _cmd_sim_favorite(args.simulation_id, bool(args.value))
+    if args.action == "create":
+        return _cmd_sim_create(args.project_id, getattr(args, "graph_id", None))
+    if args.action == "prepare":
+        return _cmd_sim_prepare(args.simulation_id, wait=getattr(args, "wait", False),
+                                timeout=getattr(args, "timeout", 1800.0))
     from app.services.world_simulation import WorldSimulationService
     jumps = []
     if args.time_jumps:
@@ -274,7 +318,286 @@ def cmd_health(args) -> dict:
                 checks[name] = "ok"
         except Exception:
             checks[name] = "down"
-    return {"checks": checks, "all_ok": all(v == "ok" for v in checks.values())}
+    result = {"checks": checks, "all_ok": all(v == "ok" for v in checks.values())}
+    if getattr(args, "detailed", False):
+        # 详细健康检查：Neo4j + 模型注册表 verified 数
+        from app.services.model_registry import ModelRegistryService
+        try:
+            reg = ModelRegistryService().get_redacted_registry()
+            result["models"] = {
+                "verified": sum(1 for m in reg.get("models", []) if m.get("verified")),
+                "connections": len(reg.get("connections", [])),
+            }
+            result["all_ok"] = result["all_ok"] and result["models"]["verified"] >= 1
+        except Exception as e:
+            result["models"] = {"error": str(e)}
+            result["all_ok"] = False
+    return result
+
+
+# ---------------------------------------------------------------------------
+# models：模型注册表（只读，供 AI/Agent 查看已验证模型与连接数）
+# ---------------------------------------------------------------------------
+def cmd_models(args) -> dict:
+    from app.services.model_registry import ModelRegistryService
+    registry = ModelRegistryService().get_redacted_registry()
+    if args.action == "registry":
+        return {
+            "verified_count": sum(1 for m in registry.get("models", []) if m.get("verified")),
+            "verified_models": [
+                {"name": m.get("name") or m.get("model"), "verified": m.get("verified")}
+                for m in registry.get("models", []) if m.get("verified")
+            ],
+            "connections": len(registry.get("connections", [])),
+        }
+    if args.action == "list":
+        return {"models": registry.get("models", []), "connections": registry.get("connections", [])}
+    raise ValueError(f"未知 models 动作: {args.action}")
+
+
+# ---------------------------------------------------------------------------
+# world 补充：settings（设定库统计 + 图谱状态）
+# ---------------------------------------------------------------------------
+def _cmd_world_settings(project_id: str) -> dict:
+    from app.services.world_bible import WorldBibleService
+    from app.models.project import ProjectManager
+    stats = WorldBibleService.get_stats(project_id)
+    project = ProjectManager.get_project(project_id)
+    return {
+        "stats": stats,
+        "graph_id": project.graph_id if project else None,
+        "graph_status": (project.status.value if project and project.status else None),
+        "graph_build_task_id": project.graph_build_task_id if project else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# conflict 补充：list / history / corrections（生成+读取）
+# ---------------------------------------------------------------------------
+def _load_conflict_report(project_id: str):
+    from app.services.conflict_detector import load_conflict_report
+    return load_conflict_report(project_id)
+
+
+def _cmd_conflict_list(project_id: str) -> dict:
+    report = _load_conflict_report(project_id)
+    if report is None:
+        return {"conflicts": [], "report": None}
+    return {"conflict_count": len(report.conflicts), "report": report.to_dict()}
+
+
+def _cmd_conflict_history(project_id: str) -> dict:
+    from app.services.conflict_detector import load_conflict
+    report = _load_conflict_report(project_id)
+    if report is None or not report.conflicts:
+        return {"conflicts": []}
+    items = []
+    for c in report.conflicts:
+        history = [
+            {"round": r.round, "role": r.role, "content": r.content,
+             "verdict": r.verdict, "effect": r.effect,
+             "created_at": r.created_at}
+            for r in (c.defense_rounds or [])
+        ]
+        items.append({
+            "conflict_id": c.conflict_id,
+            "topic": c.topic,
+            "status": c.status,
+            "effective": c.effective,
+            "follow_up_effect": c.follow_up_effect,
+            "defense_rounds": history,
+        })
+    return {"conflicts": items}
+
+
+def _cmd_conflict_corrections(project_id: str, conflict_id: Optional[str],
+                              force: bool = False, regenerate: bool = True) -> dict:
+    from app.services.conflict_correction import ConflictCorrectionService
+    if conflict_id:
+        from app.services.conflict_detector import load_conflict
+        if load_conflict(project_id, conflict_id) is None:
+            raise ValueError(f"冲突不存在: {conflict_id}")
+    svc = ConflictCorrectionService()
+    result = svc.generate(project_id) if regenerate else svc.load(project_id)
+    if result is None:
+        return {"has_files": False, "corrections": [], "patches": [], "files": {}}
+    return {
+        "has_files": True,
+        "correction_count": len(result.corrections),
+        "patch_count": len(result.patches),
+        "corrections": [e.to_dict() for e in result.corrections],
+        "patches": result.patches,
+        "files": result.file_snapshot()["files"],
+        "generated_at": getattr(result, "generated_at", ""),
+    }
+
+
+# ---------------------------------------------------------------------------
+# timeline 补充：final-report（生成/读取/下载 md）
+# ---------------------------------------------------------------------------
+def _cmd_timeline_final_report(project_id: str, action: str) -> dict:
+    from app.services import timeline_report
+    if action in ("generate", "regenerate"):
+        report = timeline_report.generate_report(project_id, regenerate=True)
+        return {"has_report": True, "report": report}
+    if action in ("get", "read"):
+        report = timeline_report.load_report(project_id)
+        if report is None:
+            return {"has_report": False, "report": None}
+        return {"has_report": True, "report": report}
+    if action == "download":
+        import os
+        report = timeline_report.load_report(project_id)
+        if report is None:
+            raise ValueError("报告尚未生成，请先 generate")
+        md = timeline_report.render_markdown(report)
+        return {"has_report": True, "markdown": md,
+                "length": len(md), "project_id": project_id}
+    raise ValueError(f"未知 final-report 动作: {action}")
+
+
+# ---------------------------------------------------------------------------
+# graph 补充：status / get（世界图谱状态与数据）+ build-world（世界图谱构建）
+# ---------------------------------------------------------------------------
+def _cmd_graph_status(project_id: str) -> dict:
+    from app.models.project import ProjectManager
+    from app.services.graph_builder import GraphBuilderService
+    project = ProjectManager.get_project(project_id)
+    if project is None:
+        return {"project_id": project_id, "graph_id": None, "graph_status": None}
+    out = {
+        "project_id": project_id,
+        "graph_id": project.graph_id,
+        "graph_status": project.status.value if project.status else None,
+        "graph_build_task_id": project.graph_build_task_id,
+    }
+    if project.graph_id:
+        try:
+            gd = GraphBuilderService().get_graph_data(project.graph_id)
+            out["node_count"] = gd.get("node_count", 0)
+            out["edge_count"] = gd.get("edge_count", 0)
+        except Exception as e:
+            out["graph_read_error"] = str(e)
+    return out
+
+
+def _cmd_graph_get(project_id: str) -> dict:
+    from app.models.project import ProjectManager
+    from app.services.graph_builder import GraphBuilderService
+    project = ProjectManager.get_project(project_id)
+    if project is None or not project.graph_id:
+        return {"project_id": project_id, "graph": None, "graph_id": None}
+    graph = GraphBuilderService().get_graph_data(project.graph_id)
+    return {"project_id": project_id, "graph_id": project.graph_id, "graph": graph}
+
+
+def _cmd_graph_build_world(project_id: str, resume: bool = True,
+                           skip_auto_refill: bool = True, wait: bool = False,
+                           timeout: float = 1800.0) -> dict:
+    """世界图谱构建（背景+正文，经本体生成 + Graphiti 建图）。
+
+    复用后端真实管线（含同项目并发守卫与断点续构建），通过 Flask test client
+    调用 POST /api/world/<pid>/graph/build，保证与网页端完全一致。
+    """
+    from app import create_app
+    app = create_app()
+    app.config["TESTING"] = True
+    task_id: Optional[str] = None
+    with app.test_client() as c:
+        resp = c.post(
+            f"/api/world/{project_id}/graph/build",
+            json={"resume": resume, "skip_auto_refill": skip_auto_refill},
+        )
+        data = resp.get_json() or {}
+        if resp.status_code == 400 and data.get("graph_id"):
+            # 图谱已存在且未 request 重建：返回现有状态
+            return {"status": "exists", "graph_id": data.get("graph_id"),
+                    "message": data.get("error", "已构建"), "already_running": False}
+        if not data.get("success"):
+            raise ValueError(f"图谱构建失败: {data.get('error', resp.status_code)}")
+        task_id = data.get("task_id")
+        graph_id = data.get("graph_id")
+        already = bool(data.get("already_running"))
+    if wait:
+        st = _wait_task_by_tm(task_id, timeout)
+        return {"task_id": task_id, "graph_id": graph_id,
+                "already_running": already, "status": st}
+    return {"task_id": task_id, "graph_id": graph_id, "already_running": already}
+
+
+def _wait_task_by_tm(task_id: str, timeout: float) -> dict:
+    from app.models.task import TaskManager
+    start = time.time()
+    while time.time() - start < timeout:
+        task = TaskManager().get_task(task_id)
+        if task and task.status.value in ("completed", "failed"):
+            return {"status": task.status.value, "result": task.result, "error": task.error}
+        time.sleep(1)
+    return {"status": "timeout", "task_id": task_id}
+
+
+# ---------------------------------------------------------------------------
+# sim 补充：list / history / favorite
+# ---------------------------------------------------------------------------
+def _cmd_sim_list(project_id: Optional[str]) -> dict:
+    from app.services.world_simulation import WorldSimulationService
+    sims = WorldSimulationService.list_simulations(project_id, limit=100)
+    return {"simulations": sims}
+
+
+def _cmd_sim_history(project_id: Optional[str] = None, favorited_only: bool = False) -> dict:
+    from app.services.world_simulation import WorldSimulationService
+    sims = WorldSimulationService.list_simulations(project_id, limit=100)
+    items = [s for s in sims]
+    if favorited_only:
+        from app.services.simulation_favorite import SimulationFavoriteService
+        fav = SimulationFavoriteService()
+        fav_ids = set(fav.list_favorited())
+        items = [s for s in items if s.get("simulation_id") in fav_ids]
+    return {"simulations": items}
+
+
+def _cmd_sim_favorite(simulation_id: str, value: bool) -> dict:
+    from app.services.simulation_favorite import SimulationFavoriteService
+    fav = SimulationFavoriteService()
+    entry = fav.set_favorite(simulation_id, value)
+    return {"simulation_id": simulation_id, "favorite": value, "entry": entry}
+
+
+def _cmd_sim_create(project_id: str, graph_id: Optional[str]) -> dict:
+    from app.services.simulation_manager import SimulationManager
+    from app.models.project import ProjectManager
+    gid = graph_id or (ProjectManager.get_project(project_id).graph_id
+                       if ProjectManager.get_project(project_id) else None)
+    if not gid:
+        raise ValueError("项目尚未构建图谱，请先 graph build-world")
+    state = SimulationManager().create_simulation(project_id=project_id, graph_id=gid)
+    return {"simulation_id": state.simulation_id, "project_id": project_id,
+            "graph_id": gid, "status": state.status.value}
+
+
+def _cmd_sim_prepare(simulation_id: str, wait: bool = False, timeout: float = 1800.0) -> dict:
+    """提交世界模拟准备（生成智能体人设 + 配置），复用后端真实管线。"""
+    from app import create_app
+    app = create_app()
+    app.config["TESTING"] = True
+    task_id: Optional[str] = None
+    status: str = ""
+    with app.test_client() as c:
+        resp = c.post("/api/simulation/prepare", json={"simulation_id": simulation_id})
+        data = resp.get_json() or {}
+        d = data.get("data") or {}
+        status = d.get("status", "")
+        task_id = d.get("task_id")
+        if not data.get("success"):
+            return {"simulation_id": simulation_id, "success": False,
+                    "error": d.get("message") or data.get("error") or "准备接口失败"}
+    if status in ("ready", "completed"):
+        return {"simulation_id": simulation_id, "status": "ready"}
+    if wait and task_id:
+        st = _wait_task_by_tm(task_id, timeout)
+        return {"simulation_id": simulation_id, "task_id": task_id, **st}
+    return {"simulation_id": simulation_id, "status": status, "task_id": task_id}
 
 
 # ---------------------------------------------------------------------------
@@ -319,6 +642,7 @@ def _parser() -> argparse.ArgumentParser:
     ws.add_argument("--chunk-size", type=int, default=1500)
     ws.add_argument("--chunk-overlap", type=int, default=150)
     _add_json(wa.add_parser("get")).add_argument("--project-id", required=True)
+    _add_json(wa.add_parser("settings")).add_argument("--project-id", required=True)
 
     t = sub.add_parser("timeline")
     ta = t.add_subparsers(dest="action", required=True)
@@ -346,10 +670,22 @@ def _parser() -> argparse.ArgumentParser:
     textract.add_argument("--source", choices=["story", "bg"], default="story")
     textract.add_argument("--project-id", default=None,
                           help="可选：用指定项目的模型凭据")
+    tfr = _add_json(ta.add_parser("final-report"))
+    tfr.add_argument("--project-id", required=True)
+    tfr.add_argument("--action", dest="final_report_action",
+                     choices=["generate", "get", "download"], default="get",
+                     help="generate=重新生成并读取；get=读取已生成；download=返回 Markdown")
 
     c = sub.add_parser("conflict")
     ca = c.add_subparsers(dest="action", required=True)
     _add_json(ca.add_parser("detect")).add_argument("--project-id", required=True)
+    _add_json(ca.add_parser("list")).add_argument("--project-id", required=True)
+    _add_json(ca.add_parser("history")).add_argument("--project-id", required=True)
+    ccorr = _add_json(ca.add_parser("corrections"))
+    ccorr.add_argument("--project-id", required=True)
+    ccorr.add_argument("--conflict-id", default=None, help="可选：指定冲突 id（无冲突列表为空）")
+    ccorr.add_argument("--regenerate", action="store_true", help="强制重新生成改正补丁")
+    ccorr.add_argument("--read", action="store_true", help="只读取已生成的改正（不重新生成）")
 
     g = sub.add_parser("graph")
     ga = g.add_subparsers(dest="action", required=True)
@@ -360,9 +696,34 @@ def _parser() -> argparse.ArgumentParser:
     gb.add_argument("--chunk-overlap", type=int, default=150)
     gb.add_argument("--wait", action="store_true")
     gb.add_argument("--timeout", type=float, default=1800.0)
+    gstatus = _add_json(ga.add_parser("status"))
+    gstatus.add_argument("--project-id", required=True)
+    gget = _add_json(ga.add_parser("get"))
+    gget.add_argument("--project-id", required=True)
+    gbw = _add_json(ga.add_parser("build-world"))
+    gbw.add_argument("--project-id", required=True)
+    gbw.add_argument("--no-resume", dest="resume", action="store_false", default=True)
+    gbw.add_argument("--no-skip-refill", dest="skip_auto_refill", action="store_false", default=True)
+    gbw.add_argument("--wait", action="store_true")
+    gbw.add_argument("--timeout", type=float, default=1800.0)
 
     s = sub.add_parser("sim")
     sa = s.add_subparsers(dest="action", required=True)
+    _add_json(sa.add_parser("list")).add_argument("--project-id", required=True)
+    sh = _add_json(sa.add_parser("history"))
+    sh.add_argument("--project-id", required=True)
+    sh.add_argument("--favorited-only", action="store_true")
+    sfav = _add_json(sa.add_parser("favorite"))
+    sfav.add_argument("--simulation-id", required=True)
+    sfav.add_argument("--value", type=int, choices=[0, 1], default=1,
+                      help="1=标记收藏，0=取消收藏")
+    screate = _add_json(sa.add_parser("create"))
+    screate.add_argument("--project-id", required=True)
+    screate.add_argument("--graph-id", default=None)
+    spre = _add_json(sa.add_parser("prepare"))
+    spre.add_argument("--simulation-id", required=True)
+    spre.add_argument("--wait", action="store_true")
+    spre.add_argument("--timeout", type=float, default=1800.0)
     ss = _add_json(sa.add_parser("start"))
     ss.add_argument("--project-id", required=True)
     ss.add_argument("--steps", type=int, default=6)
@@ -379,7 +740,13 @@ def _parser() -> argparse.ArgumentParser:
     ask.add_argument("--project-id", required=True)
     ask.add_argument("--question", required=True)
 
-    _add_json(sub.add_parser("health"))
+    m = sub.add_parser("models")
+    ma = m.add_subparsers(dest="action", required=True)
+    _add_json(ma.add_parser("registry"))
+    _add_json(ma.add_parser("list"))
+
+    h = _add_json(sub.add_parser("health"))
+    h.add_argument("--detailed", action="store_true", help="附加模型注册表 verified 检查")
     return parser
 
 
@@ -391,6 +758,22 @@ def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     as_json = "--json" in argv
     argv = [a for a in argv if a != "--json"]
+
+    # 把所有日志压到 WARNING 级并重定向到 stderr，保证 stdout 只输出结果 JSON
+    # （Graphiti 等库会打印大量 INFO 到 stdout，会污染 --json 输出）。
+    import logging
+    logging.disable(logging.WARNING)  # 全局禁用 <WARNING 的日志（含后续懒创建 logger）
+    for _name in list(logging.root.manager.loggerDict):
+        _lg = logging.getLogger(_name)
+        if not hasattr(_lg, "handlers"):
+            continue
+        _lg.setLevel(logging.WARNING)
+        for _h in list(getattr(_lg, "handlers", [])):
+            if isinstance(_h, logging.StreamHandler) and getattr(_h, "stream", None) is sys.stdout:
+                try:
+                    _h.stream = sys.stderr
+                except Exception:
+                    pass
 
     args = _parser().parse_args(argv)
     try:
@@ -408,11 +791,13 @@ def main(argv=None) -> int:
             result = cmd_sim(args)
         elif args.command == "assistant":
             result = cmd_assistant(args)
+        elif args.command == "models":
+            result = cmd_models(args)
         elif args.command == "health":
             result = cmd_health(args)
         else:
             raise ValueError(f"未知命令: {args.command}")
-        _out(result, as_json)
+        _out({"success": True, "data": result}, as_json)
         return 0
     except Exception as e:
         _out({"success": False, "error": str(e)}, True)
