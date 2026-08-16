@@ -1776,7 +1776,11 @@ async function handleStartSim() {
     simPollingId = sim.simulation_id
     startSimPolling(sim.simulation_id)
   } catch (e) {
-    simMsg.value = (e.message || t('world.msgSimStartFailed')) + t('world.checkModelConfig')
+    // 优先展示后端真实 error；仅当错误明确与模型/配置相关时才追加"请检查模型配置"提示，
+    // 避免把任意 400（校验、缺失字段、LLM 返回异常等）误报成配置问题。
+    const backendError = e.message || t('world.msgSimStartFailed')
+    const modelRelated = /模型|配置|model|config|LLM|api[ -_]?key|api.?key|not configured|unavailable/i.test(backendError)
+    simMsg.value = modelRelated ? backendError + t('world.checkModelConfig') : backendError
     simMsgError.value = true
     simStatus.value = 'idle'
   } finally {
