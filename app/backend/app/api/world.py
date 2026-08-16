@@ -326,8 +326,12 @@ def build_world_graph(project_id: str):
             "resume": false,  // 已有图谱且存在 build-progress 时，跳过已完成 chunk 续构建
             "skip_auto_refill": false,  // true 时建图完成后不自动启动补边
             "chunk_size": 1500,
-            "chunk_overlap": 150
+            "chunk_overlap": 150,
+            "batch_size": 8    // 每批写入的块数，默认 8，可覆盖 1-16
         }
+
+    说明：分批写入时每完成一批立即 mark_chunks_done 落断点（build-progress），
+    中断只丢当前在途批次，已完成批次可断点续建。
 
     返回：
         { "success": true, "task_id": "...", "graph_id": null|"..." }
@@ -380,6 +384,13 @@ def build_world_graph(project_id: str):
 
     chunk_size = int(data.get('chunk_size', Config.DEFAULT_CHUNK_SIZE))
     overlap = int(data.get('chunk_overlap', Config.DEFAULT_CHUNK_OVERLAP))
+    # 每批写入的块数：默认 8，body 可覆盖 1-16（超出则夹取）
+    raw_batch_size = data.get('batch_size', 8)
+    try:
+        batch_size = int(raw_batch_size)
+    except (TypeError, ValueError):
+        batch_size = 8
+    batch_size = max(1, min(16, batch_size))
 
     # 后台任务：本体生成 → 建图 → 写回 project.graph_id
     task_id = task_manager.create_task(f"构建世界图谱: {project.name or project_id}")
@@ -474,23 +485,50 @@ def build_world_graph(project_id: str):
                 message=f"设定文本已分割为 {total_chunks} 个块，待写入 {len(remaining_indices)} 个块",
             )
 
-            def add_progress_callback(msg, progress_ratio):
-                task_manager.update_task(
-                    task_id,
-                    message=msg,
-                    progress=30 + int(progress_ratio * 55),  # 30-85%
-                )
-
             if remaining_chunks:
-                episode_uuids = builder.add_text_batches(
-                    graph_id, remaining_chunks, batch_size=4,
-                    progress_callback=add_progress_callback,
-                )
-                builder._wait_for_episodes(episode_uuids)
-                mark_chunks_done(
-                    project_id, remaining_chunks, remaining_indices,
-                    episode_uuids, graph_id=graph_id,
-                )
+                # 分批写入：每批发送→等待该批处理→立即 mark_chunks_done 落断点。
+                # 相比"全部完成才存断点"，中断时仅丢当前在途批次，已完成的批可断点续建，
+                # 不会几小时白跑。每批同步更新任务进度。
+                episode_uuids = []
+                total_batches = (len(remaining_chunks) + batch_size - 1) // batch_size
+                done_batches = 0
+                for b in range(0, len(remaining_chunks), batch_size):
+                    batch_chunks = remaining_chunks[b:b + batch_size]
+                    batch_indices = remaining_indices[b:b + batch_size]
+                    batch_num = b // batch_size + 1
+
+                    # 该批 episode 数据（与 add_text_batches 内部一致）
+                    episodes = [{"data": c, "type": "text"} for c in batch_chunks]
+                    task_manager.update_task(
+                        task_id, progress=30 + int((b / max(len(remaining_chunks), 1)) * 55),
+                        message=f"发送第 {batch_num}/{total_batches} 批（{len(batch_chunks)} 块）...",
+                    )
+                    try:
+                        batch_uuids = builder.client.add_episode_batch(
+                            graph_id=graph_id, episodes=episodes,
+                        )
+                    except Exception as _be:
+                        # 该批失败：不标记 done（断点保留前序批次），抛出让任务失败可续。
+                        task_manager.update_task(
+                            task_id,
+                            message=f"批次 {batch_num} 发送失败，前序批次已存断点（可 resume）",
+                        )
+                        raise
+
+                    # 等待本批处理完成（graphiti 后端为同步，立即返回）
+                    builder._wait_for_episodes(batch_uuids)
+                    # 立即把本批 chunk 写入 build-progress 断点
+                    mark_chunks_done(
+                        project_id, batch_chunks, batch_indices,
+                        batch_uuids, graph_id=graph_id,
+                    )
+                    episode_uuids.extend(batch_uuids)
+                    done_batches += 1
+                    task_manager.update_task(
+                        task_id,
+                        progress=30 + int((len(episode_uuids) / max(len(remaining_chunks), 1)) * 55),
+                        message=f"批次 {batch_num}/{total_batches} 完成（已达 {done_batches}/{total_batches} 批）",
+                    )
             else:
                 episode_uuids = []
                 task_manager.update_task(
@@ -762,30 +800,48 @@ def get_conflict_history(project_id: str, conflict_id: str):
 
 # ---------------------------------------------------------------- 冲突改正文件
 
+def _corrections_summary(result) -> dict:
+    """由 CorrectionSet 计算前端反馈所需的计数/空因/注解摘要。"""
+    annotations = [e.to_dict() for e in result.corrections if not e.patch]
+    n = len(result.corrections)
+    p = len(result.patches)
+    empty_reason = None
+    if n == 0:
+        empty_reason = "empty_no_rulings"   # 无任何已生效裁定
+    elif p == 0:
+        empty_reason = "empty_annotations_only"  # 仅有注解，无文本补丁
+    return {
+        "correction_count": n,
+        "patch_count": p,
+        "patches": result.patches,
+        "corrections": [e.to_dict() for e in result.corrections],
+        "annotations": annotations,
+        "empty_reason": empty_reason,
+    }
+
+
 @world_bp.route('/<project_id>/conflicts/<conflict_id>/corrections', methods=['POST'])
 def generate_conflict_corrections(project_id: str, conflict_id: str):
     """确定性重算本项目全部生效冲突的外挂补丁（不复制全文、不依赖 LLM；幂等多轮）。
 
     - 以 conflict_id 校验项目有该冲突；改正集按项目整份生成。
     - 只落盘 corrected_patches.md + corrections.json（外挂小补丁，不复制语料全文）。
-    - 返回两个文件内容 + 补丁/注解计数供前端预览。
+    - 无已生效裁定或仅注解时仍写 sidecar 并返回 empty_reason 供前端说明。
     """
     if load_conflict(project_id, conflict_id) is None:
         return jsonify({"success": False, "error": "冲突不存在"}), 404
     try:
         result = ConflictCorrectionService().generate(project_id)
-        return jsonify({
+        resp = {
             "success": True,
             "project_id": project_id,
             "conflict_id": conflict_id,
             "has_files": True,
-            "correction_count": len(result.corrections),
-            "patch_count": len(result.patches),
-            "patches": result.patches,
-            "corrections": [e.to_dict() for e in result.corrections],
             "files": result.file_snapshot()["files"],
             "generated_at": result.generated_at,
-        })
+        }
+        resp.update(_corrections_summary(result))
+        return jsonify(resp)
     except Exception as e:
         logger.error(f"生成改正补丁失败: {e}")
         return jsonify({"success": False, "error": f"生成改正补丁失败: {e}"}), 500
@@ -805,20 +861,23 @@ def get_conflict_corrections(project_id: str, conflict_id: str):
                 "conflict_id": conflict_id,
                 "has_files": False,
                 "correction_count": 0,
+                "patch_count": 0,
+                "patches": [],
+                "corrections": [],
+                "annotations": [],
+                "empty_reason": "empty_no_rulings",
                 "files": {},
             })
-        return jsonify({
+        resp = {
             "success": True,
             "project_id": project_id,
             "conflict_id": conflict_id,
             "has_files": True,
-            "correction_count": len(result.corrections),
-            "patch_count": len(result.patches),
-            "patches": result.patches,
-            "corrections": [e.to_dict() for e in result.corrections],
             "files": result.file_snapshot()["files"],
             "generated_at": result.generated_at,
-        })
+        }
+        resp.update(_corrections_summary(result))
+        return jsonify(resp)
     except Exception as e:
         logger.error(f"读取改正补丁失败: {e}")
         return jsonify({"success": False, "error": f"读取改正补丁失败: {e}"}), 500

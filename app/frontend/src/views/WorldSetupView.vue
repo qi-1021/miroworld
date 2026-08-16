@@ -320,6 +320,11 @@
               </div>
             </div>
             <div class="correction-block">
+              <!-- 成功/失败反馈条 -->
+              <div v-if="c.corrNotice" class="corr-notice" :class="{ ok: c.corrNotice.ok, err: !c.corrNotice.ok }">
+                <span class="corr-notice-ico">{{ c.corrNotice.ok ? '✓' : '✕' }}</span>
+                <span class="corr-notice-text">{{ c.corrNotice.text }}</span>
+              </div>
               <div class="correction-actions">
                 <button
                   class="mini-btn correction-gen"
@@ -338,8 +343,28 @@
                     {{ c.corrOpen ? $t('world.corrHidePreview') : $t('world.corrShowPreview') }}
                   </button>
                 </div>
+                <!-- 空结果说明 -->
+                <div v-if="c.corrections.emptyReason" class="corr-empty-reason">
+                  {{ c.corrections.emptyReason === 'empty_annotations_only'
+                      ? $t('world.corrEmptyReasonAnnotations')
+                      : $t('world.corrEmptyReasonNoRulings') }}
+                </div>
                 <div v-if="c.corrOpen" class="correction-files-body">
-                  <!-- 补丁清单 -->
+                  <!-- 注解清单：无文本补丁时也展示生效裁定注解，避免用户以为失败 -->
+                  <div v-if="c.corrections.annotations && c.corrections.annotations.length" class="correction-annotations">
+                    <div class="corr-ann-title">{{ $t('world.corrAnnotationsTitle') }}</div>
+                    <div
+                      v-for="(a, ai) in c.corrections.annotations"
+                      :key="ai"
+                      class="correction-annotation"
+                    >
+                      <span class="ca-status" :class="a.verdict || a.status">{{ a.status }}</span>
+                      <span class="ca-topic">{{ a.topic }}</span>
+                      <span v-if="a.action" class="ca-action">{{ a.action }}</span>
+                      <p class="ca-note">{{ a.note }}</p>
+                    </div>
+                  </div>
+                  <!-- 文本补丁清单 -->
                   <div v-if="c.corrections.patches && c.corrections.patches.length" class="correction-patch-list">
                     <div
                       v-for="(p, pi) in c.corrections.patches"
@@ -356,7 +381,7 @@
                       <div v-if="p.note" class="cp-note">{{ p.note }}</div>
                     </div>
                   </div>
-                  <div v-else class="correction-empty">{{ $t('world.corrNoPatch') }}</div>
+                  <div v-if="!c.corrections.patches.length && !(c.corrections.annotations && c.corrections.annotations.length)" class="correction-empty">{{ $t('world.corrNoPatch') }}</div>
                   <!-- 渲染合并全文 -->
                   <div class="correction-render">
                     <span class="cr-label">{{ $t('world.corrRenderMerged') }}</span>
@@ -386,6 +411,10 @@
               </div>
               <div v-else-if="c.corrections && c.corrections.loaded && !c.corrections.hasFiles" class="correction-empty">
                 {{ $t('world.corrEmpty') }}
+              </div>
+              <!-- 具体错误展示 -->
+              <div v-if="c.corrections && c.corrections.error" class="corr-error">
+                {{ c.corrections.error }}
               </div>
             </div>
           </div>
@@ -1471,6 +1500,8 @@ const confRenderBusyId = ref('')
  * @param {Object} conflict  - 冲突对象（会写入 conflict.corrections）
  * @param {Boolean} generate - true=强制重新生成；false=仅读取（已有则不重复拉取）
  */
+let corrNotifyTimer = null
+
 async function loadConflictCorrections(conflict, generate = false) {
   try {
     corrGeneratingId.value = conflict.conflict_id
@@ -1488,16 +1519,50 @@ async function loadConflictCorrections(conflict, generate = false) {
       count: res.correction_count || 0,
       patchCount: res.patch_count || 0,
       patches: res.patches || [],
+      annotations: res.annotations || res.corrections || [],
+      emptyReason: res.empty_reason || null,
       files: res.files || {},
       loaded: true,
       corrOpen: hasFiles,
+      // 反馈状态
+      message: generate ? { ok: true, text: successCorrectionMsg(res) } : conflict.corrections?.message || null,
+      error: null,
+    }
+    // 成功提示条自动淡出
+    if (generate) {
+      if (corrNotifyTimer) clearTimeout(corrNotifyTimer)
+      conflict.corrNotice = { ok: true, text: successCorrectionMsg(res) }
+      corrNotifyTimer = setTimeout(() => { conflict.corrNotice = null }, 2600)
+    } else if (!res.has_files) {
+      conflict.corrNotice = { ok: true, text: t('world.corrEmptyNotice') }
     }
   } catch (e) {
     console.error('加载/生成改正文件失败', e)
-    conflict.corrections = { hasFiles: false, count: 0, patchCount: 0, patches: [], files: {}, loaded: true }
+    const msg = (e?.response?.data?.error) || (e?.message) || 'load-error'
+    conflict.corrections = {
+      hasFiles: false, count: 0, patchCount: 0, patches: [], annotations: [],
+      emptyReason: null, files: {}, loaded: true,
+      message: null, error: msg,
+    }
+    conflict.corrNotice = { ok: false, text: correctionErrorLabel(msg) }
   } finally {
     corrGeneratingId.value = ''
   }
+}
+
+function successCorrectionMsg(res) {
+  const n = res.correction_count || 0
+  const p = res.patch_count || 0
+  if (n === 0) return t('world.corrMsgNoRulings')
+  if (p === 0) return t('world.corrMsgAnnotationsOnly', { n })
+  return t('world.corrMsgDone', { p })
+}
+
+function correctionErrorLabel(err) {
+  if (typeof err === 'string' && err.startsWith('corrErr_')) {
+    return t(`world.${err}`)
+  }
+  return t('world.corrErrGeneric', { e: err })
 }
 
 /**
@@ -2901,6 +2966,105 @@ onUnmounted(() => {
   margin-top: 6px;
   font-size: 12px;
   color: #888;
+}
+
+/* ---- 成功/失败反馈条 ---- */
+.corr-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  transition: opacity 0.4s;
+}
+.corr-notice.ok {
+  background: #E8F5E9;
+  border: 1px solid #C8E6C9;
+  color: #1B5E20;
+}
+.corr-notice.err {
+  background: #FDECEA;
+  border: 1px solid #F5C6CB;
+  color: #B71C1C;
+}
+.corr-notice-ico {
+  font-weight: 700;
+}
+
+/* ---- 空结果说明 ---- */
+.corr-empty-reason {
+  margin: 6px 0;
+  padding: 7px 10px;
+  background: #FFF8E1;
+  border: 1px solid #FFE082;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #7A5900;
+  line-height: 1.5;
+}
+
+/* ---- 注解清单 ---- */
+.correction-annotations {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.corr-ann-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #6B21A8;
+}
+.correction-annotation {
+  border: 1px solid #E9D5FF;
+  border-left: 3px solid #A78BFA;
+  border-radius: 6px;
+  padding: 7px 10px;
+  background: #FBF7FF;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ca-status {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: #EDE7F6;
+  color: #5E35B1;
+  margin-right: 6px;
+}
+.ca-topic {
+  font-weight: 700;
+  color: #333;
+  margin-right: 6px;
+}
+.ca-action {
+  font-size: 10px;
+  color: #7C4DFF;
+  background: #EDE7F6;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.ca-note {
+  margin: 4px 0 0;
+  color: #555;
+  font-size: 12px;
+}
+
+/* ---- 具体错误 ---- */
+.corr-error {
+  margin-top: 6px;
+  padding: 7px 10px;
+  background: #FDECEA;
+  border: 1px solid #F5C6CB;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #B71C1C;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ---- 外挂补丁清单 ---- */

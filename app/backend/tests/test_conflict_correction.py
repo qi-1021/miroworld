@@ -329,3 +329,50 @@ def test_patch_conflict_auto_generates_corrections(client):
     assert body.get("corrections_regenerated") is True
     rv = client.get("/api/world/p1/conflicts/c1/corrections")
     assert rv.get_json()["has_files"] is True
+
+
+def test_corrections_empty_reason_annotations_only(client):
+    """仅有注解裁定（无文本补丁）时，POST 返回 empty_reason=annotations_only + 注解列表。"""
+    # 两个都是 justified→canonical（注解，不产补丁）
+    _seed(client, [
+        _conflict("c1", status="justified", effective=True,
+                  verdict="defense_accepted", resolution_note="主角为特例"),
+        _conflict("c2", status="dismissed", effective=True, resolution_note="视为例外"),
+    ])
+    rv = client.post("/api/world/p1/conflicts/c1/corrections")
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body["success"] is True
+    assert body["correction_count"] == 2
+    assert body["patch_count"] == 0
+    assert body["empty_reason"] == "empty_annotations_only"
+    # 注解列表已返回，供前端渲染
+    assert len(body["annotations"]) == 2
+    assert all(a["patch"] is None for a in body["annotations"])
+    # 两个 sidecar 仍写盘
+    assert set(body["files"].keys()) == {"corrections.json", "corrected_patches.md"}
+
+
+def test_corrections_empty_reason_no_rulings(client):
+    """无已生效裁定（open）时 POST 返回 empty_reason=no_rulings。"""
+    _seed(client, [_conflict("c1", status="open", effective=False)])
+    rv = client.post("/api/world/p1/conflicts/c1/corrections")
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body["correction_count"] == 0
+    assert body["patch_count"] == 0
+    assert body["empty_reason"] == "empty_no_rulings"
+    assert body["has_files"] is True  # 空结果也写两个 sidecar
+
+
+def test_corrections_get_empty_reason(client):
+    """GET 读回也带 empty_reason 与 annotations。"""
+    _seed(client, [
+        _conflict("c1", status="justified", effective=True,
+                  verdict="defense_accepted", resolution_note="解释成立"),
+    ])
+    client.post("/api/world/p1/conflicts/c1/corrections")
+    rv = client.get("/api/world/p1/conflicts/c1/corrections")
+    body = rv.get_json()
+    assert body["empty_reason"] == "empty_annotations_only"
+    assert len(body["annotations"]) == 1
