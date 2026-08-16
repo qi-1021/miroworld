@@ -991,6 +991,8 @@
     "whatifBtn": "What-if",
     "chronicleBtn": "Chronicle",
     "loadSimulation": "Load this timeline",
+    "continueSimulation": "Continue",
+    "msgSimContinueStarted": "Continuation started: {id}",
     "compareWorldlines": "Compare Worldlines",
     "compare": "Compare",
     "noEvents": "No events",

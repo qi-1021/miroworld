@@ -782,6 +782,118 @@ class WorldSimulationService:
         threading.Thread(target=run, daemon=True).start()
         return state
 
+    # ---------------- 续推 ----------------
+
+    @classmethod
+    def continue_simulation(
+        cls,
+        base_simulation_id: str,
+        additional_steps: int = 3,
+        goal: Optional[str] = None,
+    ) -> WorldSimulationState:
+        """从一条已有世界线的末尾继续推演（保留历史事件作为记忆，步号接续）。"""
+        base = cls.get_state(base_simulation_id)
+        if base is None:
+            raise ValueError("基础模拟不存在")
+        project_id = base.project_id
+
+        events_path = base.events_path or os.path.join(
+            WORLD_SIM_ROOT, project_id, base.simulation_id, "events.json"
+        )
+        if not os.path.exists(events_path):
+            raise ValueError("基础模拟没有事件文件，无法续推")
+        with open(events_path, "r", encoding="utf-8") as f:
+            base_events = json.load(f)
+        if not base_events:
+            raise ValueError("基础模拟事件为空，无法续推")
+        last_step = max(int(e.get("step") or 0) for e in base_events)
+
+        base_config_path = base.config_path or os.path.join(
+            WORLD_SIM_ROOT, project_id, base.simulation_id, "world_config.json"
+        )
+        if not os.path.exists(base_config_path):
+            raise ValueError("基础模拟缺少世界配置，无法续推")
+        with open(base_config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        sim_id = f"{base.simulation_id}_cont"
+        counter = 2
+        while cls.get_state(sim_id) is not None:
+            sim_id = f"{base.simulation_id}_cont_{counter}"
+            counter += 1
+
+        sim_dir = os.path.join(WORLD_SIM_ROOT, project_id, sim_id)
+        os.makedirs(sim_dir, exist_ok=True)
+
+        new_config = json.loads(json.dumps(config))
+        new_config["world"]["total_steps"] = int(additional_steps)
+        if goal:
+            new_config["world"]["goal"] = str(goal).strip()
+
+        config_path = os.path.join(sim_dir, "world_config.json")
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(new_config, f, ensure_ascii=False, indent=2)
+
+        resume_events_path = os.path.join(sim_dir, "resume_events.json")
+        with open(resume_events_path, "w", encoding="utf-8") as f:
+            json.dump(base_events, f, ensure_ascii=False, indent=2)
+
+        out_events_path = os.path.join(sim_dir, "events.json")
+        state = WorldSimulationState(
+            simulation_id=sim_id,
+            project_id=project_id,
+            status="preparing",
+            config_path=config_path,
+            events_path=out_events_path,
+            created_at=datetime.now().isoformat(timespec="seconds"),
+            updated_at=datetime.now().isoformat(timespec="seconds"),
+        )
+        state.result = {"meta": {"continue_base": base.simulation_id}}
+        with cls._lock:
+            cls._states[sim_id] = state
+        cls._save_state(state)
+
+        def run():
+            try:
+                state.status = "running"
+                state.updated_at = datetime.now().isoformat(timespec="seconds")
+                cls._save_state(state)
+                output = cls._run_simulation_subprocess(
+                    config_path=config_path,
+                    events_path=out_events_path,
+                    ipc_dir=sim_dir,
+                    extra_args=[
+                        "--resume-events", resume_events_path,
+                        "--start-step", str(last_step + 1),
+                    ],
+                )
+                if os.path.exists(out_events_path):
+                    with open(out_events_path, "r", encoding="utf-8") as f:
+                        events = json.load(f)
+                    state.result = {
+                        "event_count": len(events),
+                        "events": events,
+                        "log_tail": output[-2000:],
+                        "meta": {"continue_base": base.simulation_id},
+                    }
+                    state.status = "completed"
+                else:
+                    state.status = "failed"
+                    state.error = f"续推未产出事件文件。输出:\n{output[-2000:]}"
+            except subprocess.TimeoutExpired:
+                state.status = "failed"
+                state.error = "世界模拟续推超时（1 小时）"
+            except Exception as e:
+                logger.error(f"世界模拟续推失败: {e}")
+                state.status = "failed"
+                state.error = str(e)
+            finally:
+                state.updated_at = datetime.now().isoformat(timespec="seconds")
+                cls._save_state(state)
+
+        threading.Thread(target=run, daemon=True).start()
+        return state
+
     # ---------------- 事件回写图谱 ----------------
 
     @classmethod
@@ -986,6 +1098,7 @@ class WorldSimulationService:
         config_path: str,
         events_path: str,
         ipc_dir: Optional[str] = None,
+        extra_args: Optional[List[str]] = None,
     ) -> str:
         """调用 .venv-simulation 子进程跑世界模拟，返回进程日志输出。
 
@@ -998,6 +1111,8 @@ class WorldSimulationService:
         cmd = [sim_python, script, "--config", config_path, "--out", events_path]
         if ipc_dir:
             cmd += ["--ipc-dir", ipc_dir]
+        if extra_args:
+            cmd += extra_args
         logger.info(f"启动世界模拟子进程: {cmd}")
         proc = subprocess.Popen(
             cmd,

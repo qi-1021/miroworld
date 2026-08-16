@@ -198,6 +198,7 @@ class WorldEnv:
         self.time_step_minutes = int(wc.get("time_step_minutes", 60))
         self.total_steps = int(wc.get("total_steps", 10))
         self.current_step = 0
+        self.start_step = 1  # 续推时从历史最后一步的下一步开始
         # 灵活时间模式：
         # - "minutes": 固定每步分钟数（默认，适合舆情/短时推演）
         # - "narrative": 叙事时间跳跃，使用 time_jumps 列表作为每步时间标签
@@ -563,17 +564,36 @@ class WorldEnv:
 
         return "你停下来想了想，暂时没有行动"
 
+    def load_history(self, events: List[Dict[str, Any]], start_step: int = 1):
+        """续推：把历史事件载入环境，作为角色记忆与剧情上下文；从 start_step 继续跑。"""
+        self.events = []
+        for e in events:
+            try:
+                self.events.append(WorldEvent(**e))
+            except Exception:
+                continue
+        self.history = [e.to_text() for e in self.events]
+        self.start_step = max(1, int(start_step))
+        # 固定分钟模式：把时钟拨到历史最后一条事件的时间，保证时间连续
+        if self.time_mode == "minutes" and self.events:
+            last_time = self.events[-1].time
+            try:
+                self.current_time = datetime.strptime(last_time, "%m-%d %H:%M").replace(year=self.current_time.year)
+            except Exception:
+                pass
+
     # ---------- 主循环 ----------
 
     async def run(self, llm_call) -> List[WorldEvent]:
         """运行完整模拟循环。llm_call(text) -> str 是异步 LLM 调用。"""
         # 若绑定了 IPC，标记为运行状态
+        final_step = self.start_step + self.total_steps - 1
         if self.ipc:
             self.ipc.update_status("running")
-            self.ipc.write_progress(0, self.total_steps, "准备开始")
+            self.ipc.write_progress(self.start_step - 1, final_step, "准备开始")
 
         _stopped = False
-        for step in range(1, self.total_steps + 1):
+        for step in range(self.start_step, self.start_step + self.total_steps):
             # 每步开始前处理 IPC 命令
             if await self._process_ipc(llm_call):
                 _stopped = True
@@ -586,7 +606,7 @@ class WorldEnv:
 
             self.current_step = step
             if self.ipc:
-                self.ipc.write_progress(step, self.total_steps, f"第 {step}/{self.total_steps} 步")
+                self.ipc.write_progress(step, final_step, f"第 {step}/{final_step} 步")
             self.advance_clock()
             print(f"\n{'='*56}\n第 {step} 步 · {self.time_str()}\n{'='*56}")
 
@@ -820,12 +840,22 @@ def main():
         "--ipc-dir", default="",
         help="IPC 目录（后端创建的模拟目录，用于 pause/resume/stop/interview；缺省时若配置所在目录已含 ipc_commands 则自动启用）",
     )
+    parser.add_argument("--resume-events", default="", help="续推：历史事件 JSON 文件路径")
+    parser.add_argument("--start-step", type=int, default=1, help="续推起始步号（默认 1）")
     args = parser.parse_args()
 
     with open(args.config, "r", encoding="utf-8") as f:
         config = json.load(f)
 
     env = WorldEnv(config)
+
+    # 续推：载入历史事件，让新推演从历史末尾继续
+    if args.resume_events and os.path.exists(args.resume_events):
+        with open(args.resume_events, "r", encoding="utf-8") as f:
+            history_events = json.load(f)
+        env.load_history(history_events, start_step=args.start_step)
+        print(f"   续推：已载入 {len(history_events)} 条历史事件，从第 {args.start_step} 步继续")
+
     llm_call = create_llm_caller(config)
 
     # 启用 IPC 控制：显式传入 --ipc-dir，或配置所在目录已被后端创建 ipc_commands

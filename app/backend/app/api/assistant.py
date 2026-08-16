@@ -319,6 +319,26 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
         sims = WorldSimulationService.list_simulations(project_id, limit=int(params.get("limit", 20) or 20))
         return {"simulations": sims}
 
+    if action == "continue_world_simulation":
+        from ..services.world_simulation import WorldSimulationService
+        base_id = str(params.get("simulation_id") or params.get("base_simulation_id") or "").strip()
+        if not base_id:
+            raise ValueError("continue_world_simulation 需要 simulation_id")
+        try:
+            additional_steps = int(params.get("additional_steps", 3) or 3)
+        except (TypeError, ValueError):
+            additional_steps = 3
+        state = WorldSimulationService.continue_simulation(
+            base_id,
+            additional_steps=additional_steps,
+            goal=str(params.get("goal") or "").strip() or None,
+        )
+        return {
+            "simulation_id": state.simulation_id,
+            "status": state.status,
+            "continue_base": base_id,
+        }
+
     if action == "list_world_tree":
         from ..services.world_simulation import WorldSimulationService
         sims = WorldSimulationService.list_simulations(project_id, limit=100)
@@ -366,6 +386,7 @@ _SYSTEM_PROMPT = (
     "generate_final_report(regenerate)、"
     "list_simulations(limit)、"
     "list_world_tree()、"
+    "continue_world_simulation(simulation_id, additional_steps, goal)、"
     "get_project_status()。"
     "否则输出普通中文回答，简洁、分点，不超过 400 字。"
 )

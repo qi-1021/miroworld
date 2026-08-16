@@ -637,6 +637,7 @@
               <span class="badge" :class="root.status">{{ statusLabel(root.status) }}</span>
               <span class="tree-node-count">{{ $t('world.eventCount', { count: (root.result || {}).event_count || 0 }) }}</span>
               <button class="mini-btn ghost" @click="loadSimulation(root)">{{ $t('world.loadSimulation') }}</button>
+              <button class="mini-btn" :disabled="simStarting" @click="continueSimulation(root)">{{ $t('world.continueSimulation') }}</button>
               <button v-if="root.status === 'completed' && !((root.result || {}).meta || {}).whatif_question" class="mini-btn" @click="startWhatIf(root)">{{ $t('world.whatifBtn') }}</button>
             </div>
             <div v-for="child in root.children" :key="child.simulation_id" class="tree-node child">
@@ -646,6 +647,7 @@
                 <span class="badge" :class="child.status">{{ statusLabel(child.status) }}</span>
                 <span class="tree-node-count">{{ $t('world.eventCount', { count: (child.result || {}).event_count || 0 }) }}</span>
                 <button class="mini-btn ghost" @click="loadSimulation(child)">{{ $t('world.loadSimulation') }}</button>
+                <button class="mini-btn" :disabled="simStarting" @click="continueSimulation(child)">{{ $t('world.continueSimulation') }}</button>
               </div>
             </div>
           </div>
@@ -675,6 +677,7 @@
               <span class="sim-history-count">{{ $t('world.eventCount', { count: (h.result || {}).event_count || 0 }) }}</span>
               <span v-if="(h.result || {}).meta && (h.result || {}).meta.whatif_question" class="sim-history-flag">{{ $t('world.whatifFlag') }}</span>
               <button class="mini-btn ghost" @click="loadSimulation(h)">{{ $t('world.loadSimulation') }}</button>
+              <button class="mini-btn" :disabled="simStarting" @click="continueSimulation(h)">{{ $t('world.continueSimulation') }}</button>
               <template v-if="h.status === 'completed' && !((h.result || {}).meta || {}).whatif_question">
                 <button class="mini-btn" :disabled="whatIfing === h.simulation_id" @click="startWhatIf(h)">
                   <span v-if="whatIfing === h.simulation_id" class="spinner-xs"></span>
@@ -2011,6 +2014,26 @@ async function openCompare() {
     compareData.value = []
     simMsg.value = e?.message || t('world.msgUnknownError')
     simMsgError.value = true
+  }
+}
+
+async function continueSimulation(sim) {
+  if (simStarting.value) return
+  simStarting.value = true
+  try {
+    const res = await runAssistantAction(projectId, 'continue_world_simulation', {
+      simulation_id: sim.simulation_id,
+      additional_steps: 3,
+    })
+    const actionResult = res?.data?.action_result || {}
+    simMsg.value = t('world.msgSimContinueStarted', { id: actionResult.simulation_id || sim.simulation_id })
+    simMsgError.value = false
+    loadSimHistory()
+  } catch (e) {
+    simMsg.value = e?.message || t('world.msgUnknownError')
+    simMsgError.value = true
+  } finally {
+    simStarting.value = false
   }
 }
 
