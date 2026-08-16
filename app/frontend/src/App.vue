@@ -14,6 +14,28 @@
     @close="modelSettingsOpen = false"
     @updated="handleModelUpdate"
   />
+  <!--
+    MiroFish 液态玻璃 SVG 滤镜定义（隐藏，供 CSS 通过 url(#...) 引用）。
+    以 GitHub nikdelvin/liquid-glass（纯 CSS+SVG 复刻 Apple iOS 26 Liquid Glass）为蓝本：
+      - #lg-morph  ：feTurbulence 位移扰动，还原玻璃表面的"液态折射"边缘。
+      - #lg-gloss  ：feSpecularLighting 镜面高光，还原玻璃光泽。
+    纯 CSS + 内联 SVG，无 npm 依赖、无 WebGL。
+  -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <filter id="lg-morph" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.012 0.018" numOctaves="2" seed="7" result="noise"/>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="14" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+      <filter id="lg-gloss" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+        <feGaussianBlur stdDeviation="2.2" result="blur"/>
+        <feSpecularLighting in="blur" specularConstant="0.75" specularExponent="24" surfaceScale="3" lighting-color="#ffffff" result="spec">
+          <fePointLight x="30%" y="-20%" z="220"/>
+        </feSpecularLighting>
+        <feComposite in="spec" in2="SourceAlpha" operator="in"/>
+      </filter>
+    </defs>
+  </svg>
 </template>
 
 <script setup>
@@ -120,10 +142,11 @@ onUnmounted(() => {
 
 <style>
 /* ============================================================
-   MiroFish 全站视觉重做（frontend-dev）
-   设计语言：LGGC 纯 CSS 液态玻璃 + 柔和渐变光底 + 柑橘强调色
-   - glass 由 LGGC（.lggc / 其 CSS 变量）驱动，纯 CSS，无 WebGL
-   - 强调色保留柑橘色 #a1c50a（用户指定）
+   MiroFish 全站视觉（frontend-dev）
+   设计语言：LGGC 液态玻璃升级版（蓝本 nikdelvin/liquid-glass 纯 CSS+SVG）
+   - 保持 #f5f5f7 浅画布 + 柑橘强调色 #a1c50a
+   - glass 纯 CSS + 内联 SVG 滤镜（#lg-morph 位移扰动 / #lg-gloss 镜面高光）
+   - 无 npm 依赖、无 WebGL、无彩色光晕
    ============================================================ */
 
 /* 全局样式重置 */
@@ -175,50 +198,82 @@ html, body {
 button { font-family: inherit; }
 
 /* ============================================================
-   LGGC 液态玻璃通用卡片：
-   全站 .liquid-glass 卡片改用 LGGC（纯 CSS）效果。
-   通过 LGGC 变量微调圆角/底色/模糊，让既有 class 自动升级为液态玻璃。
+   LGGC 液态玻璃通用卡片（终极升级版）
+   蓝本：GitHub nikdelvin/liquid-glass（纯 CSS+SVG 复刻 Apple iOS 26 Liquid Glass）
+   三层液态结构：
+     layer 1 ::before —— 顶部液态折光带（filter:url(#lg-morph) 位移扰动，边缘像水波）
+     layer 2 ::after  —— 镜面高光（filter:url(#lg-gloss) 模拟玻璃光泽的反光）
+     backdrop-filter —— 磨砂透模糊 + 提亮 + 增饱和，透出 #f5f5f7 画布
+   保持 .liquid-glass / 手机端降级接口不变，自动覆盖全站卡片。
    ============================================================ */
 .liquid-glass {
   --lggc-radius: 22px;
   --lggc-padding: 1.5rem 1.75rem;
-  --lggc-bg: rgba(255, 255, 255, 0.5);  /* 真正通透玻璃：0.45~0.55 */
-  --lggc-border: rgba(255, 255, 255, 0.9);
+  --lggc-bg: rgba(255, 255, 255, 0.5);  /* 0.45~0.55 真正通透玻璃 */
+  --lggc-border: rgba(255, 255, 255, 0.92);
   --lggc-blur: 16px;
   --lggc-highlight: rgba(255, 255, 255, 1);
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.9);
+  isolation: isolate;
+  border: 1px solid rgba(255, 255, 255, 0.92);
   border-radius: var(--lggc-radius);
-  background: var(--lggc-bg);
+  background:
+    radial-gradient(120% 140% at 18% -12%, rgba(255, 255, 255, 0.62), transparent 46%),
+    var(--lggc-bg);
   color: var(--mf-ink);
-  backdrop-filter: blur(calc(var(--lggc-blur) * 0.5)) saturate(180%);
-  -webkit-backdrop-filter: blur(calc(var(--lggc-blur) * 0.5)) saturate(180%);
+  backdrop-filter: blur(calc(var(--lggc-blur) * 0.55)) saturate(180%) brightness(1.06);
+  -webkit-backdrop-filter: blur(calc(var(--lggc-blur) * 0.55)) saturate(180%) brightness(1.06);
   box-shadow:
-    0 0 0 1px rgba(16, 32, 58, 0.09),
-    0 22px 44px rgba(16, 32, 58, 0.16),
-    0 6px 16px rgba(16, 32, 58, 0.10),
-    inset 2px -2px 1px -1px rgba(255, 255, 255, 1),
-    inset -2px 2px 1px -1px rgba(255, 255, 255, 1);
-  transition: box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
+    /* 玻璃投影：轻微冷灰、柔和 */
+    0 0 0 1px rgba(16, 32, 58, 0.07),
+    0 24px 48px rgba(16, 32, 58, 0.14),
+    0 8px 18px rgba(16, 32, 58, 0.08),
+    /* 液态内缘：上下亮沿 + 侧向暗沿，模拟玻璃厚度与折射 */
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.55),
+    inset 1px 0 0 rgba(255, 255, 255, 0.45),
+    inset -1px 0 0 rgba(255, 255, 255, 0.45);
+  transition: box-shadow 0.25s ease, transform 0.25s ease, background 0.25s ease;
 }
+/* 顶部液态折光带：位移扰动让玻璃上沿像水波一样折射 */
 .liquid-glass::before {
   content: '';
   position: absolute;
-  top: 0; left: 8%; right: 8%;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 1), transparent);
+  top: -1px; left: 6%; right: 6%;
+  height: 3px;
+  border-radius: var(--lggc-radius);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.98) 18%, rgba(255, 255, 255, 0.75) 50%, rgba(255, 255, 255, 0.98) 82%, transparent);
+  filter: url(#lg-morph);
+  -webkit-filter: url(#lg-morph);
+  opacity: 0.9;
   pointer-events: none;
+  z-index: 1;
+}
+/* 镜面高光：左上部一片柔和反光，还原玻璃光泽 */
+.liquid-glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
   border-radius: inherit;
+  background:
+    linear-gradient(148deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 34%),
+    radial-gradient(90% 70% at 30% 0%, rgba(255, 255, 255, 0.28), transparent 62%);
+  filter: url(#lg-gloss);
+  -webkit-filter: url(#lg-gloss);
+  mix-blend-mode: screen;
+  pointer-events: none;
   z-index: 1;
 }
 .liquid-glass:hover {
-  background: rgba(255, 255, 255, 0.55);
+  background:
+    radial-gradient(120% 140% at 18% -12%, rgba(255, 255, 255, 0.68), transparent 46%),
+    rgba(255, 255, 255, 0.55);
   box-shadow:
-    0 0 0 1px rgba(16, 32, 58, 0.10),
-    0 30px 56px rgba(16, 32, 58, 0.20),
-    0 8px 20px rgba(16, 32, 58, 0.12),
-    inset 2px -2px 1px -1px rgba(255, 255, 255, 1),
-    inset -2px 2px 1px -1px rgba(255, 255, 255, 1);
+    0 0 0 1px rgba(16, 32, 58, 0.08),
+    0 32px 60px rgba(16, 32, 58, 0.18),
+    0 12px 24px rgba(16, 32, 58, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.6);
   transform: translateY(-2px);
 }
 
@@ -233,8 +288,8 @@ input[type="email"], input[type="search"] {
 
 
 /* ------- 控件玻璃化（按钮 / 输入框 / 下拉 / 文本域） -------
-   给主要控件加半透明背景 + 细亮边框 + 轻 backdrop-filter，
-   与 LGGC 液态玻璃卡片保持同一通透质感。文字保持深色高对比以保证可读。 */
+   与升级后的液态玻璃卡片同一通透质感：磨砂模糊 + 提亮 + 液态内缘高光。
+   文字保持深色高对比以保证可读。 */
 .liquid-glass button,
 .liquid-glass input,
 .liquid-glass select,
@@ -243,9 +298,12 @@ input[type="email"], input[type="search"] {
 .liquid-glass .upload-zone,
 .liquid-glass .mode-tab,
 .liquid-glass .media-toggle {
-  backdrop-filter: saturate(160%) blur(8px);
-  -webkit-backdrop-filter: saturate(160%) blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(10px) saturate(170%) brightness(1.05);
+  -webkit-backdrop-filter: blur(10px) saturate(170%) brightness(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.35);
 }
 .liquid-glass .btn,
 .liquid-glass .upload-zone,
@@ -253,15 +311,18 @@ input[type="email"], input[type="search"] {
 .liquid-glass input[type="text"],
 .liquid-glass textarea {
   background: rgba(255, 255, 255, 0.30);
-  border: 1px solid rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.65);
 }
 .liquid-glass .btn-primary {
-  background: rgba(161, 197, 10, 0.78);
+  background: rgba(161, 197, 10, 0.86);
   color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow:
+    0 6px 16px rgba(161, 197, 10, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 .liquid-glass .btn-primary:hover:not(:disabled) {
-  background: rgba(143, 174, 9, 0.88);
+  background: rgba(143, 174, 9, 0.94);
 }
 
 /* 世界设定页 step-card / sim 控件、时间线控件的玻璃降级 */
@@ -275,8 +336,8 @@ input[type="email"], input[type="search"] {
 .type-chip,
 .future-input,
 .tl-edit-input {
-  backdrop-filter: saturate(160%) blur(8px);
-  -webkit-backdrop-filter: saturate(160%) blur(8px);
+  backdrop-filter: blur(9px) saturate(165%) brightness(1.05);
+  -webkit-backdrop-filter: blur(9px) saturate(165%) brightness(1.05);
 }
 .step-card .sim-input,
 .step-card .sim-goal-input,
@@ -285,7 +346,8 @@ input[type="email"], input[type="search"] {
 .step-card .justify-input,
 .step-card .assistant-input {
   background: rgba(255, 255, 255, 0.34);
-  border: 1px solid rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 /* ================= 手机端响应式（全局，覆盖所有页面） ================= */
