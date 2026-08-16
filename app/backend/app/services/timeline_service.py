@@ -1746,45 +1746,99 @@ def _extract_task_body(project_id: str, source: str, task_id: str, resume: bool 
             logger.warning(f"构造 LLM 客户端失败，全部走启发式: {e}")
             _task_log(task_id, "LLM 客户端不可用，改用启发式抽取")
 
-        # 第一遍：背景文本先识别时间线线索（线程），供逐块抽取归类
+        # 第一遍：背景文本先识别时间线线索（线程），供逐块抽取归类。
+        # resume=True 时优先复用已保存的 threads 缓存，跳过重复 LLM 识别；
+        # 仅当尚未保存过（首跑/上次没存上）才走 LLM 识别。
         thread_hint = ""
         if source == "bg" and llm is not None:
-            try:
-                _task_log(task_id, "识别背景时间线线索（第一遍）...")
-                _update(stage="识别线索", progress=2)
-                threads = _identify_threads(llm, text)
-                if threads:
-                    threads = _dedupe_threads(threads)
-                    save_threads(project_id, threads)
+            if resume:
+                saved_threads = load_threads(project_id)
+                if saved_threads:
+                    threads = saved_threads
                     thread_hint = _thread_hint_block(threads)
-                    _task_log(task_id, f"识别到 {len(threads)} 条时间线线索")
+                    _task_log(task_id, f"断点复用已保存线索 {len(threads)} 条（跳过 LLM 识别）")
                 else:
-                    _task_log(task_id, "未识别到独立线索，按单线抽取")
-            except Exception as e:
-                logger.warning(f"[{task_id}] 背景线索识别失败，继续普通抽取: {e}")
-                _task_log(task_id, "线索识别失败，继续普通抽取")
+                    try:
+                        _task_log(task_id, "识别背景时间线线索（第一遍续跑）...")
+                        _update(stage="识别线索", progress=2)
+                        threads = _identify_threads(llm, text)
+                        if threads:
+                            threads = _dedupe_threads(threads)
+                            save_threads(project_id, threads)
+                            thread_hint = _thread_hint_block(threads)
+                            _task_log(task_id, f"识别到 {len(threads)} 条时间线线索")
+                        else:
+                            _task_log(task_id, "未识别到独立线索，按单线抽取")
+                    except Exception as e:
+                        logger.warning(f"[{task_id}] 背景线索识别失败，继续普通抽取: {e}")
+                        _task_log(task_id, "线索识别失败，继续普通抽取")
+            else:
+                try:
+                    _task_log(task_id, "识别背景时间线线索（第一遍）...")
+                    _update(stage="识别线索", progress=2)
+                    threads = _identify_threads(llm, text)
+                    if threads:
+                        threads = _dedupe_threads(threads)
+                        save_threads(project_id, threads)
+                        thread_hint = _thread_hint_block(threads)
+                        _task_log(task_id, f"识别到 {len(threads)} 条时间线线索")
+                    else:
+                        _task_log(task_id, "未识别到独立线索，按单线抽取")
+                except Exception as e:
+                    logger.warning(f"[{task_id}] 背景线索识别失败，继续普通抽取: {e}")
+                    _task_log(task_id, "线索识别失败，继续普通抽取")
 
         # 结构类型判断：抽取前先判断整体是单线/并行/树状/网状/元叙事/混合，
         # 再按类型注入抽取策略（复杂多线/嵌套时提示词更聚焦，减少不当线程与乱排）。
+        # resume=True 时复用已保存的 structure 缓存，跳过重复 LLM 识别。
         structure_hint = ""
         if llm is not None:
-            try:
-                _task_log(task_id, "判断时间线结构类型...")
-                _update(stage="判断结构", progress=1)
-                structure = detect_structure_type(llm, text)
-                if structure:
-                    save_structure(project_id, structure)
+            if resume:
+                saved_structure = load_structure(project_id)
+                if saved_structure and saved_structure.get("type"):
+                    structure = saved_structure
                     structure_hint = structure_hint_block(structure)
                     _task_log(
                         task_id,
-                        f"时间线结构：{_STRUCTURE_LABELS.get(structure.get('type'), structure.get('type'))}"
-                        f"（置信度 {structure.get('confidence') or '未知'}）",
+                        f"断点复用已保存结构：{_STRUCTURE_LABELS.get(structure.get('type'), structure.get('type'))}"
+                        f"（跳过 LLM 识别）",
                     )
                 else:
-                    _task_log(task_id, "结构判断不可用，使用默认抽取策略")
-            except Exception as e:
-                logger.warning(f"[{task_id}] 结构判断失败，使用默认策略: {e}")
-                _task_log(task_id, "结构判断失败，使用默认策略")
+                    try:
+                        _task_log(task_id, "判断时间线结构类型（续跑）...")
+                        _update(stage="判断结构", progress=1)
+                        structure = detect_structure_type(llm, text)
+                        if structure:
+                            save_structure(project_id, structure)
+                            structure_hint = structure_hint_block(structure)
+                            _task_log(
+                                task_id,
+                                f"时间线结构：{_STRUCTURE_LABELS.get(structure.get('type'), structure.get('type'))}"
+                                f"（置信度 {structure.get('confidence') or '未知'}）",
+                            )
+                        else:
+                            _task_log(task_id, "结构判断不可用，使用默认抽取策略")
+                    except Exception as e:
+                        logger.warning(f"[{task_id}] 结构判断失败，使用默认策略: {e}")
+                        _task_log(task_id, "结构判断失败，使用默认策略")
+            else:
+                try:
+                    _task_log(task_id, "判断时间线结构类型...")
+                    _update(stage="判断结构", progress=1)
+                    structure = detect_structure_type(llm, text)
+                    if structure:
+                        save_structure(project_id, structure)
+                        structure_hint = structure_hint_block(structure)
+                        _task_log(
+                            task_id,
+                            f"时间线结构：{_STRUCTURE_LABELS.get(structure.get('type'), structure.get('type'))}"
+                            f"（置信度 {structure.get('confidence') or '未知'}）",
+                        )
+                    else:
+                        _task_log(task_id, "结构判断不可用，使用默认抽取策略")
+                except Exception as e:
+                    logger.warning(f"[{task_id}] 结构判断失败，使用默认策略: {e}")
+                    _task_log(task_id, "结构判断失败，使用默认策略")
 
         # ---------- 断点续跑 ----------
         progress_by_index: Dict[int, Dict[str, Any]] = {}

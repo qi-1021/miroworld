@@ -54,7 +54,9 @@ class Config:
 
     # Flask配置
     SECRET_KEY = os.environ.get('SECRET_KEY', 'mirofish-secret-key')
-    DEBUG = os.environ.get('FLASK_DEBUG', 'True').lower() == 'true'
+    # 默认关 DEBUG（禁用 Flask 自动重载），避免开发期改代码触发 worker 重启，
+    # 把跑到一半的长任务（建图/时间线抽取）杀掉；需要时可 FLASK_DEBUG=true 显式开启。
+    DEBUG = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
 
     # JSON配置 - 禁用ASCII转义，让中文直接显示（而不是 \uXXXX 格式）
     JSON_AS_ASCII = False
