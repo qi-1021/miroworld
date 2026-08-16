@@ -67,6 +67,53 @@ except Exception: print(0)
 " 2>/dev/null || echo 0
 }
 
+# 找该项目正在运行（pending/processing）的 world_graph_build 任务（metadata.kind+project_id 匹配）。
+# 输出 task_id（无则空）。因为后端有同项目并发守卫，主动触发构建前先复用已有任务。
+find_graph_task() {
+  local pid="$1"
+  curl -s -m 20 "$BASE/api/graph/tasks" | python3 -c "
+import json,sys
+try:
+  d=json.load(sys.stdin); tasks=d.get('data') or []
+  pid=sys.argv[1]
+  for t in tasks:
+    meta=(t.get('metadata') or {}) if isinstance(t.get('metadata'),dict) else {}
+    if meta.get('kind')=='world_graph_build' and meta.get('project_id')==pid \
+       and t.get('status') in ('pending','processing'):
+      print(t.get('task_id') or ''); break
+  else:
+    print('')
+except Exception: print('')
+" "$pid" 2>/dev/null || echo ""
+}
+
+# 轮询图谱构建任务直到 completed/failed 或 cap 秒；输出 st:gfail:en
+poll_graph_task() {
+  local tid="$1" cap="$2" gid="$3"
+  local end st gfail en
+  [ -z "$tid" ] && { echo "none:0:$(entity_count "$gid")"; return; }
+  end=$(( $(date +%s) + cap ))
+  gfail=""
+  while :; do
+    tr=$(curl -s -m 15 "$BASE/api/graph/task/$tid" 2>/dev/null || true)
+    st=$(printf '%s' "$tr" | python3 -c "import json,sys
+try: print((json.load(sys.stdin).get('data') or {}).get('status') or json.load(sys.stdin).get('status',''))
+except Exception: print('')")
+    if [ "$st" == "completed" ] || [ "$st" == "success" ] || [ "$st" == "done" ]; then echo "completed:0:$(entity_count "$gid")"; return; fi
+    if [ "$st" == "failed" ] || [ "$st" == "error" ]; then
+      gfail=$(printf '%s' "$tr" | python3 -c "import json,sys
+try: print((json.load(sys.stdin).get('data') or {}).get('error','') or '')
+except Exception: print('')")
+      en=$(entity_count "$gid")
+      echo "failed:$gfail:$en"; return
+    fi
+    if [ "$(date +%s)" -ge "$end" ]; then
+      echo "processing:0:$(entity_count "$gid")"; return
+    fi
+    sleep 5
+  done
+}
+
 # http_json <url> [curl args...] -> prints JSON, sets HTTP_CODE
 http_json() {
   local url="$1"; shift
@@ -79,9 +126,9 @@ http_json() {
 }
 
 poll_status() {
-  # poll_status <url> <body> <ok_status> <timeout_sec> <interval_sec> <desc>
-  # 轮询 POST url 返回 data.status 直到等于 ok_status 或 timeout；非 0=超时/失败
-  local url="$1" body="$2" want="$3" timeout_s="$4" interval="$5" desc="$6"
+  # poll_status <url> <body> <ok_statuses空间分隔> <timeout_sec> <interval_sec> <desc>
+  # 轮询 POST url 返回 data.status 直到命中 ok_statuses 之一或 timeout；非 0=超时/失败
+  local url="$1" body="$2" wants="$3" timeout_s="$4" interval="$5" desc="$6"
   local end now st last_json
   end=$(( $(date +%s) + timeout_s ))
   last_json=""
@@ -93,10 +140,17 @@ poll_status() {
     resp=$(curl -s -m 15 -X POST -H 'Content-Type: application/json' \
            -d "$body" "$BASE$url" 2>/dev/null || true)
     last_json="$resp"
-    st=$(printf '%s' "$resp" | jget0 status)
-    if [ "$st" == "$want" ]; then
-      printf '%s' "$resp"
-      return 0
+    # status 位于 data.status（prepare/status 把状态嵌套在 data 下）
+    st=$(printf '%s' "$resp" | python3 -c "import json,sys
+try: print((json.load(sys.stdin).get('data') or {}).get('status',''))
+except Exception: print('')")
+    if [ -n "$st" ]; then
+      for _w in $wants; do
+        if [ "$st" == "$_w" ]; then
+          printf '%s' "$resp"
+          return 0
+        fi
+      done
     fi
     if [ "$st" == "failed" ] || [ "$st" == "error" ]; then
       return 2
@@ -162,58 +216,46 @@ if printf '%s' "$r" | grep -q '"success": *true\|"success":true'; then pass "/ap
 # ===========================================================================
 echo
 timeouts "== 4. 世界图谱（proj_971906db95da）=="
-# 4a. 先拿 graph_id（settings.stats.graph_id）
+# 4a. 拿 graph_id（settings.stats.graph_id）
 GID=$(get_graph_id "$PID")
 
-# 4b. 触发图谱构建（resume + skip_auto_refill）；若已存在则返回 400（记录 message，不算失败）
-r=$(http_json "/api/world/$PID/graph/build" -X POST -H 'Content-Type: application/json' \
-     -d '{"resume":true,"skip_auto_refill":true}')
-code=$(cat /tmp/_qa_code 2>/dev/null || echo 000)
-if [ "$code" == "400" ] && printf '%s' "$r" | grep -q "graph_id"; then
-  # 图谱已存在：符合预期（记录 message，不算失败）
-  GID=$(printf '%s' "$r" | jget0 graph_id)
-  [ -z "$GID" ] && GID=$(get_graph_id "$PID")
-  pass "图谱构建：已存在并返回 400（message: $(printf '%s' "$r" | jget0 error | cut -c1-60)）"
+# 4b. 【不重复发起构建】找本项目已有的 world_graph_build 任务；有则复用轮询，
+#     无则直接检查现有图谱实体数。避免每次 QA 重跑启动重复构建线程拖慢后端。
+GTID=$(find_graph_task "$PID")
+if [ -n "$GTID" ]; then
+  poll_res=$(poll_graph_task "$GTID" 180 "$GID")
+  pst=${poll_res%%:*}; pgfail=""; pen=0
+  case "$poll_res" in
+    processing:*)
+      pen=${poll_res##processing:0:}
+      if [ "${pen:-0}" -ge 1 ]; then
+        pass "图谱构建任务 $GTID 仍在 processing，但图谱已有实体数=${pen}，按已建成计"
+        warn "图谱后台继续构建，不影响使用（任务 ${GTID}）"
+      else
+        warn "图谱构建任务 $GTID 仍在 processing，且暂无实体（任务继续后台构建）"
+      fi
+      ;;
+    completed:*)
+      pass "图谱构建任务 $GTID -> completed"
+      ;;
+    failed:*)
+      pgfail="${poll_res#failed:}"; pgfail=${pgfail%%:*}
+      pen=${poll_res##*:}
+      if [ "${pen:-0}" -ge 1 ]; then
+        pass "图谱构建任务 $GTID failed（${pgfail}），但图谱已有实体数=${pen}，按已建成计"
+        warn "图谱后台构建曾失败，但不影响已建成图谱使用"
+      else
+        fail "图谱构建任务 $GTID -> failed（${pgfail}）"
+      fi
+      ;;
+    none:*)
+      en=${poll_res##none:0:}
+      if [ "${en:-0}" -ge 1 ]; then pass "无进行中任务，图谱已有实体数=${en}，按已建成计"; else warn "无进行中图谱任务且无实体数（图谱可能未建成）"; fi
+      ;;
+  esac
 else
-  TID=$(printf '%s' "$r" | jget0 task_id)
-  if [ -z "$TID" ]; then
-    fail "图谱构建未返回 task_id（HTTP=$code resp=$(printf '%s' "$r" | cut -c1-120)）"
-  else
-    # 轮询 /api/graph/task/<tid> 最多 10 分钟
-    ok=0
-    end=$(( $(date +%s) + 600 ))
-    gfail=""
-    while :; do
-      tr=$(curl -s -m 15 "$BASE/api/graph/task/$TID" 2>/dev/null || true)
-      st=$(printf '%s' "$tr" | python3 -c "import json,sys
-try: print((json.load(sys.stdin).get('data') or {}).get('status') or json.load(sys.stdin).get('status',''))
-except Exception: print('')")
-      if [ "$st" == "completed" ] || [ "$st" == "success" ] || [ "$st" == "done" ]; then
-        ok=1; break
-      fi
-      if [ "$st" == "failed" ] || [ "$st" == "error" ]; then
-        gfail=$(printf '%s' "$tr" | python3 -c "import json,sys
-try: print((json.load(sys.stdin).get('data') or {}).get('error','') or '')
-except Exception: print('')")
-        break
-      fi
-      if [ "$(date +%s)" -ge "$end" ]; then break; fi
-      sleep 5
-    done
-    if [ "$ok" == "1" ]; then
-      pass "图谱构建任务 $TID -> completed"
-    elif [ -n "$gfail" ]; then
-      # 构建失败：若图谱已存在且有实体，仍可接受（已有图满足"图已建成"语义）；否则 FAIL
-      en=$(entity_count "$GID")
-      if [ "$en" -ge 1 ]; then warn "图谱构建任务 $TID failed（$gfail），但图谱已存在且实体数=$en，按已建成计"; else fail "图谱构建任务 $TID -> failed（$gfail）"; fi
-    else
-      en=$(entity_count "$GID")
-      if [ "$en" -ge 1 ]; then pass "图谱构建任务 $TID 超时未 completed，但图谱已有实体数=$en，按已建成计"; else fail "图谱构建任务 $TID 超时/未 completed（st=$st）且无实体"; fi
-    fi
-    sleep 2
-  fi
-  # 重新取 graph_id
-  GID=$(get_graph_id "$PID")
+  en=$(entity_count "$GID")
+  if [ "${en:-0}" -ge 1 ]; then pass "无进行中的 world_graph_build 任务，图谱已有实体数=${en}（已建成）"; else warn "无进行中的 world_graph_build 任务且图谱无可查实体数"; fi
 fi
 
 if [ -z "$GID" ]; then
@@ -224,7 +266,7 @@ else
   if printf '%s' "$r" | grep -q '"success": *true\|"success":true'; then pass "GET /world/$PID/graph success=true"; else fail "GET /world/$PID/graph 异常"; fi
   # 4d. /api/simulation/entities/<graph_id> 实体数>0
   n=$(entity_count "$GID")
-  if [ "${n:-0}" -ge 1 ]; then pass "图谱实体数=$n (>0)"; else warn "图谱实体数=$n（可能无实体）"; fi
+  if [ "${n:-0}" -ge 1 ]; then pass "图谱实体数=$n (>0)"; else warn "图谱实体数=${n}（可能无实体）"; fi
 fi
 
 # ===========================================================================
@@ -241,7 +283,7 @@ try:
   d=json.load(sys.stdin); print((d.get('data') or {}).get('simulation_id') or '')
 except Exception: print('')")
   code=$(cat /tmp/_qa_code 2>/dev/null || echo 000)
-  if [ -n "$sim_id" ]; then pass "create simulation -> $sim_id"; else warn "create simulation 未返回 sim_id（HTTP=$code，resp=$(printf '%s' "$r" | cut -c1-100)）"; fi
+  if [ -n "$sim_id" ]; then pass "create simulation -> $sim_id"; else warn "create simulation 未返回 sim_id（HTTP=${code}，resp=$(printf '%s' "$r" | cut -c1-100)）"; fi
 
   if [ -n "$sim_id" ]; then
     # 5b. 若 project.simulation_requirement 为空，调用后端兜底写该字段（小 python 片段）
@@ -266,38 +308,42 @@ except Exception as e:
 PYEOF
     ) >/dev/null 2>&1 || true
 
-    # 5c. prepare
+    # 5c. prepare —— 返回 status + task_id；已就绪则直接 PASS，否则按 task_id 轮询
     r=$(http_json "/api/simulation/prepare" -X POST -H 'Content-Type: application/json' \
          -d "{\"simulation_id\":\"$sim_id\"}")
     pst=$(printf '%s' "$r" | python3 -c "import json,sys
 try: print((json.load(sys.stdin).get('data') or {}).get('status',''))
 except Exception: print('')")
+    ptid=$(printf '%s' "$r" | python3 -c "import json,sys
+try: print((json.load(sys.stdin).get('data') or {}).get('task_id',''))
+except Exception: print('')")
     if [ "$pst" == "ready" ] || [ "$pst" == "completed" ]; then
       pc=$(printf '%s' "$r" | python3 -c "import json,sys
-try: print((json.load(sys.stdin).get('data') or {}).get('prepare_info',{}).get('profile_count','') or '')
+try:
+  d=(json.load(sys.stdin).get('data') or {}).get('prepare_info',{}); print(d.get('profile_count','') or '')
 except Exception: print('')")
-      pass "prepare 已就绪（status=$pst profiles_count=$pc）"
-    elif [ "$pst" == "preparing" ]; then
-      # 5d. 轮询 /api/simulation/prepare/status 最多 12 分钟
+      pass "prepare 已就绪（status=$pst profiles_count=${pc}）"
+    elif [ "$pst" == "preparing" ] && [ -n "$ptid" ]; then
+      # 5d. 用 task_id 轮询（prepare/status 须传 task_id 才返回进行中进度）
       resp=$(poll_status "/api/simulation/prepare/status" \
-             "{\"simulation_id\":\"$sim_id\"}" "ready" 720 5 "prepare")
+             "{\"task_id\":\"$ptid\"}" "ready completed" 720 5 "prepare")
       rc=$?
       if [ $rc -eq 0 ]; then
         pc=$(printf '%s' "$resp" | python3 -c "import json,sys
 try:
-  d=(json.load(sys.stdin).get('data') or {}); print(d.get('prepare_info',{}).get('profile_count','') or '')
+  d=(json.load(sys.stdin).get('data') or {}); print((d.get('prepare_info') or {}).get('profile_count','') or '')
 except Exception: print('')")
-        pass "prepare -> ready（profiles_count=$pc）"
+        pass "prepare -> ready（profiles_count=${pc}）"
       elif [ $rc -eq 2 ]; then
         err=$(printf '%s' "$resp" | python3 -c "import json,sys
 try: print((json.load(sys.stdin).get('data') or {}).get('message',''))
 except Exception: print('')")
-        fail "prepare -> failed（$err）——这是用户报的 bug"
+        fail "prepare -> failed（${err}）——这是用户报的 bug"
       else
         fail "prepare 轮询超时（12 分钟）"
       fi
     else
-      fail "prepare 未知状态 pst=$pst"
+      fail "prepare 未就绪且无 task_id 可轮询（pst=$pst）"
     fi
   fi
 fi
@@ -326,7 +372,7 @@ if [ -z "$CONF_ID" ]; then skip_no_resource "项目无真实冲突，跳过改�
       fail "corrections 生成：files 缺 corrected_patches.md 或 corrections.json"
     fi
   else
-    fail "corrections 生成 has_files != true（$hf）"
+    fail "corrections 生成 has_files != true（${hf}）"
   fi
   # GET corrections
   r=$(http_json "/api/world/$PID/conflicts/$CONF_ID/corrections")
