@@ -1066,14 +1066,20 @@
     "batchConflictResult": "Processed {done}, {failed} failed"
   },
   "assistant": {
-    "open": "Assistant",
-    "title": "Built-in Project Assistant",
-    "hint": "I read the current project's timeline, settings, conflicts and graph to help you decide which section to edit and how.",
+    "open": "Agent",
+    "title": "Miro World Agent",
+    "hint": "I read the current project's timeline, settings, conflicts and graph to help you decide what to do next, and I can execute actions directly.",
     "placeholder": "e.g. The ending of my timeline seems to be in a different world from the earlier parts—how should I handle it?",
-    "ask": "Ask",
+    "ask": "Run Agent",
     "asking": "Thinking...",
-    "emptyAnswer": "Assistant returned an empty answer. Please retry.",
-    "failed": "Assistant call failed"
+    "executing": "Agent is working, please wait…",
+    "emptyAnswer": "Agent returned an empty answer. Please retry.",
+    "failed": "Agent call failed",
+    "quickStatus": "Check Project",
+    "quickSim": "Start World Sim",
+    "quickCharacters": "Generate Characters",
+    "quickReport": "Generate Final Report",
+    "quickExport": "Export Snapshot"
   },
   "timeline": {
     "tab": "Timeline",

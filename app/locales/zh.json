@@ -1066,14 +1066,20 @@
     "batchConflictResult": "已处理 {done} 个，失败 {failed} 个"
   },
   "assistant": {
-    "open": "助手",
-    "title": "内置项目助手",
-    "hint": "我会读取当前项目的时间线、设定库、冲突、图谱等状态，帮你判断该去哪个栏目改、怎么改。",
+    "open": "Agent",
+    "title": "Miro World Agent",
+    "hint": "我会读取当前项目的时间线、设定库、冲突、图谱等状态，帮你判断该去哪个栏目改、怎么改，也可以直接执行操作。",
     "placeholder": "例：我觉得时间线末尾那段和前面不是同一个世界，应该怎么处理？",
-    "ask": "提问",
+    "ask": "让 Agent 执行",
     "asking": "思考中...",
-    "emptyAnswer": "助手没有返回内容，请重试",
-    "failed": "助手调用失败"
+    "executing": "Agent 正在执行，请稍候…",
+    "emptyAnswer": "Agent 没有返回内容，请重试",
+    "failed": "Agent 调用失败",
+    "quickStatus": "检查项目状态",
+    "quickSim": "启动世界模拟",
+    "quickCharacters": "生成人物档案",
+    "quickReport": "生成最终报告",
+    "quickExport": "导出项目快照"
   },
   "timeline": {
     "tab": "时间线",

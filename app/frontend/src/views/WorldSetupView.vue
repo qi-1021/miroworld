@@ -733,6 +733,12 @@
             {{ refillEdgesRunning ? $t('world.refillEdgesRunning') : $t('world.refillEdges') }}
           </button>
           <span v-if="graphMsg" class="msg-line" :class="{ error: graphMsgError }">{{ graphMsg }}</span>
+          <div v-if="graphBuilding" class="graph-progress">
+            <div class="graph-progress-bar">
+              <div class="graph-progress-fill" :style="{ width: (graphProgress || 0) + '%' }"></div>
+            </div>
+            <span class="graph-progress-text">{{ graphProgressMsg || $t('world.graphBuilding') }}</span>
+          </div>
         </div>
 
         <!-- SVG 力导向可视化 -->
@@ -803,6 +809,13 @@
           </div>
           <div class="assistant-body">
             <p class="assistant-hint">{{ $t('assistant.hint') }}</p>
+            <div class="assistant-quick">
+              <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickStatus')">📋 {{ $t('assistant.quickStatus') }}</button>
+              <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickSim')">🌍 {{ $t('assistant.quickSim') }}</button>
+              <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickCharacters')">👥 {{ $t('assistant.quickCharacters') }}</button>
+              <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickReport')">📄 {{ $t('assistant.quickReport') }}</button>
+              <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickExport')">💾 {{ $t('assistant.quickExport') }}</button>
+            </div>
             <textarea
               v-model="assistantQuestion"
               rows="3"
@@ -817,6 +830,9 @@
               >
                 {{ assistantAsking ? $t('assistant.asking') : $t('assistant.ask') }}
               </button>
+            </div>
+            <div v-if="assistantAsking" class="assistant-running">
+              <span class="spinner-sm"></span> {{ $t('assistant.executing') }}
             </div>
             <div v-if="assistantAnswer" class="assistant-answer">{{ assistantAnswer }}</div>
             <div v-if="assistantMsg" class="msg-line" :class="{ error: assistantMsgError }">{{ assistantMsg }}</div>
@@ -953,6 +969,7 @@ const graphInfo = ref(null)          // { nodes, edges, node_count, edge_count }
 const graphPos = ref({})             // uuid -> {x, y}（力导向布局结果）
 const graphBuilding = ref(false)
 const graphProgressMsg = ref('')
+const graphProgress = ref(0)
 const refillEdgesRunning = ref(false)
 let refillPollTimerId = null
 const graphMsg = ref('')
@@ -1103,11 +1120,13 @@ function pollGraphTask(taskId) {
         graphPollTimer = null
         graphBuilding.value = false
         graphProgressMsg.value = ''
+        graphProgress.value = 0
         graphMsg.value = task.message || (status === 'completed' ? t('world.msgGraphBuilt') : t('world.msgGraphBuildFailed'))
         graphMsgError.value = !(status === 'completed' || status === 'COMPLETED')
         await fetchGraph()
       } else {
         graphProgressMsg.value = task.message || t('world.msgGraphBuilding')
+        if (task.progress != null) graphProgress.value = task.progress
       }
     } catch (e) {
       clearInterval(graphPollTimer)
@@ -1127,6 +1146,7 @@ async function handleBuildGraph() {
   graphMsg.value = ''
   graphMsgError.value = false
   graphProgressMsg.value = ''
+  graphProgress.value = 0
   try {
     const res = await buildWorldGraph(projectId, {
       goal: simGoal.value.trim() || undefined,
@@ -1350,6 +1370,11 @@ async function askAssistantNow() {
   } finally {
     assistantAsking.value = false
   }
+}
+
+function quickAsk(key) {
+  assistantQuestion.value = t(key)
+  askAssistantNow()
 }
 
 // ---------------- 文件选择与拖拽 ----------------
@@ -3690,6 +3715,33 @@ onUnmounted(() => {
   flex-wrap: wrap;
   margin-bottom: 10px;
 }
+.graph-progress {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.graph-progress-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: #F0F0F0;
+  overflow: hidden;
+}
+.graph-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #a1c50a;
+  transition: width 0.3s ease;
+}
+.graph-progress-text {
+  font-size: 11px;
+  color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
 .graph-viz-wrap {
   border: 1px solid #E8E8E8;
   border-radius: 6px;
@@ -3818,6 +3870,22 @@ onUnmounted(() => {
   font-size: 12px;
   color: #666;
   line-height: 1.6;
+}
+.assistant-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.assistant-quick .mini-btn {
+  font-size: 11px;
+  padding: 5px 10px;
+}
+.assistant-running {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #a1c50a;
 }
 .assistant-input {
   width: 100%;
