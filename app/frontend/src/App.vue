@@ -168,11 +168,11 @@ html, body {
   --mf-ink: #10203a;               /* 主文字（深海军蓝，与 LGGC 一致） */
   --mf-ink-muted: #536078;
   --mf-ink-subtle: #7b879e;
-  --mf-accent: #a1c50a;            /* 柑橘色（用户指定，保留） */
+  --mf-accent: #a1c50a;            /* 柑橘色 */
   --mf-accent-hover: #8fae09;
   --mf-accent-soft: #f3f7e6;
   --mf-hairline: rgba(16, 32, 58, 0.12);
-  --mf-radius: 18px;
+  --mf-radius: 8px;
   --mf-card-shadow: 0 10px 30px rgba(16, 32, 58, 0.08);
 }
 
@@ -207,9 +207,9 @@ button { font-family: inherit; }
    保持 .liquid-glass / 手机端降级接口不变，自动覆盖全站卡片。
    ============================================================ */
 .liquid-glass {
-  --lggc-radius: 22px;
+  --lggc-radius: 8px;
   --lggc-padding: 1.5rem 1.75rem;
-  --lggc-bg: rgba(255, 255, 255, 0.5);  /* 0.45~0.55 真正通透玻璃 */
+  --lggc-bg: rgba(255, 255, 255, 0.42);
   --lggc-border: rgba(255, 255, 255, 0.92);
   --lggc-blur: 16px;
   --lggc-highlight: rgba(255, 255, 255, 1);
@@ -221,8 +221,8 @@ button { font-family: inherit; }
     radial-gradient(120% 140% at 18% -12%, rgba(255, 255, 255, 0.62), transparent 46%),
     var(--lggc-bg);
   color: var(--mf-ink);
-  backdrop-filter: blur(calc(var(--lggc-blur) * 0.55)) saturate(180%) brightness(1.06);
-  -webkit-backdrop-filter: blur(calc(var(--lggc-blur) * 0.55)) saturate(180%) brightness(1.06);
+  backdrop-filter: blur(var(--lggc-blur)) saturate(185%) brightness(1.08);
+  -webkit-backdrop-filter: blur(var(--lggc-blur)) saturate(185%) brightness(1.08);
   box-shadow:
     /* 玻璃投影：轻微冷灰、柔和 */
     0 0 0 1px rgba(16, 32, 58, 0.07),
@@ -356,7 +356,7 @@ input[type="email"], input[type="search"] {
 @media (max-width: 768px) {
   #app { background-attachment: scroll; }
   .liquid-glass {
-    --lggc-radius: 18px;
+    --lggc-radius: 8px;
     --lggc-padding: 1.25rem 1.25rem;
   }
 }

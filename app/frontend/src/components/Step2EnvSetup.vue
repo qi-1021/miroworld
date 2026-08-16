@@ -654,7 +654,7 @@ const props = defineProps({
 const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status'])
 
 // State
-const phase = ref(0) // 0: 初始化, 1: 生成人设, 2: 生成配置, 3: 完成
+const phase = ref(0) // 0: 初始化, 1: 生成人设, 2: 生成配置, 4: 可开始模拟
 const taskId = ref(null)
 const prepareProgress = ref(0)
 const currentStage = ref('')
@@ -825,6 +825,7 @@ const startPrepareSimulation = async () => {
 }
 
 const startPolling = () => {
+  stopPolling()
   pollTimer = setInterval(pollPrepareStatus, 2000)
 }
 
@@ -836,6 +837,7 @@ const stopPolling = () => {
 }
 
 const startProfilesPolling = () => {
+  stopProfilesPolling()
   profilesTimer = setInterval(fetchProfilesRealtime, 3000)
 }
 

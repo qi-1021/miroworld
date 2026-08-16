@@ -97,16 +97,8 @@
       <div class="console-head">
         <h2 class="section-title">{{ $t('home.consoleTitle') }}</h2>
         <div class="mode-tabs">
-          <button class="mode-tab" :class="{ active: activeMode === 'world' }" @click="activeMode = 'world'">
-            {{ $t('home.modeWorld') }}
-          </button>
-          <button v-if="mediaModeEnabled" class="mode-tab" :class="{ active: activeMode === 'media' }" @click="activeMode = 'media'">
-            {{ $t('home.modeMedia') }}
-          </button>
+          <span class="mode-tab active">{{ $t('home.modeWorld') }}</span>
         </div>
-        <button class="media-toggle" @click="toggleMediaMode">
-          {{ mediaModeEnabled ? $t('home.hideMediaMode') : $t('home.showMediaMode') }}
-        </button>
       </div>
 
       <div class="console-card liquid-glass">
@@ -251,6 +243,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import HistoryDatabase from '../components/HistoryDatabase.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+import { setPendingUpload } from '../store/pendingUpload.js'
 import { BRAND } from '../config/brand'
 import { createProject, importProjectSnapshot } from '../api/graph'
 import { saveWorldInputMultipart } from '../api/world'
@@ -343,12 +336,8 @@ const openModelSettings = () => {
 
 // ============ 模式选择：世界推演（第一优先）/ 舆情分析（第二，可隐藏） ============
 const activeMode = ref('world')
-const mediaModeEnabled = ref(localStorage.getItem('mirofish.mediaMode') !== 'hidden')
-function toggleMediaMode() {
-  mediaModeEnabled.value = !mediaModeEnabled.value
-  if (!mediaModeEnabled.value && activeMode.value === 'media') activeMode.value = 'world'
-  localStorage.setItem('mirofish.mediaMode', mediaModeEnabled.value ? 'visible' : 'hidden')
-}
+// Legacy media analysis is opt-in; world simulation is the default workflow.
+const mediaModeEnabled = ref(false)
 
 // 世界模拟：背景资料 / 章节正文（各支持多文件 + 直接文本）
 const worldBgFiles = ref([])
@@ -528,18 +517,16 @@ const startSimulation = async () => {
   if (!(await ensureModelConfigured())) return
 
   // 存储待上传的数据
-  import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
-    setPendingUpload(
-      files.value,
-      formData.value.simulationRequirement,
-      formData.value.additionalContext
-    )
+  setPendingUpload(
+    files.value,
+    formData.value.simulationRequirement,
+    formData.value.additionalContext
+  )
 
-    // 立即跳转到Process页面（使用特殊标识表示新建项目）
-    router.push({
-      name: 'Process',
-      params: { projectId: 'new' }
-    })
+  // 立即跳转到Process页面（使用特殊标识表示新建项目）
+  router.push({
+    name: 'Process',
+    params: { projectId: 'new' }
   })
 }
 
