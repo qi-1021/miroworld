@@ -103,8 +103,7 @@
 
       <div class="console-card liquid-glass">
         <!-- ===== 世界模拟 ===== -->
-        <template>
-          <div class="form-row">
+        <div class="form-row">
             <label class="field-label">{{ $t('home.worldBgLabel') }}<span class="field-meta">{{ $t('home.supportedFormats') }}</span></label>
             <div class="upload-zone compact" :class="{ 'drag-over': bgDragOver, 'has-files': worldBgFiles.length > 0 }"
               @dragover.prevent="bgDragOver = true" @dragleave.prevent="bgDragOver = false"
@@ -171,7 +170,6 @@
               <span class="btn-arrow">→</span>
             </button>
           </div>
-        </template>
       </div>
     </section>
 
