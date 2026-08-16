@@ -1,0 +1,27 @@
+# Git 行尾与二进制规范（GitHub 协作/同步筹备）
+# 统一 LF，避免跨平台 CRLF 污染 diff
+
+* text=auto
+*.sh text eol=lf
+*.bat text eol=crlf
+*.py text eol=lf
+*.vue text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.css text eol=lf
+*.scss text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# 二进制图片/媒体不进文本 diff
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.mp4 binary
+*.woff2 binary
+*.db binary

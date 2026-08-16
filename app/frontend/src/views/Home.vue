@@ -101,7 +101,7 @@
     </section>
 
     <!-- 控制台 -->
-    <section class="console-section">
+    <section class="console-section" ref="consoleRef">
       <div class="lg-bg console-bg">
         <div class="lg-glow g3 cg-left"></div>
         <div class="lg-glow g4 cg-top"></div>

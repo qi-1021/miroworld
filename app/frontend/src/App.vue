@@ -134,7 +134,9 @@ onUnmounted(() => {
 }
 
 html, body {
-  overflow-x: hidden;
+  overflow-x: clip;
+  /* 用 clip 而非 hidden：clip 不创建横向滚动容器，装饰性光晕
+     不会撑大 body.scrollWidth，也就不会让滚动到底部时布局/卡片错位。 */
 }
 
 :root {
@@ -157,13 +159,9 @@ html, body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: var(--mf-ink);
-  /* 柔和渐变光底：为液态玻璃的 backdrop-filter 提供可模糊的彩色内容 */
-  background:
-    radial-gradient(120% 90% at 0% 0%, rgba(165, 200, 246, 0.55), transparent 55%),
-    radial-gradient(130% 100% at 100% 0%, rgba(242, 246, 226, 0.7), transparent 55%),
-    radial-gradient(140% 120% at 50% 100%, rgba(253, 206, 206, 0.55), transparent 60%),
-    linear-gradient(135deg, #eef4fb 0%, #f6f8ec 48%, #fff1ee 100%);
-  background-attachment: fixed;
+  /* 苹果风：干净浅灰画布，不做花哨渐变。液态玻璃靠卡片自身的 LGGC 效果呈现。 */
+  background-color: #f5f5f7;
+  background-image: none;
   min-height: 100vh;
 }
 
@@ -184,38 +182,40 @@ button { font-family: inherit; }
 .liquid-glass {
   --lggc-radius: 22px;
   --lggc-padding: 1.5rem 1.75rem;
-  --lggc-bg: rgba(255, 255, 255, 0.35);
-  --lggc-border: rgba(255, 255, 255, 0.5);
-  --lggc-blur: 10px;
-  --lggc-highlight: rgba(255, 255, 255, 0.9);
+  --lggc-bg: rgba(255, 255, 255, 0.30);
+  --lggc-border: rgba(255, 255, 255, 0.55);
+  --lggc-blur: 16px;
+  --lggc-highlight: rgba(255, 255, 255, 0.95);
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: var(--lggc-radius);
   background: var(--lggc-bg);
   color: var(--mf-ink);
-  backdrop-filter: blur(calc(var(--lggc-blur) * 0.35)) saturate(170%);
-  -webkit-backdrop-filter: blur(calc(var(--lggc-blur) * 0.35)) saturate(170%);
+  backdrop-filter: blur(calc(var(--lggc-blur) * 0.5)) saturate(200%);
+  -webkit-backdrop-filter: blur(calc(var(--lggc-blur) * 0.5)) saturate(200%);
   box-shadow:
-    inset 1.5px -1.5px 1px -1px rgba(255, 255, 255, 0.8),
-    inset -1.5px 1.5px 1px -1px rgba(255, 255, 255, 0.8),
-    0 16px 36px rgba(16, 32, 58, 0.10);
+    inset 2px -2px 1px -1px rgba(255, 255, 255, 0.92),
+    inset -2px 2px 1px -1px rgba(255, 255, 255, 0.92),
+    inset 0 0 6px rgba(255, 255, 255, 0.5),
+    0 18px 40px rgba(16, 32, 58, 0.12);
   transition: box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
 }
 .liquid-glass::before {
   content: '';
   position: absolute;
   top: 0; left: 8%; right: 8%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.95), transparent);
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.98), transparent);
   pointer-events: none;
   border-radius: inherit;
   z-index: 1;
 }
 .liquid-glass:hover {
+  background: rgba(255, 255, 255, 0.40);
   box-shadow:
-    inset 1.5px -1.5px 1px -1px rgba(255, 255, 255, 0.9),
-    inset -1.5px 1.5px 1px -1px rgba(255, 255, 255, 0.9),
-    0 22px 44px rgba(16, 32, 58, 0.14);
+    inset 2px -2px 1px -1px rgba(255, 255, 255, 1),
+    inset -2px 2px 1px -1px rgba(255, 255, 255, 1),
+    0 26px 50px rgba(16, 32, 58, 0.16);
   transform: translateY(-2px);
 }
 
@@ -331,9 +331,8 @@ input[type="email"], input[type="search"] {
   }
   .lg-glow { opacity: 0.35; filter: blur(40px); }
   #app {
-    background:
-      radial-gradient(150% 70% at 20% 0%, rgba(165, 200, 246, 0.5), transparent 60%),
-      linear-gradient(140deg, #eef4fb 0%, #f6f8ec 50%, #fff1ee 100%);
+    background-color: #f5f5f7;
+    background-image: none;
     background-attachment: scroll;
   }
 }

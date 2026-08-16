@@ -1016,12 +1016,13 @@ onUnmounted(() => {
 }
 .project-card.sel { outline: 2px solid #a1c50a; outline-offset: 1px; }
 
-/* 卡片容器 */
+/* 卡片容器：
+   卡片为 absolute + transform 定位，静态位置须锚定在容器左上，
+   否则 flex 的 justify-content:center 会给 absolutely 子元素的
+   left:auto 加一个 ~半宽的静态偏移，导致卡网格右移/错位。 */
 .cards-container {
   position: relative;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
+  display: block;
   padding: 0 40px;
   transition: min-height 700ms cubic-bezier(0.23, 1, 0.32, 1);
   /* min-height 由 JS 动态计算，根据卡片数量自适应 */
