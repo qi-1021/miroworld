@@ -640,7 +640,7 @@ const closeModal = () => {
   selectedProject.value = null
 }
 
-// 导航到图谱构建页面（Project）
+// 导航到世界设定/图谱页面
 const goToProject = () => {
   if (selectedProject.value?.project_id) {
     // 世界项目直达世界设定页，其余走媒体分析 Process 页
@@ -657,7 +657,7 @@ const goToSimulation = () => {
   const project = selectedProject.value
   if (!project) return
 
-  // 世界项目：世界模拟不适用社交媒体环境搭建，直接进入世界设定页的推演模块
+  // 世界项目：直接进入世界设定页的推演模块
   if (isWorldProject(project)) {
     if (project.project_id) {
       router.push({
@@ -679,7 +679,7 @@ const goToSimulation = () => {
   }
 }
 
-// 导航到分析报告页面（Report）
+// 导航到深度互动/报告页面
 const goToReport = () => {
   if (selectedProject.value?.report_id) {
     router.push({
@@ -1211,9 +1211,9 @@ onUnmounted(() => {
 }
 
 /* 不同功能的颜色 */
-.status-icon:nth-child(1).available { color: #3B82F6; } /* 图谱构建 - 蓝色 */
-.status-icon:nth-child(2).available { color: #F59E0B; } /* 环境搭建 - 橙色 */
-.status-icon:nth-child(3).available { color: #10B981; } /* 分析报告 - 绿色 */
+.status-icon:nth-child(1).available { color: #3B82F6; } /* 世界设定 - 蓝色 */
+.status-icon:nth-child(2).available { color: #F59E0B; } /* 时间线与图谱 - 橙色 */
+.status-icon:nth-child(3).available { color: #10B981; } /* 深度互动 - 绿色 */
 
 .status-icon.unavailable {
   color: #D1D5DB;
