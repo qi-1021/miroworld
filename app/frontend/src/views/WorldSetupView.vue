@@ -546,6 +546,40 @@
           </div>
         </div>
 
+        <!-- 事件因果图 -->
+        <div v-if="eventGraphData.nodes.length" class="sim-graph">
+          <div class="sim-graph-title">{{ $t('world.eventGraphTitle') }}</div>
+          <svg :viewBox="`0 0 ${eventGraphData.width} ${eventGraphData.height}`" class="sim-graph-svg">
+            <line
+              v-for="(ed, i) in eventGraphData.edges"
+              :key="'e' + i"
+              :x1="graphPosMap[ed.source]?.x"
+              :y1="graphPosMap[ed.source]?.y"
+              :x2="graphPosMap[ed.target]?.x"
+              :y2="graphPosMap[ed.target]?.y"
+              class="sim-graph-edge"
+            />
+            <g
+              v-for="(n, i) in eventGraphData.nodes"
+              :key="'n' + i"
+              :transform="`translate(${n.x},${n.y})`"
+              @click="selectedGraphEvent = n.id"
+            >
+              <circle r="6" class="sim-graph-node" :class="{ active: selectedGraphEvent === n.id }" />
+              <text y="-10" text-anchor="middle" class="sim-graph-label">{{ n.label }}</text>
+            </g>
+          </svg>
+          <div v-if="selectedGraphEvent" class="sim-graph-detail">
+            <template v-for="(n, i) in eventGraphData.nodes" :key="i">
+              <div v-if="n.id === selectedGraphEvent" class="sim-graph-detail-inner">
+                <span class="sim-graph-detail-step">{{ $t('world.simStepLabel', { step: n.step }) }}</span>
+                <span class="sim-graph-detail-who">{{ n.event.character_name }}</span>
+                <span class="sim-graph-detail-text">{{ n.event.action_desc }} → {{ n.event.result }}</span>
+              </div>
+            </template>
+          </div>
+        </div>
+
         <!-- 运行中控制（IPC） -->
         <div v-if="simStatus === 'running' || simStatus === 'paused'" class="sim-ctl">
           <div class="sim-ctl-title">{{ $t('world.runControl') }}</div>
@@ -1080,6 +1114,56 @@ const stepSummaries = computed(() => {
       .slice(0, 160),
   }))
 })
+
+// 事件因果图：根据事件 links 生成节点/边，按 step 分层布局
+const eventGraphData = computed(() => {
+  const events = simEvents.value || []
+  if (!events.length) return { nodes: [], edges: [], width: 600, height: 300 }
+  const nodes = []
+  const byId = new Map()
+  const stepGroups = {}
+  events.forEach((e, i) => {
+    const id = e.id || `ev_${i}`
+    const step = e.step || 0
+    if (!stepGroups[step]) stepGroups[step] = []
+    stepGroups[step].push(id)
+    const node = { id, label: `${e.character_name || '?'}: ${(e.action_desc || '').replace(/\s+/g, ' ').slice(0, 18)}`, step, event: e }
+    byId.set(id, node)
+    nodes.push(node)
+  })
+  const edges = []
+  events.forEach((e, i) => {
+    const id = e.id || `ev_${i}`
+    ;(e.links || []).forEach(linkId => {
+      if (byId.has(linkId) && linkId !== id) edges.push({ source: linkId, target: id })
+    })
+  })
+  const stepKeys = Object.keys(stepGroups).map(Number).sort((a, b) => a - b)
+  const xGap = 150, yGap = 56
+  const positions = {}
+  stepKeys.forEach((step, si) => {
+    const ids = stepGroups[step]
+    const count = ids.length
+    ids.forEach((id, idx) => {
+      positions[id] = { x: 80 + si * xGap, y: 60 + (idx - (count - 1) / 2) * yGap }
+    })
+  })
+  const width = Math.max(600, stepKeys.length * xGap + 160)
+  const maxCount = Math.max(1, ...stepKeys.map(s => stepGroups[s].length))
+  const height = Math.max(300, maxCount * yGap + 120)
+  return {
+    nodes: nodes.map(n => ({ ...n, ...positions[n.id] })),
+    edges,
+    width,
+    height,
+  }
+})
+const graphPosMap = computed(() => {
+  const m = {}
+  eventGraphData.value.nodes.forEach(n => { m[n.id] = { x: n.x, y: n.y } })
+  return m
+})
+const selectedGraphEvent = ref('')
 const simSection = ref(null)
 const inputSection = ref(null)
 const timelineSection = ref(null)
@@ -2978,6 +3062,71 @@ onUnmounted(() => {
 .tree-branch {
   color: #a1c50a;
   font-family: 'JetBrains Mono', monospace;
+}
+
+/* 事件因果图 */
+.sim-graph {
+  margin-top: 14px;
+  border: 1px solid #EAEAEA;
+  border-radius: 8px;
+  padding: 12px;
+  background: #FCFCFC;
+  overflow-x: auto;
+}
+.sim-graph-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #10203a;
+  margin-bottom: 8px;
+}
+.sim-graph-svg {
+  width: 100%;
+  height: auto;
+  min-width: 600px;
+  display: block;
+}
+.sim-graph-edge {
+  stroke: #D8D8D8;
+  stroke-width: 1.2;
+}
+.sim-graph-node {
+  fill: #a1c50a;
+  stroke: #fff;
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+.sim-graph-node.active {
+  fill: #10203a;
+}
+.sim-graph-label {
+  font-size: 9px;
+  fill: #536078;
+  pointer-events: none;
+}
+.sim-graph-detail {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: #F5F7E8;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.sim-graph-detail-inner {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+.sim-graph-detail-step {
+  font-weight: 700;
+  color: #a1c50a;
+  font-family: 'JetBrains Mono', monospace;
+}
+.sim-graph-detail-who {
+  font-weight: 600;
+}
+.sim-graph-detail-text {
+  color: #333;
+  line-height: 1.5;
 }
 .sim-history-count {
   color: #666;

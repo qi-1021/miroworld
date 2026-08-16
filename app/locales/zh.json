@@ -986,6 +986,7 @@
     "msgNovelFailed": "小说续写失败",
     "reportHistoryTitle": "历史模拟记录",
     "worldTreeTitle": "世界线之树",
+    "eventGraphTitle": "事件因果图",
     "eventCount": "{count} 事件",
     "whatifFlag": "推演",
     "whatifBtn": "推演",
