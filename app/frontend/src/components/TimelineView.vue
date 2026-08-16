@@ -729,8 +729,7 @@ import {
   deleteTimelineEvent,
   mergeTimelineEvents,
   generateTimelineCharacters,
-  batchTimelineEvents,
-  exportTimeline
+  batchTimelineEvents
 } from '../api/timeline'
 
 const props = defineProps({ projectId: { type: String, required: true } })
@@ -785,39 +784,32 @@ function exportSelectFiltered() {
   pool.forEach(x => { m[x.key] = true })
   exportSelMap.value = m
 }
-async function doExport() {
+function doExport() {
   if (!exportSelectedCount.value) return
   exportLoading.value = true
   try {
     const keys = presentThreads.value.map(x => x.key).filter(k => exportSelMap.value[k])
-    const res = await exportTimeline(props.projectId, {
-      source: exportSource.value,
-      thread_keys: keys,
-      include_all_threads: keys.length === presentThreads.value.length,
-      format: exportFormat.value,
-      include_meta: true,
-    })
-    const data = res?.data || res || {}
-    if (!data.content) throw new Error(t('timeline.exportFailed'))
-    // Blob 下载
-    const mime = exportFormat.value === 'json'
-      ? 'application/json;charset=utf-8'
-      : exportFormat.value === 'csv' ? 'text/csv;charset=utf-8' : 'text/markdown;charset=utf-8'
-    const blob = new Blob([data.content], { type: mime })
-    const url = URL.createObjectURL(blob)
+    const params = new URLSearchParams()
+    if (exportSource.value) params.set('source', exportSource.value)
+    params.set('format', exportFormat.value)
+    params.set('include_all_threads', keys.length === presentThreads.value.length ? 'true' : 'false')
+    params.set('include_meta', 'true')
+    if (keys.length !== presentThreads.value.length) {
+      params.set('thread_keys', keys.join(','))
+    }
+    // 直接走后端 Content-Disposition 下载，兼容桌面与手机浏览器
+    const url = `/api/timeline/${props.projectId}/export/download?${params.toString()}`
     const a = document.createElement('a')
     a.href = url
-    a.download = data.filename || `timeline-export.${exportFormat.value}`
+    a.download = ''
     a.style.display = 'none'
     document.body.appendChild(a)
     a.click()
     a.remove()
-    // 延迟释放，避免部分浏览器（尤其 Safari）在下载开始前撤销导致不自动下载
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
     exportOpen.value = false
   } catch (e) {
     console.error('export failed', e)
-    // 展示后端错误（前端用 alert/status）
+    alert(t('timeline.exportFailed'))
   } finally {
     exportLoading.value = false
   }
