@@ -1093,6 +1093,64 @@ class WorldSimulationService:
         return state
 
     @classmethod
+    def copy_simulation_to_project(
+        cls,
+        simulation_id: str,
+        target_project_id: str,
+    ) -> WorldSimulationState:
+        """把一条世界线复制到另一个项目（跨项目复用）。"""
+        src = cls.get_state(simulation_id)
+        if src is None:
+            raise ValueError("源世界线不存在")
+        src_events_path = src.events_path or os.path.join(
+            WORLD_SIM_ROOT, src.project_id, src.simulation_id, "events.json"
+        )
+        src_config_path = src.config_path or os.path.join(
+            WORLD_SIM_ROOT, src.project_id, src.simulation_id, "world_config.json"
+        )
+        events = []
+        if os.path.exists(src_events_path):
+            with open(src_events_path, "r", encoding="utf-8") as f:
+                events = json.load(f)
+        config = {}
+        if os.path.exists(src_config_path):
+            with open(src_config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+
+        sim_id = f"{src.simulation_id}_copy"
+        counter = 2
+        while cls.get_state(sim_id) is not None:
+            sim_id = f"{src.simulation_id}_copy_{counter}"
+            counter += 1
+        sim_dir = os.path.join(WORLD_SIM_ROOT, target_project_id, sim_id)
+        os.makedirs(sim_dir, exist_ok=True)
+        config_path = os.path.join(sim_dir, "world_config.json")
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        events_path = os.path.join(sim_dir, "events.json")
+        with open(events_path, "w", encoding="utf-8") as f:
+            json.dump(events, f, ensure_ascii=False, indent=2)
+
+        state = WorldSimulationState(
+            simulation_id=sim_id,
+            project_id=target_project_id,
+            status="completed",
+            config_path=config_path,
+            events_path=events_path,
+            created_at=datetime.now().isoformat(timespec="seconds"),
+            updated_at=datetime.now().isoformat(timespec="seconds"),
+        )
+        state.result = {
+            "event_count": len(events),
+            "events": events,
+            "meta": {"copy_from": src.simulation_id, "copy_from_project": src.project_id},
+        }
+        with cls._lock:
+            cls._states[sim_id] = state
+        cls._save_state(state)
+        return state
+
+    @classmethod
     def update_simulation_meta(
         cls,
         simulation_id: str,

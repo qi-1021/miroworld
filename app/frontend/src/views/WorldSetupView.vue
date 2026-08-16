@@ -709,6 +709,7 @@
               <button class="mini-btn ghost" @click="loadSimulation(root)">{{ $t('world.loadSimulation') }}</button>
               <button class="mini-btn" :disabled="simStarting" @click="continueSimulation(root)">{{ $t('world.continueSimulation') }}</button>
               <button class="mini-btn ghost" @click="exportSimulation(root)">{{ $t('world.exportSimulation') }}</button>
+              <button class="mini-btn ghost" @click="copyWorldline(root)">{{ $t('world.copyWorldline') }}</button>
               <button v-if="root.status === 'completed' && !((root.result || {}).meta || {}).whatif_question" class="mini-btn" @click="startWhatIf(root)">{{ $t('world.whatifBtn') }}</button>
               <button v-if="root.status === 'completed' && !((root.result || {}).meta || {}).whatif_question" class="mini-btn ghost" @click="batchWhatIf(root)">{{ $t('world.batchWhatif') }}</button>
             </div>
@@ -724,6 +725,7 @@
                 <button class="mini-btn" :disabled="simStarting" @click="continueSimulation(child)">{{ $t('world.continueSimulation') }}</button>
                 <button v-if="child.result?.meta?.whatif_question" class="mini-btn" :disabled="simStarting" @click="rerunBranchWithSettings(child)">{{ $t('world.rerunBranchWithSettings') }}</button>
                 <button class="mini-btn ghost" @click="exportSimulation(child)">{{ $t('world.exportSimulation') }}</button>
+                <button class="mini-btn ghost" @click="copyWorldline(child)">{{ $t('world.copyWorldline') }}</button>
               </div>
               </div>
             </div>
@@ -2366,6 +2368,23 @@ async function rerunBranchWithSettings(sim) {
     simMsgError.value = true
   } finally {
     simStarting.value = false
+  }
+}
+
+async function copyWorldline(sim) {
+  const target = window.prompt(t('world.copyWorldlinePrompt'))
+  if (!target || !target.trim()) return
+  try {
+    const res = await runAssistantAction(projectId, 'copy_worldline', {
+      simulation_id: sim.simulation_id,
+      target_project_id: target.trim(),
+    })
+    const r = res?.data?.action_result || {}
+    simMsg.value = t('world.msgCopiedWorldline', { id: r.simulation_id || '' })
+    simMsgError.value = false
+  } catch (e) {
+    simMsg.value = e?.message || t('world.msgUnknownError')
+    simMsgError.value = true
   }
 }
 

@@ -442,6 +442,19 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
             "event_count": (state.result or {}).get("event_count", 0),
         }
 
+    if action == "copy_worldline":
+        from ..services.world_simulation import WorldSimulationService
+        sim_id = str(params.get("simulation_id") or "").strip()
+        target = str(params.get("target_project_id") or "").strip()
+        if not sim_id or not target:
+            raise ValueError("copy_worldline 需要 simulation_id 和 target_project_id")
+        state = WorldSimulationService.copy_simulation_to_project(sim_id, target)
+        return {
+            "simulation_id": state.simulation_id,
+            "project_id": target,
+            "status": state.status,
+        }
+
     if action == "update_worldline_meta":
         from ..services.world_simulation import WorldSimulationService
         sim_id = str(params.get("simulation_id") or "").strip()
@@ -539,6 +552,7 @@ _SYSTEM_PROMPT = (
     "update_worldline_meta(simulation_id, name, note, tags)、"
     "merge_worldlines(base_simulation_id, branch_simulation_id, label)、"
     "export_all_worldlines()、"
+    "copy_worldline(simulation_id, target_project_id)、"
     "get_worldline_summary(simulation_id)、"
     "get_project_status()。"
     "否则输出普通中文回答，简洁、分点，不超过 400 字。"
