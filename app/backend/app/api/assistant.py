@@ -442,6 +442,21 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
             "event_count": (state.result or {}).get("event_count", 0),
         }
 
+    if action == "export_worldline":
+        from ..services.world_simulation import WorldSimulationService
+        sim_id = str(params.get("simulation_id") or "").strip()
+        if not sim_id:
+            raise ValueError("export_worldline 需要 simulation_id")
+        state = WorldSimulationService.get_state(sim_id)
+        if state is None:
+            raise ValueError("模拟不存在")
+        events = (state.result or {}).get("events") or []
+        return {
+            "simulation_id": sim_id,
+            "status": state.status,
+            "events": events,
+        }
+
     if action == "copy_worldline":
         from ..services.world_simulation import WorldSimulationService
         sim_id = str(params.get("simulation_id") or "").strip()
@@ -552,6 +567,7 @@ _SYSTEM_PROMPT = (
     "update_worldline_meta(simulation_id, name, note, tags)、"
     "merge_worldlines(base_simulation_id, branch_simulation_id, label)、"
     "export_all_worldlines()、"
+    "export_worldline(simulation_id)、"
     "copy_worldline(simulation_id, target_project_id)、"
     "get_worldline_summary(simulation_id)、"
     "get_project_status()。"

@@ -355,6 +355,31 @@ def cmd_assistant(args) -> dict:
     return {"answer": answer, "context": context}
 
 
+def cmd_worldline(args) -> dict:
+    from app.api.assistant import _execute_assistant_action
+    action_map = {
+        "tree": "list_world_tree",
+        "continue": "continue_world_simulation",
+        "summary": "get_worldline_summary",
+        "export": "export_worldline",
+    }
+    action = action_map.get(args.action)
+    if not action:
+        raise ValueError(f"未知 worldline 操作: {args.action}")
+    params = {}
+    if args.action == "continue":
+        params = {"simulation_id": args.simulation_id, "additional_steps": args.steps}
+    elif args.action in ("summary", "export"):
+        params = {"simulation_id": args.simulation_id}
+    result = _execute_assistant_action(args.project_id, action, params)
+    if args.action == "export" and getattr(args, "out", ""):
+        import json as _json
+        with open(args.out, "w", encoding="utf-8") as f:
+            _json.dump(result, f, ensure_ascii=False, indent=2)
+        return {"saved_to": args.out, "simulation_id": result.get("simulation_id")}
+    return result
+
+
 def cmd_health(args) -> dict:
     checks = {}
     for name, port in (("frontend", 3000), ("backend", 5001), ("neo4j", 7687)):
@@ -795,6 +820,22 @@ def _parser() -> argparse.ArgumentParser:
     ask.add_argument("--direct-action", default="", help="直接执行动作名，跳过 LLM 决策")
     ask.add_argument("--param", action="append", default=[], help="动作参数 key=value，可多次")
 
+    wl = sub.add_parser("worldline")
+    wla = wl.add_subparsers(dest="action", required=True)
+    wl_tree = _add_json(wla.add_parser("tree"))
+    wl_tree.add_argument("--project-id", required=True)
+    wl_cont = _add_json(wla.add_parser("continue"))
+    wl_cont.add_argument("--project-id", required=True)
+    wl_cont.add_argument("--simulation-id", required=True)
+    wl_cont.add_argument("--steps", type=int, default=3)
+    wl_sum = _add_json(wla.add_parser("summary"))
+    wl_sum.add_argument("--project-id", required=True)
+    wl_sum.add_argument("--simulation-id", required=True)
+    wl_exp = _add_json(wla.add_parser("export"))
+    wl_exp.add_argument("--project-id", required=True)
+    wl_exp.add_argument("--simulation-id", required=True)
+    wl_exp.add_argument("--out", default="", help="导出 JSON 文件路径")
+
     m = sub.add_parser("models")
     ma = m.add_subparsers(dest="action", required=True)
     _add_json(ma.add_parser("registry"))
@@ -846,6 +887,8 @@ def main(argv=None) -> int:
             result = cmd_sim(args)
         elif args.command == "assistant":
             result = cmd_assistant(args)
+        elif args.command == "worldline":
+            result = cmd_worldline(args)
         elif args.command == "models":
             result = cmd_models(args)
         elif args.command == "health":
