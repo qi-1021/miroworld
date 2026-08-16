@@ -67,7 +67,7 @@ def _drive_build(client, monkeypatch, auto_refill):
 
         _gb.return_value.create_graph.return_value = "g123"
         _gb.return_value.set_ontology.return_value = None
-        # 每批一个 client.add_episode_batch（批次大小=8，这里 2 块 → 1 批）
+        # 每批一个 client.add_episode_batch（批次大小默认4，这里 2 块 → 1 批）
         _gb.return_value.client.add_episode_batch.return_value = ["ep1", "ep2"]
         _gb.return_value._wait_for_episodes.return_value = None
         _gb.return_value.get_graph_data.return_value = {"node_count": 2, "edge_count": 3}

@@ -65,9 +65,14 @@ def _drive_build(client, monkeypatch, chunk_count=10, body=None, mark_spy=None):
                     return_value=chunks), \
          mock.patch("app.services.world_graph_refill.save_episodes_cache", return_value=True):
 
-        # 假 builder：每批返回与本批块数对应的 uuid
-        def _fake_add_batch(graph_id=None, episodes=None):
-            return [f"u_{i}" for i in range(len(episodes or []))]
+        # 假 builder：每批返回与本批块数对应的 uuid，并调用批内进度回调
+        def _fake_add_batch(graph_id=None, episodes=None, progress_callback=None,
+                            max_workers=1):
+            n = len(episodes or [])
+            for i in range(n):
+                if progress_callback is not None:
+                    progress_callback(i + 1, n, f"episode {i + 1}/{n}")
+            return [f"u_{i}" for i in range(n)]
 
         _gb.return_value.create_graph.return_value = "g123"
         _gb.return_value.set_ontology.return_value = None
@@ -115,12 +120,13 @@ def _expected_batches(n_chunks, batch_size):
 # ---------------------------------------------------------------------------
 
 def test_mark_chunks_done_called_per_batch_default(client, monkeypatch):
-    """默认 batch_size=8，10 块 → 2 批 → mark_chunks_done 调用 2 次。"""
+    """默认 batch_size=4，10 块 → 3 批 → mark_chunks_done 调用 3 次。"""
     task, calls = _drive_build(client, monkeypatch, chunk_count=10, body={})
-    assert len(calls) == _expected_batches(10, 8) == 2, calls
-    # 第一批评 8 块，第二批评 2 块
-    assert calls[0]["n_chunks"] == 8
-    assert calls[1]["n_chunks"] == 2
+    assert len(calls) == _expected_batches(10, 4) == 3, calls
+    # 分 4/4/2
+    assert calls[0]["n_chunks"] == 4
+    assert calls[1]["n_chunks"] == 4
+    assert calls[2]["n_chunks"] == 2
 
 
 def test_mark_chunks_done_per_batch_override(client, monkeypatch):

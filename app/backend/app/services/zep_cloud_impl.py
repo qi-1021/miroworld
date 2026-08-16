@@ -84,9 +84,14 @@ class ZepCloudClient(ZepClientAdapter):
     def add_episode_batch(
         self,
         graph_id: str,
-        episodes: List[Dict[str, Any]]
+        episodes: List[Dict[str, Any]],
+        progress_callback=None,
+        max_workers: int = 1
     ) -> List[str]:
-        """批量添加 episode"""
+        """批量添加 episode（cloud 后端为一次 bulk 提交，逐条回调仅用于收尾）。"""
+        total = len(episodes)
+        if progress_callback:
+            progress_callback(0, total, "提交批量...")
         episode_data_list = [
             EpisodeData(data=ep.get("data", ""), type=ep.get("type", "text"))
             for ep in episodes
@@ -104,6 +109,8 @@ class ZepCloudClient(ZepClientAdapter):
                 ep_uuid = getattr(ep, 'uuid_', None) or getattr(ep, 'uuid', None)
                 if ep_uuid:
                     uuids.append(ep_uuid)
+        if progress_callback:
+            progress_callback(len(uuids), total, "批处理完成")
         return uuids
 
     def get_episode_status(self, episode_uuid: str) -> EpisodeStatus:

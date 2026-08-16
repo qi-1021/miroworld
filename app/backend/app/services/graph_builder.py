@@ -336,7 +336,9 @@ class GraphBuilderService:
         graph_id: str,
         chunks: List[str],
         batch_size: int = 3,
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        episode_progress_callback: Optional[Callable] = None,
+        max_workers: int = 1
     ) -> List[str]:
         """分批添加文本到图谱，返回所有 episode 的 uuid 列表"""
         episode_uuids = []
@@ -360,11 +362,13 @@ class GraphBuilderService:
                 for chunk in batch_chunks
             ]
 
-            # 发送到后端
+            # 发送到后端（逐条进度回调 + 批内并发数透传）
             try:
                 batch_uuids = self.client.add_episode_batch(
                     graph_id=graph_id,
-                    episodes=episodes
+                    episodes=episodes,
+                    progress_callback=episode_progress_callback,
+                    max_workers=max_workers,
                 )
                 episode_uuids.extend(batch_uuids)
 

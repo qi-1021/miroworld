@@ -327,11 +327,13 @@ def build_world_graph(project_id: str):
             "skip_auto_refill": false,  // true 时建图完成后不自动启动补边
             "chunk_size": 1500,
             "chunk_overlap": 150,
-            "batch_size": 8    // 每批写入的块数，默认 8，可覆盖 1-16
+            "batch_size": 4,     // 每批写入的块数，默认 4，可覆盖 1-16
+            "max_workers": 1     // 批内并发数，默认 1（串行最稳），可覆盖 1-3
         }
 
     说明：分批写入时每完成一批立即 mark_chunks_done 落断点（build-progress），
-    中断只丢当前在途批次，已完成批次可断点续建。
+    中断只丢当前在途批次，已完成批次可断点续建。批内逐条上报进度；
+    max_workers>1 会并行处理（OpenCode 网关更宜保持 1）。
 
     返回：
         { "success": true, "task_id": "...", "graph_id": null|"..." }
@@ -384,13 +386,21 @@ def build_world_graph(project_id: str):
 
     chunk_size = int(data.get('chunk_size', Config.DEFAULT_CHUNK_SIZE))
     overlap = int(data.get('chunk_overlap', Config.DEFAULT_CHUNK_OVERLAP))
-    # 每批写入的块数：默认 8，body 可覆盖 1-16（超出则夹取）
-    raw_batch_size = data.get('batch_size', 8)
+    # 每批写入的块数：默认 4（OpenCode 网关下更稳），body 可覆盖 1-16（超出则夹取）
+    raw_batch_size = data.get('batch_size', 4)
     try:
         batch_size = int(raw_batch_size)
     except (TypeError, ValueError):
-        batch_size = 8
+        batch_size = 4
     batch_size = max(1, min(16, batch_size))
+    # 批内并发处理数：默认 1（串行最稳），可覆盖 1-3（超出夹取）。
+    # 注意：OpenCode/DeepSeek 兼容端点在并发请求下易空响应/断连，非必要勿 >1。
+    raw_max_workers = data.get('max_workers', 1)
+    try:
+        max_workers = int(raw_max_workers)
+    except (TypeError, ValueError):
+        max_workers = 1
+    max_workers = max(1, min(3, max_workers))
 
     # 同项目并发构建守卫：已有 processing/pending 的 world_graph_build 任务时，
     # 直接返回进行中的 task_id，避免重复线程写同一图谱（导致进度混乱/拖慢）。
@@ -512,10 +522,11 @@ def build_world_graph(project_id: str):
             if remaining_chunks:
                 # 分批写入：每批发送→等待该批处理→立即 mark_chunks_done 落断点。
                 # 相比"全部完成才存断点"，中断时仅丢当前在途批次，已完成的批可断点续建，
-                # 不会几小时白跑。每批同步更新任务进度。
+                # 不会几小时白跑。每批+批内逐条同步更新任务进度（30-85% 线性推进）。
                 episode_uuids = []
                 total_batches = (len(remaining_chunks) + batch_size - 1) // batch_size
                 done_batches = 0
+
                 for b in range(0, len(remaining_chunks), batch_size):
                     batch_chunks = remaining_chunks[b:b + batch_size]
                     batch_indices = remaining_indices[b:b + batch_size]
@@ -527,9 +538,24 @@ def build_world_graph(project_id: str):
                         task_id, progress=30 + int((b / max(len(remaining_chunks), 1)) * 55),
                         message=f"发送第 {batch_num}/{total_batches} 批（{len(batch_chunks)} 块）...",
                     )
+
+                    # 批内逐条进度：根据已写入的全局块数，在 [本批起点, 本批终点) 线性推进
+                    batch_start_global = b
+                    batch_len = len(batch_chunks)
+
+                    def _per_episode(done, total, msg, _b=b, _bstart=batch_start_global,
+                                     _blen=batch_len, _nrem=len(remaining_chunks)):
+                        frac = (done / _blen) if _blen else 1.0
+                        pct = 30 + int(((_bstart + _blen * frac) / max(_nrem, 1)) * 55)
+                        task_manager.update_task(
+                            task_id, progress=max(30, min(85, pct)),
+                            message=f"批内 {done}/{_blen}：{msg or ''}",
+                        )
+
                     try:
                         batch_uuids = builder.client.add_episode_batch(
                             graph_id=graph_id, episodes=episodes,
+                            progress_callback=_per_episode, max_workers=max_workers,
                         )
                     except Exception as _be:
                         # 该批失败：不标记 done（断点保留前序批次），抛出让任务失败可续。

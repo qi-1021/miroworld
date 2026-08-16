@@ -18,7 +18,7 @@ import logging
 import os
 import threading
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from functools import lru_cache
 
 from .zep_adapter import (
@@ -348,26 +348,20 @@ class GraphitiClient(ZepClientAdapter):
             if not chat_models:
                 return None
 
-            # 优先 graphiti_llm 角色绑定（预设或项目绑定）
+            # 注意：GraphitiClient 是全局复用、不感知具体项目，因此**不能**遍历项目绑定
+            # 来决定默认模型——否则会随机采用某个项目的绑定（例如 opencode），
+            # 造成用户明明把项目绑到 SiliconFlow 却仍然走慢网关。
+            # 这里只允许全局预设 graphiti_llm，否则用第一个已验证 chat 模型。
             chosen = None
-            for binding in state.get("project_bindings", []):
-                roles = binding.get("roles") or {}
-                graphiti_id = roles.get(ModelRole.GRAPHITI_LLM.value) or roles.get(ModelRole.PRIMARY.value)
+            # 预设中的 graphiti_llm
+            for preset in state.get("presets", []):
+                roles = preset.get("roles") or {}
+                graphiti_id = roles.get(ModelRole.GRAPHITI_LLM.value)
                 if graphiti_id:
                     match = next((m for m in chat_models if m["id"] == graphiti_id), None)
                     if match:
                         chosen = match
                         break
-            if chosen is None:
-                # 预设中的 graphiti_llm
-                for preset in state.get("presets", []):
-                    roles = preset.get("roles") or {}
-                    graphiti_id = roles.get(ModelRole.GRAPHITI_LLM.value)
-                    if graphiti_id:
-                        match = next((m for m in chat_models if m["id"] == graphiti_id), None)
-                        if match:
-                            chosen = match
-                            break
             if chosen is None:
                 chosen = chat_models[0]
 
@@ -770,39 +764,42 @@ class GraphitiClient(ZepClientAdapter):
     def add_episode_batch(
         self,
         graph_id: str,
-        episodes: List[Dict[str, Any]]
+        episodes: List[Dict[str, Any]],
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        max_workers: int = 1
     ) -> List[str]:
         """
-        批量添加 episode（串行实现）。
+        批量添加 episode。
 
         注意：graphiti 的 add_episode_bulk 会以 SEMAPHORE_LIMIT（默认 20）并发
         调用 LLM（实体提取、关系提取、去重、摘要等多个阶段）。部分网关
         （如 OpenCode / DeepSeek 兼容端点）在并发请求下会返回空内容或断开连接，
-        导致整个批次失败。这里改为逐条串行调用 add_episode——单条流程内
-        graphiti 本身是顺序的，稳定得多；批次数量不大时耗时差异可接受。
+        导致整个批次失败。这里默认逐条串行调用 add_episode——单条流程内
+        graphiti 本身是顺序的，稳定得多；max_workers 可调到 2-3 换取吞吐
+        （仅在网关承受得起并发时使用）。批次数量不大时耗时差异可接受。
+
+        每条处理完成会调用 progress_callback(done, total, msg)（若提供）。
         """
         self._ensure_initialized()
 
-        episode_uuids: List[str] = []
-        failed = 0
-        for i, ep in enumerate(episodes):
+        total = len(episodes)
+        if total == 0:
+            if progress_callback:
+                progress_callback(0, 0, "空批次，无需处理")
+            return []
+
+        def _process_one(i: int) -> Optional[str]:
+            ep = episodes[i]
             ep_type = ep.get("type", "text")
             data = ep.get("data", "")
             try:
                 uuid = self.add_episode(
-                    graph_id=graph_id,
-                    data=data,
-                    episode_type=ep_type,
+                    graph_id=graph_id, data=data, episode_type=ep_type,
                 )
                 if uuid:
-                    episode_uuids.append(uuid)
-                else:
-                    failed += 1
-                    logger.warning(f"episode {i} 返回空 uuid（可能是空内容），跳过")
+                    return uuid
+                logger.warning(f"episode {i} 返回空 uuid（可能是空内容），跳过")
             except Exception as e:
-                # 瞬态失败重试一次：OpenCode 网关的随机抖动（空响应/断连/
-                # 消歧响应形状不符）大多在重试后消失。重试有界（1 次），
-                # 避免"重试 × 重试"叠加卡死构建。
                 import time as _time
                 from .llm_error_normalizer import normalize_llm_error
                 logger.warning(
@@ -811,24 +808,47 @@ class GraphitiClient(ZepClientAdapter):
                 _time.sleep(0.5)
                 try:
                     uuid = self.add_episode(
-                        graph_id=graph_id,
-                        data=data,
-                        episode_type=ep_type,
+                        graph_id=graph_id, data=data, episode_type=ep_type,
                     )
                     if uuid:
-                        episode_uuids.append(uuid)
                         logger.info(f"episode {i} 重试成功")
+                        return uuid
+                    logger.warning(f"episode {i} 重试后仍返回空 uuid，跳过")
+                except Exception as e2:
+                    logger.error(f"episode {i} 重试仍失败: {e2}，继续处理剩余批次")
+            return None
+
+        episode_uuids: List[str] = []
+        failed = 0
+        done = 0
+
+        if max_workers and max_workers > 1:
+            # 并发处理（默认关：串行最稳，OpenCode 网关并发易空响应）
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                for i, result in enumerate(pool.map(_process_one, range(total))):
+                    if result:
+                        episode_uuids.append(result)
                     else:
                         failed += 1
-                        logger.warning(f"episode {i} 重试后仍返回空 uuid，跳过")
-                except Exception as e2:
+                    done += 1
+                    if progress_callback:
+                        progress_callback(done, total, f"episode {done}/{total}")
+        else:
+            for i in range(total):
+                result = _process_one(i)
+                if result:
+                    episode_uuids.append(result)
+                else:
                     failed += 1
-                    logger.error(
-                        f"episode {i} 重试仍失败: {e2}，继续处理剩余批次"
-                    )
+                done += 1
+                if progress_callback:
+                    progress_callback(done, total, f"episode {done}/{total}")
 
         if failed:
-            logger.warning(f"批次完成: 成功 {len(episode_uuids)}/{len(episodes)}，失败 {failed}")
+            logger.warning(
+                f"批次完成: 成功 {len(episode_uuids)}/{len(episodes)}，失败 {failed}"
+            )
         return episode_uuids
 
     def get_episode_status(self, episode_uuid: str) -> EpisodeStatus:

@@ -7,7 +7,7 @@ MVP 阶段目标：不依赖 Zep Cloud，跑通「建图 → 读实体 → 搜�
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 # ============================================================
@@ -146,7 +146,9 @@ class ZepClientAdapter(ABC):
     def add_episode_batch(
         self,
         graph_id: str,
-        episodes: List[Dict[str, Any]]
+        episodes: List[Dict[str, Any]],
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        max_workers: int = 1
     ) -> List[str]:
         """
         批量添加 episode 到图谱
@@ -154,6 +156,11 @@ class ZepClientAdapter(ABC):
         Args:
             graph_id: 图谱ID
             episodes: episode 列表，每项包含 {"data": str, "type": str}
+            progress_callback: 可选，批内逐条进度回调 (done, total, msg)，
+                每成功处理一条调用一次；不提供则静默。
+            max_workers: 批内并发处理数，默认 1（串行）。
+                部分网关（OpenCode/DeepSeek 兼容端点）并发会空响应/断连，
+                默认串行最稳；需要提速时再显式设 2-3。
 
         Returns:
             episode UUID 列表
