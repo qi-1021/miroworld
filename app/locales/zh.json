@@ -501,7 +501,15 @@
     "deleteEmptyConfirm": "确定删除这个空模拟记录？该记录没有关联项目或内容，可安全清理。",
     "deleteEmptyHint": "删除没有关联项目/内容的空模拟记录",
     "retryConfirm": "确定重置该项目状态并重新构建图谱？",
-    "retryError": "重置失败"
+    "retryError": "重置失败",
+    "batchSelect": "批量选择",
+    "batchExit": "退出批量",
+    "batchSelectAll": "全选",
+    "batchUnselectAll": "取消全选",
+    "batchSelectedCount": "已选 {n} 项",
+    "batchDelete": "删除选中",
+    "batchDeleteConfirm": "确定删除选中的 {n} 个项目？此操作不可恢复。",
+    "batchDeleteResult": "已删除 {done} 个，失败 {failed} 个"
   },
   "api": {
     "projectNotFound": "项目不存在: {id}",
@@ -990,7 +998,15 @@
     "msgRefillTaskLost": "补边任务不存在或已丢失，请重新补边",
     "savedFilesTitle": "已保存 {count} 个文件（来自首页）",
     "loadFailed": "加载世界设定失败",
-    "retry": "重试"
+    "retry": "重试",
+    "batchSelect": "批量选择",
+    "batchExit": "退出批量",
+    "batchSelectedCount": "已选 {n} 项",
+    "batchAccept": "批量通过",
+    "batchDismiss": "批量驳回",
+    "batchClear": "清空",
+    "batchConflictConfirm": "确定对选中的 {n} 个冲突标记为「{st}」？",
+    "batchConflictResult": "已处理 {done} 个，失败 {failed} 个"
   },
   "assistant": {
     "open": "助手",

@@ -501,7 +501,15 @@
     "deleteEmptyConfirm": "Delete this empty simulation record? It has no linked project or content and can be safely cleaned up.",
     "deleteEmptyHint": "Remove an empty simulation not linked to any project or content",
     "retryConfirm": "Reset this project and rebuild its graph?",
-    "retryError": "Reset failed"
+    "retryError": "Reset failed",
+    "batchSelect": "Select",
+    "batchExit": "Done",
+    "batchSelectAll": "Select All",
+    "batchUnselectAll": "Clear All",
+    "batchSelectedCount": "{n} selected",
+    "batchDelete": "Delete Selected",
+    "batchDeleteConfirm": "Delete {n} selected items? This cannot be undone.",
+    "batchDeleteResult": "Deleted {done}, {failed} failed"
   },
   "api": {
     "projectNotFound": "Project not found: {id}",
@@ -990,7 +998,15 @@
     "msgRefillTaskLost": "Edge refill task is missing or was lost; please retry",
     "savedFilesTitle": "{count} saved file(s) from Home",
     "loadFailed": "Failed to load world settings",
-    "retry": "Retry"
+    "retry": "Retry",
+    "batchSelect": "Select",
+    "batchExit": "Done",
+    "batchSelectedCount": "{n} selected",
+    "batchAccept": "Accept All",
+    "batchDismiss": "Dismiss All",
+    "batchClear": "Clear",
+    "batchConflictConfirm": "Mark {n} selected conflicts as \"{st}\"?",
+    "batchConflictResult": "Processed {done}, {failed} failed"
   },
   "assistant": {
     "open": "Assistant",

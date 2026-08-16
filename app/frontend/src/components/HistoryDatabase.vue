@@ -19,6 +19,19 @@
       <div class="section-line"></div>
       <span class="section-title">{{ $t('history.title') }}</span>
       <div class="section-line"></div>
+      <div class="hist-batch-ctl">
+        <button v-if="projects.length" class="hist-batch-btn" :class="{ active: selectionMode }" @click="toggleSelectionMode">
+          {{ selectionMode ? $t('history.batchExit') : $t('history.batchSelect') }}
+        </button>
+        <template v-if="selectionMode">
+          <button class="hist-batch-btn" @click="toggleSelectAll">{{ allSelected ? $t('history.batchUnselectAll') : $t('history.batchSelectAll') }}</button>
+          <span class="hist-batch-count">{{ $t('history.batchSelectedCount', { n: selectedIds.length }) }}</span>
+          <button class="hist-batch-btn danger" :disabled="!selectedIds.length || batchDeleting" @click="runBatchDelete">
+            <span v-if="batchDeleting" class="loading-spinner sm"></span>
+            {{ $t('history.batchDelete') }}
+          </button>
+        </template>
+      </div>
     </div>
 
     <!-- 历史项目加载失败告警 -->
@@ -34,12 +47,16 @@
         v-for="(project, index) in projects"
         :key="project.simulation_id"
         class="project-card"
-        :class="{ expanded: isExpanded, hovering: hoveringCard === index }"
+        :class="{ expanded: isExpanded, hovering: hoveringCard === index, sel: selectionMode && isSelected(project), selected: selectionMode && isSelected(project) }"
         :style="getCardStyle(index)"
         @mouseenter="hoveringCard = index"
         @mouseleave="hoveringCard = null"
-        @click="navigateToProject(project)"
+        @click="onCardClick(project)"
       >
+        <!-- 批量选择角标 -->
+        <div v-if="selectionMode" class="card-sel-mark" @click.stop="toggleSelect(project)">
+          <span class="sel-box" :class="{ checked: isSelected(project) }"></span>
+        </div>
         <!-- 卡片头部：simulation_id 和 功能可用状态 -->
         <div class="card-header">
           <span class="card-id">{{ formatSimulationId(project.simulation_id) }}</span>
@@ -582,6 +599,67 @@ const handleDeleteProject = async (project, event) => {
   }
 }
 
+// 批量选择（历史卡片多选删除）
+const selectionMode = ref(false)
+const selectedIds = ref([])
+const batchDeleting = ref(false)
+function isSelected(project) {
+  const id = project.simulation_id || project.id
+  return selectedIds.value.includes(id)
+}
+function onCardClick(project) {
+  if (selectionMode.value) {
+    toggleSelect(project)
+    return
+  }
+  navigateToProject(project)
+}
+function toggleSelect(project) {
+  const id = project.simulation_id || project.id
+  if (!id) return
+  const i = selectedIds.value.indexOf(id)
+  if (i >= 0) selectedIds.value.splice(i, 1)
+  else selectedIds.value.push(id)
+}
+const allSelected = computed(() => {
+  return projects.value.length > 0 && projects.value.every(p => isSelected(p))
+})
+function toggleSelectAll() {
+  if (allSelected.value) {
+    selectedIds.value = []
+  } else {
+    selectedIds.value = projects.value.map(p => p.simulation_id || p.id).filter(Boolean)
+  }
+}
+function toggleSelectionMode() {
+  selectionMode.value = !selectionMode.value
+  if (!selectionMode.value) selectedIds.value = []
+}
+async function runBatchDelete() {
+  const targets = projects.value.filter(p => isSelected(p))
+  if (!targets.length || batchDeleting.value) return
+  if (!window.confirm(t('history.batchDeleteConfirm', { n: targets.length }))) return
+  batchDeleting.value = true
+  let failed = 0
+  for (const project of targets) {
+    try {
+      // 复用单删逻辑（空模拟走模拟级删除，普通项目走项目级删除）
+      if (isEmptySimulation(project)) {
+        await deleteSimulation(project.simulation_id || project.id)
+      } else {
+        await deleteProject(project.project_id || project.id)
+      }
+    } catch (e) {
+      failed++
+    }
+  }
+  batchDeleting.value = false
+  const okCount = targets.length - failed
+  alert(t('history.batchDeleteResult', { done: okCount, failed }))
+  selectedIds.value = []
+  await loadHistory()
+}
+
 // 重试失败项目
 const handleRetryProject = async (project, event) => {
   if (event) event.stopPropagation()
@@ -850,6 +928,56 @@ onUnmounted(() => {
   letter-spacing: 3px;
   text-transform: uppercase;
 }
+
+/* 批量选择控制 */
+.hist-batch-ctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hist-batch-btn {
+  border: 1px solid #D1D5DB;
+  background: #FFF;
+  color: #374151;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.hist-batch-btn:hover { border-color: #9CA3AF; }
+.hist-batch-btn.active { background: #1f2937; color: #FFF; border-color: #1f2937; }
+.hist-batch-btn.danger { color: #b91c1c; border-color: #fecaca; }
+.hist-batch-btn.danger:disabled { opacity: 0.5; cursor: not-allowed; }
+.hist-batch-count { font-size: 11px; color: #6B7280; }
+
+.card-sel-mark {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 5;
+}
+.sel-box {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #9CA3AF;
+  border-radius: 5px;
+  background: rgba(255,255,255,0.9);
+  cursor: pointer;
+}
+.sel-box.checked { background: #FF5722; border-color: #FF5722; position: relative; }
+.sel-box.checked::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  color: #FFF;
+  font-size: 12px;
+  line-height: 14px;
+  text-align: center;
+}
+.project-card.sel { outline: 2px solid #FF5722; outline-offset: 1px; }
 
 /* 卡片容器 */
 .cards-container {

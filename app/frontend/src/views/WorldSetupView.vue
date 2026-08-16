@@ -195,6 +195,15 @@
               {{ $t('world.conflictCount', { count: report.conflicts.length }) }}
             </span>
             <span v-else class="badge success">{{ $t('world.noConflict') }}</span>
+            <button v-if="report.conflicts.length" class="mini-btn" :class="{ active: conflictSelMode }" @click="toggleConflictSelMode">
+              {{ conflictSelMode ? $t('world.batchExit') : $t('world.batchSelect') }}
+            </button>
+            <template v-if="conflictSelMode">
+              <span class="bat-count">{{ $t('world.batchSelectedCount', { n: selConflictIds.length }) }}</span>
+              <button class="mini-btn primary" :disabled="!selConflictIds.length || batchConflictBusy" @click="runBatchAccept">{{ $t('world.batchAccept') }}</button>
+              <button class="mini-btn" :disabled="!selConflictIds.length || batchConflictBusy" @click="runBatchDismiss">{{ $t('world.batchDismiss') }}</button>
+              <button class="mini-btn" @click="selConflictIds = []">{{ $t('world.batchClear') }}</button>
+            </template>
           </div>
         </div>
 
@@ -215,8 +224,9 @@
         </div>
 
         <div v-else class="conflict-list">
-          <div v-for="c in report.conflicts" :key="c.conflict_id" class="conflict-item" :class="'sev-' + c.severity">
+          <div v-for="c in report.conflicts" :key="c.conflict_id" class="conflict-item" :class="'sev-' + c.severity + (conflictSelMode ? ' sel-mode' : '')">
             <div class="conflict-head">
+              <span v-if="conflictSelMode" class="conflict-sel" @click.stop="toggleConflictSelect(c)"><span class="sel-box" :class="{ checked: isSelConflict(c) }"></span></span>
               <span class="detail-type-badge">{{ typeLabel(c.conflict_type) }}</span>
               <span class="severity-tag" :class="'sev-' + c.severity">{{ sevLabel(c.severity) }}</span>
               <span class="conflict-topic">{{ c.topic }}</span>
@@ -1325,6 +1335,44 @@ async function setConflictStatus(conflict, status) {
   }
 }
 
+// 冲突列表多选标记 通过/驳回
+const conflictSelMode = ref(false)
+const selConflictIds = ref([])
+const batchConflictBusy = ref(false)
+function isSelConflict(c) {
+  return selConflictIds.value.includes(c.conflict_id)
+}
+function toggleConflictSelect(c) {
+  const i = selConflictIds.value.indexOf(c.conflict_id)
+  if (i >= 0) selConflictIds.value.splice(i, 1)
+  else selConflictIds.value.push(c.conflict_id)
+}
+function toggleConflictSelMode() {
+  conflictSelMode.value = !conflictSelMode.value
+  if (!conflictSelMode.value) selConflictIds.value = []
+}
+async function runBatchConflictStatus(status) {
+  const targets = report.value.conflicts.filter(c => isSelConflict(c))
+  if (!targets.length || batchConflictBusy.value) return
+  if (!window.confirm(t('world.batchConflictConfirm', { n: targets.length, st: status === 'accepted' ? t('world.acceptBg') : t('world.dismissConflict') }))) return
+  batchConflictBusy.value = true
+  let failed = 0
+  for (const c of targets) {
+    try {
+      await updateConflictStatus(projectId, c.conflict_id, status, c.resolution_note || '')
+      c.status = status
+    } catch (e) {
+      failed++
+    }
+  }
+  batchConflictBusy.value = false
+  // 提示
+  alert(t('world.batchConflictResult', { done: targets.length - failed, failed }))
+  selConflictIds.value = []
+}
+function runBatchAccept() { return runBatchConflictStatus('accepted') }
+function runBatchDismiss() { return runBatchConflictStatus('dismissed') }
+
 function toggleJustify(conflict) {
   if (conflict.justifyOpen) {
     conflict.justifyOpen = false
@@ -2287,6 +2335,31 @@ onUnmounted(() => {
   font-size: 13px;
   flex: 1;
 }
+/* 冲突批量选择 */
+.conflict-item.sel-mode { cursor: pointer; }
+.conflict-sel { display: inline-flex; align-items: center; }
+.conflict-sel .sel-box {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #9CA3AF;
+  border-radius: 4px;
+  background: #FFF;
+  cursor: pointer;
+}
+.conflict-sel .sel-box.checked { background: #FF5722; border-color: #FF5722; position: relative; }
+.conflict-sel .sel-box.checked::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  color: #FFF;
+  font-size: 11px;
+  line-height: 12px;
+  text-align: center;
+}
+.bat-count { font-size: 11px; color: #666; }
+.step-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
 .conflict-status {
   font-size: 10px;
   font-weight: 600;
