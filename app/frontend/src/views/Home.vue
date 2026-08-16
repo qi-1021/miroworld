@@ -102,59 +102,8 @@
       </div>
 
       <div class="console-card liquid-glass">
-        <!-- ===== 媒体分析（可隐藏） ===== -->
-        <template v-if="mediaModeEnabled && activeMode === 'media'">
-          <div class="form-row">
-            <label class="field-label">{{ $t('home.realitySeed') }}<span class="field-meta">{{ $t('home.supportedFormats') }}</span></label>
-            <div class="upload-zone" :class="{ 'drag-over': isDragOver, 'has-files': files.length > 0 }"
-              @dragover.prevent="handleDragOver" @dragleave.prevent="handleDragLeave"
-              @drop.prevent="handleDrop" @click="triggerFileInput">
-              <input ref="fileInput" type="file" multiple accept=".pdf,.md,.txt,.docx,.html,.htm,.epub,.odt,.rtf" @change="handleFileSelect" style="display: none" :disabled="loading" />
-              <div v-if="files.length === 0" class="upload-placeholder">
-                <div class="upload-icon">↑</div>
-                <div class="upload-title">{{ $t('home.dragToUpload') }}</div>
-                <div class="upload-hint">{{ $t('home.orBrowse') }}</div>
-              </div>
-              <div v-else class="file-list">
-                <div v-for="(file, index) in files" :key="index" class="file-item">
-                  <span class="file-icon">📄</span>
-                  <span class="file-name">{{ file.name }}</span>
-                  <button @click.stop="removeFile(index)" class="remove-btn">×</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="form-row">
-            <label class="field-label">{{ $t('home.taskGoal') }}<span class="field-meta">{{ $t('home.taskGoalMeta') }}</span></label>
-            <textarea v-model="formData.simulationRequirement" class="field-input" rows="2"
-              :placeholder="$t('home.taskGoalPlaceholder')" :disabled="loading"></textarea>
-          </div>
-
-          <div class="form-row">
-            <label class="field-label">{{ $t('home.extraContext') }}<span class="field-meta">{{ $t('home.extraContextMeta') }}</span></label>
-            <textarea v-model="formData.additionalContext" class="field-input" rows="3"
-              :placeholder="$t('home.extraContextPlaceholder')" :disabled="loading"></textarea>
-          </div>
-
-          <div class="form-actions">
-            <div v-if="modelConfigAlert" class="model-config-alert">
-              <span class="mc-text">⚠ {{ modelConfigAlert }}</span>
-              <button class="mc-link" type="button" @click="openModelSettings">{{ $t('home.configureModel') }}</button>
-            </div>
-            <div v-if="error" class="world-error">{{ error }}</div>
-            <button class="btn btn-primary btn-lg" @click="startSimulation"
-              :class="{ 'btn-disabled': !canSubmit }" :disabled="loading"
-              :title="!canSubmit ? $t('home.mediaEmptyHint') : ''">
-              <span v-if="!loading">{{ $t('home.startEngine') }}</span>
-              <span v-else>{{ $t('home.initializing') }}</span>
-              <span class="btn-arrow">→</span>
-            </button>
-          </div>
-        </template>
-
         <!-- ===== 世界模拟 ===== -->
-        <template v-else>
+        <template>
           <div class="form-row">
             <label class="field-label">{{ $t('home.worldBgLabel') }}<span class="field-meta">{{ $t('home.supportedFormats') }}</span></label>
             <div class="upload-zone compact" :class="{ 'drag-over': bgDragOver, 'has-files': worldBgFiles.length > 0 }"
@@ -243,7 +192,6 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import HistoryDatabase from '../components/HistoryDatabase.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
-import { setPendingUpload } from '../store/pendingUpload.js'
 import { BRAND } from '../config/brand'
 import { createProject, importProjectSnapshot } from '../api/graph'
 import { saveWorldInputMultipart } from '../api/world'
@@ -252,19 +200,8 @@ import { getModelRegistry } from '../api/models'
 const router = useRouter()
 const { t } = useI18n()
 
-// 表单数据
-const formData = ref({
-  simulationRequirement: '',  // 任务目标（必填）
-  additionalContext: ''       // 附加说明（可选）
-})
-
-// 文件列表
-const files = ref([])
-
 // 状态
 const loading = ref(false)
-const error = ref('')
-const isDragOver = ref(false)
 const consoleRef = ref(null)
 const year = new Date().getFullYear()
 
@@ -334,11 +271,6 @@ const openModelSettings = () => {
   window.dispatchEvent(new CustomEvent('open-model-settings'))
 }
 
-// 首页只保留世界推演主流程，旧媒体分析入口不再向用户暴露。
-const activeMode = ref('world')
-// Legacy media analysis is opt-in; world simulation is the default workflow.
-const mediaModeEnabled = ref(false)
-
 // 世界模拟：背景资料 / 章节正文（各支持多文件 + 直接文本）
 const worldBgFiles = ref([])
 const worldStoryFiles = ref([])
@@ -351,14 +283,6 @@ const storyDragOver = ref(false)
 const bgFileInput = ref(null)
 const storyFileInput = ref(null)
 
-// 文件输入引用
-const fileInput = ref(null)
-
-// 计算属性:是否可以提交（媒体分析）
-const canSubmit = computed(() => {
-  return formData.value.simulationRequirement.trim() !== '' && files.value.length > 0
-})
-
 // 计算属性：是否可以创建世界（背景/正文至少一项非空）
 const canCreateWorld = computed(() => {
   return (
@@ -369,54 +293,11 @@ const canCreateWorld = computed(() => {
   )
 })
 
-// 触发文件选择
-const triggerFileInput = () => {
-  if (!loading.value) {
-    fileInput.value?.click()
-  }
-}
-
-// 处理文件选择
-const handleFileSelect = (event) => {
-  const selectedFiles = Array.from(event.target.files)
-  addFiles(selectedFiles)
-}
-
-// 处理拖拽相关
-const handleDragOver = (e) => {
-  if (!loading.value) {
-    isDragOver.value = true
-  }
-}
-
-const handleDragLeave = (e) => {
-  isDragOver.value = false
-}
-
-const handleDrop = (e) => {
-  isDragOver.value = false
-  if (loading.value) return
-
-  const droppedFiles = Array.from(e.dataTransfer.files)
-  addFiles(droppedFiles)
-}
-
 // 前台可接收的文件扩展名（与后端 Config.ALLOWED_EXTENSIONS 对齐）
 const ACCEPTED_EXTS = ['pdf', 'md', 'markdown', 'txt', 'docx', 'html', 'htm', 'epub', 'odt', 'rtf']
 const isAcceptedFile = (file) => {
   const ext = file.name.split('.').pop().toLowerCase()
   return ACCEPTED_EXTS.includes(ext)
-}
-
-// 添加文件
-const addFiles = (newFiles) => {
-  const validFiles = newFiles.filter(isAcceptedFile)
-  files.value.push(...validFiles)
-}
-
-// 移除文件
-const removeFile = (index) => {
-  files.value.splice(index, 1)
 }
 
 // ============ 世界模拟模式：资料上传 ============
@@ -496,38 +377,9 @@ const scrollToConsole = () => {
   consoleRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-// 明确进入"世界设定库"：切到世界模式并滚动到控制台/历史区
+// 明确进入"世界设定库"：滚动到控制台/历史区
 const openWorldLibrary = () => {
-  activeMode.value = 'world'
   scrollToConsole()
-}
-
-// 开始模拟 - 立即跳转，API调用在Process页面进行
-const startSimulation = async () => {
-  if (loading.value) return
-
-  // 未选择文件或未填写目标：给出明确提示
-  if (!canSubmit.value) {
-    error.value = t('home.mediaEmptyHint')
-    return
-  }
-
-  // 模型前置校验：无已验证模型时阻止提交并引导配置
-  error.value = ''
-  if (!(await ensureModelConfigured())) return
-
-  // 存储待上传的数据
-  setPendingUpload(
-    files.value,
-    formData.value.simulationRequirement,
-    formData.value.additionalContext
-  )
-
-  // 立即跳转到Process页面（使用特殊标识表示新建项目）
-  router.push({
-    name: 'Process',
-    params: { projectId: 'new' }
-  })
 }
 
 // 首页快照导入入口
