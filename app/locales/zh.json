@@ -252,6 +252,7 @@
     "inProgress": "进行中",
     "creating": "创建中...",
     "enterEnvSetup": "进入环境搭建",
+    "retryBuild": "重新构建图谱",
     "createSimulationFailed": "创建模拟失败: {error}",
     "createSimulationException": "创建模拟异常: {error}"
   },

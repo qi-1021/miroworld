@@ -71,6 +71,8 @@
             :buildProgress="buildProgress"
             :graphData="graphData"
             :systemLogs="systemLogs"
+            :projectError="error"
+            @retry-build="retryBuildGraph"
           />
         </template>
       </div>
@@ -237,6 +239,13 @@ const loadProject = async () => {
       } else if (res.data.status === 'graph_completed' && res.data.graph_id) {
         currentPhase.value = 2
         await loadGraph(res.data.graph_id)
+      } else if (res.data.status === 'failed') {
+        // 失败/中断：保留错误信息用于重试提示；已有图谱仍加载展示
+        error.value = res.data.error || t('main.statusError')
+        if (res.data.graph_id) {
+          currentPhase.value = 2
+          await loadGraph(res.data.graph_id)
+        }
       }
     } else {
       error.value = res.error
@@ -279,6 +288,13 @@ const startBuildGraph = async () => {
     error.value = err.message
     addLog(`Exception in startBuildGraph: ${err.message}`)
   }
+}
+
+// 失败/中断后重新发起图谱构建
+const retryBuildGraph = async () => {
+  error.value = ''
+  buildProgress.value = null
+  await startBuildGraph()
 }
 
 const startGraphPolling = () => {

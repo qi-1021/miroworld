@@ -252,6 +252,7 @@
     "inProgress": "In Progress",
     "creating": "Creating...",
     "enterEnvSetup": "Enter Environment Setup",
+    "retryBuild": "Retry Graph Build",
     "createSimulationFailed": "Failed to create simulation: {error}",
     "createSimulationException": "Simulation creation error: {error}"
   },

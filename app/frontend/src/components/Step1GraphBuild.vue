@@ -140,6 +140,14 @@
               <span class="stat-label">{{ $t('step1.schemaTypes') }}</span>
             </div>
           </div>
+
+          <!-- 失败/中断后的重新构建入口 -->
+          <div v-if="projectError" class="retry-section">
+            <p class="retry-error">{{ projectError }}</p>
+            <button class="action-btn" @click="$emit('retry-build')">
+              {{ $t('step1.retryBuild') }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -201,10 +209,11 @@ const props = defineProps({
   ontologyProgress: Object,
   buildProgress: Object,
   graphData: Object,
-  systemLogs: { type: Array, default: () => [] }
+  systemLogs: { type: Array, default: () => [] },
+  projectError: { type: String, default: '' }
 })
 
-defineEmits(['next-step'])
+defineEmits(['next-step', 'retry-build'])
 
 const selectedOntologyItem = ref(null)
 const logContent = ref(null)
@@ -600,6 +609,23 @@ watch(() => props.systemLogs.length, () => {
   text-transform: uppercase;
   margin-top: 4px;
   display: block;
+}
+
+/* 失败/中断重试 */
+.retry-section {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #e0b4b4;
+  border-radius: 6px;
+  background: #fff5f5;
+}
+
+.retry-error {
+  font-size: 12px;
+  color: #b91c1c;
+  margin-bottom: 10px;
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 /* Step 03 Button */

@@ -637,10 +637,26 @@ const goToProject = () => {
 
 // 导航到环境配置页面（Simulation）
 const goToSimulation = () => {
-  if (selectedProject.value?.simulation_id) {
+  const project = selectedProject.value
+  if (!project) return
+
+  // 世界项目：世界模拟不适用社交媒体环境搭建，直接进入世界设定页的推演模块
+  if (isWorldProject(project)) {
+    if (project.project_id) {
+      router.push({
+        name: 'WorldSetup',
+        params: { projectId: project.project_id },
+        query: { replay: '1' }
+      })
+      closeModal()
+    }
+    return
+  }
+
+  if (project.simulation_id) {
     router.push({
       name: 'Simulation',
-      params: { simulationId: selectedProject.value.simulation_id }
+      params: { simulationId: project.simulation_id }
     })
     closeModal()
   }
