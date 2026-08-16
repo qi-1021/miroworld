@@ -24,7 +24,7 @@
         <LanguageSwitcher />
         <div class="step-divider"></div>
         <div class="workflow-step">
-          <span class="step-num">Step {{ currentStep }}/5</span>
+          <span class="step-num">Step {{ currentStep }}/4</span>
           <span class="step-name">{{ $tm('main.stepNames')[currentStep - 1] }}</span>
         </div>
         <div class="step-divider"></div>
@@ -61,27 +61,41 @@
           </div>
           <span class="world-entry-btn">打开 ➝</span>
         </div>
-        <!-- Step 1: 图谱构建 -->
-        <Step1GraphBuild
-          v-if="currentStep === 1"
-          :currentPhase="currentPhase"
-          :projectData="projectData"
-          :ontologyProgress="ontologyProgress"
-          :buildProgress="buildProgress"
-          :graphData="graphData"
-          :systemLogs="systemLogs"
-          @next-step="handleNextStep"
-        />
-        <!-- Step 2: 环境搭建 -->
-        <Step2EnvSetup
-          v-else-if="currentStep === 2"
-          :projectData="projectData"
-          :graphData="graphData"
-          :systemLogs="systemLogs"
-          @go-back="handleGoBack"
-          @next-step="handleNextStep"
-          @add-log="addLog"
-        />
+        <!-- Step 1: 主线采集（图谱构建 + 环境搭建子面板） -->
+        <template v-if="currentStep === 1">
+          <div class="sub-panel-tabs">
+            <button
+              class="sub-panel-tab"
+              :class="{ active: subPanel === 'mainline' }"
+              @click="subPanel = 'mainline'"
+            >▤ {{ $t('main.subPanelMainline') }}</button>
+            <button
+              class="sub-panel-tab"
+              :class="{ active: subPanel === 'env' }"
+              @click="subPanel = 'env'"
+            >⚙ {{ $t('main.subPanelEnv') }}</button>
+          </div>
+          <Step1GraphBuild
+            v-if="subPanel === 'mainline'"
+            :currentPhase="currentPhase"
+            :projectData="projectData"
+            :ontologyProgress="ontologyProgress"
+            :buildProgress="buildProgress"
+            :graphData="graphData"
+            :systemLogs="systemLogs"
+            @next-step="handleNextStep"
+          />
+          <!-- 环境搭建子面板：并入 Step1 主线采集 -->
+          <Step2EnvSetup
+            v-else
+            :projectData="projectData"
+            :graphData="graphData"
+            :systemLogs="systemLogs"
+            @go-back="handleGoBack"
+            @next-step="handleNextStep"
+            @add-log="addLog"
+          />
+        </template>
       </div>
     </main>
   </div>
@@ -106,8 +120,10 @@ const { t, tm } = useI18n()
 const viewMode = ref('split') // graph | split | workbench
 
 // Step State
-const currentStep = ref(1) // 1: 图谱构建, 2: 环境搭建, 3: 开始模拟, 4: 报告生成, 5: 深度互动
+const currentStep = ref(1) // 1: 主线采集, 2: 世界模拟, 3: 最终时间线报告, 4: 深度互动
 const stepNames = computed(() => tm('main.stepNames'))
+// Step1 主线采集中子面板：mainline(图谱构建) | env(环境搭建)
+const subPanel = ref('mainline')
 
 // Data State
 const currentProjectId = ref(route.params.projectId)
@@ -175,12 +191,12 @@ const toggleMaximize = (target) => {
 }
 
 const handleNextStep = (params = {}) => {
-  if (currentStep.value < 5) {
+  if (currentStep.value < 4) {
     currentStep.value++
     addLog(t('log.enterStep', { step: currentStep.value, name: stepNames.value[currentStep.value - 1] }))
 
-    // 如果是从 Step 2 进入 Step 3，记录模拟轮数配置
-    if (currentStep.value === 3 && params.maxRounds) {
+    // 从 Step1 进入 Step2 记录模拟轮数配置
+    if (currentStep.value === 2 && params.maxRounds) {
       addLog(t('log.customSimRounds', { rounds: params.maxRounds }))
     }
   }
@@ -585,6 +601,39 @@ onUnmounted(() => {
 
 .panel-wrapper.left {
   border-right: 1px solid #EAEAEA;
+}
+
+/* Step1 主线采集中子面板切换 */
+.sub-panel-tabs {
+  display: flex;
+  gap: 4px;
+  background: rgba(255,255,255,0.5);
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.6);
+  margin: 0 16px 12px;
+  align-self: flex-start;
+}
+.sub-panel-tab {
+  border: none;
+  background: transparent;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color: #536078;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, box-shadow 0.18s;
+}
+.sub-panel-tab.active {
+  background: #fff;
+  color: #10203a;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+@media (max-width: 600px) {
+  .sub-panel-tabs { margin: 0 8px 8px; width: calc(100% - 16px); }
+  .sub-panel-tab { flex: 1; padding: 7px 10px; }
 }
 
 /* 世界设定入口条（与 step-card 视觉一致） */

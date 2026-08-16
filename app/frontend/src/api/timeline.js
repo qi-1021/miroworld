@@ -244,3 +244,36 @@ export function getTimelineThreads(projectId) {
     method: 'get'
   })
 }
+
+/**
+ * （重新）生成项目的最终时间线报告（小说/梗概，确定性聚合）
+ * @param {String} projectId
+ * @returns {Promise} { success, data: { project_id, generated_at, format, deterministic, goal, structure, best_flow, events_count, synopsis, novel } }
+ */
+export function generateFinalReport(projectId) {
+  return service({
+    url: '/api/timeline/' + projectId + '/final-report',
+    method: 'post'
+  })
+}
+
+/**
+ * 读取已生成的项目最终时间线报告
+ * @param {String} projectId
+ * @returns {Promise} { success, data: { has_report, project_id, ... } }
+ */
+export function getFinalReport(projectId) {
+  return service({
+    url: '/api/timeline/' + projectId + '/final-report',
+    method: 'get'
+  })
+}
+
+/**
+ * 构造最终时间线报告下载 URL
+ * @param {String} projectId
+ * @returns {String} 相对下载地址（供 window.open / <a download>）
+ */
+export function finalReportDownloadUrl(projectId) {
+  return '/api/timeline/' + projectId + '/final-report/download'
+}

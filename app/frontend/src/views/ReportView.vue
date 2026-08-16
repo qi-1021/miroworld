@@ -24,8 +24,8 @@
         <LanguageSwitcher />
         <div class="step-divider"></div>
         <div class="workflow-step">
-          <span class="step-num">Step 4/5</span>
-          <span class="step-name">{{ $tm('main.stepNames')[3] }}</span>
+          <span class="step-num">Step 3/4</span>
+          <span class="step-name">{{ $tm('main.stepNames')[2] }}</span>
         </div>
         <div class="step-divider"></div>
         <span class="status-indicator" :class="statusClass">
@@ -49,11 +49,10 @@
         />
       </div>
 
-      <!-- Right Panel: Step4 报告生成 -->
+      <!-- Right Panel: Step3 最终时间线报告 -->
       <div class="panel-wrapper right" :style="rightPanelStyle">
-        <Step4Report
-          :reportId="currentReportId"
-          :simulationId="simulationId"
+        <Step3FinalReport
+          :projectId="projectIdForReport"
           :systemLogs="systemLogs"
           @add-log="addLog"
           @update-status="updateStatus"
@@ -68,7 +67,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import GraphPanel from '../components/GraphPanel.vue'
-import Step4Report from '../components/Step4Report.vue'
+import Step3FinalReport from '../components/Step3FinalReport.vue'
 import { getProject, getGraphData } from '../api/graph'
 import { getSimulation } from '../api/simulation'
 import { getReport } from '../api/report'
@@ -94,6 +93,9 @@ const graphData = ref(null)
 const graphLoading = ref(false)
 const systemLogs = ref([])
 const currentStatus = ref('processing') // processing | completed | error
+
+// Step3 最终时间线报告按 project_id 生成
+const projectIdForReport = computed(() => projectData.value?.project_id || '')
 
 // --- Computed Layout Styles ---
 const leftPanelStyle = computed(() => {
