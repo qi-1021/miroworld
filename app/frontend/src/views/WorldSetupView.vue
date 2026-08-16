@@ -20,6 +20,19 @@
       </div>
     </header>
 
+    <!-- Miro World 新 5 步导航 -->
+    <nav class="world-step-nav">
+      <button
+        v-for="(s, i) in worldSteps"
+        :key="s.key"
+        class="world-step-btn"
+        @click="goStep(s.key)"
+      >
+        <span class="ws-num">Step{{ i + 1 }}</span>
+        <span class="ws-label">{{ s.label }}</span>
+      </button>
+    </nav>
+
     <div class="world-body">
       <!-- 加载失败提示 + 重试（设定库读取失败时不至于页面空白无解释） -->
       <div v-if="loadError" class="load-error-bar">
@@ -28,7 +41,7 @@
       </div>
 
       <!-- 输入区 -->
-      <div class="step-card">
+      <div ref="inputSection" class="step-card">
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">01</span>
@@ -528,7 +541,7 @@
         </div>
 
         <!-- 角色采访 -->
-        <div v-if="characters.length" class="sim-interview">
+        <div v-if="characters.length" ref="interactionSection" class="sim-interview">
           <div class="sim-interview-title">{{ $t('world.interviewTitle') }}</div>
           <p class="sim-interview-hint">{{ $t('world.interviewHint') }}</p>
           <div class="sim-char-list">
@@ -606,7 +619,7 @@
             </template>
           </div>
           <!-- 当前模拟的 what-if 推演对话框 -->
-          <div v-if="whatIfBaseId" class="whatif-box">
+          <div v-if="whatIfBaseId" ref="branchSection" class="whatif-box">
             <div class="whatif-title">
               {{ $t('world.whatifBaseTitle', { label: whatIfBaseLabel }) }}
             </div>
@@ -764,7 +777,7 @@
       </div>
 
       <!-- 时间线 -->
-      <div v-if="stats" class="step-card">
+      <div v-if="stats" ref="timelineSection" class="step-card">
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">06</span>
@@ -898,9 +911,33 @@ const simMsgError = ref(false)
 const simEvents = ref([])
 const simHistory = ref([])
 const simSection = ref(null)
+const inputSection = ref(null)
+const timelineSection = ref(null)
+const branchSection = ref(null)
+const interactionSection = ref(null)
 let simPollTimer = null
 let simPollingId = ''
 let whatIfPollTimer = null
+
+// Miro World 新 5 步导航
+const worldSteps = computed(() => [
+  { key: 'input', label: t('home.step01Title') },
+  { key: 'timeline', label: t('home.step02Title') },
+  { key: 'sim', label: t('home.step03Title') },
+  { key: 'branch', label: t('home.step04Title') },
+  { key: 'interaction', label: t('home.step05Title') },
+])
+function goStep(key) {
+  const map = {
+    input: inputSection,
+    timeline: timelineSection,
+    sim: simSection,
+    branch: branchSection,
+    interaction: interactionSection
+  }
+  const target = (map[key]?.value) || simSection.value
+  target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 // 世界图谱状态
 const GV_W = 780
@@ -2077,6 +2114,47 @@ onUnmounted(() => {
 .back-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Miro World 新 5 步导航 */
+.world-step-nav {
+  display: flex;
+  gap: 8px;
+  padding: 10px 24px;
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
+  flex-shrink: 0;
+  overflow-x: auto;
+  z-index: 90;
+}
+.world-step-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.55);
+  color: #10203a;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+}
+.world-step-btn:hover {
+  background: rgba(161, 197, 10, 0.15);
+  border-color: #a1c50a;
+}
+.ws-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  color: #a1c50a;
+}
+.ws-label {
+  color: #10203a;
 }
 
 /* Body */
