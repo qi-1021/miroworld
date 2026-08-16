@@ -198,3 +198,33 @@ class TestRenderIntegration:
         assert "他发誓复仇，多年后实现" in r
         assert len(rep["applied"]) == 2
         assert rep["skipped"] == []
+
+
+# ---------------------------------------------------------------------------
+# 兼容层 patch_apply（旧补丁 dict → 新引擎）测试
+# ---------------------------------------------------------------------------
+def test_compat_shim_old_patch_dict_replace():
+    from app.services.patch_apply import apply_patches as legacy_apply
+    text = "他来自北方。"
+    out = legacy_apply(text, [{"op": "replace", "locator": "北", "old_text": "来自北方",
+                               "new_text": "来自南方", "source": "story", "conflict_id": "c1"},
+                              {"op": "replace", "old_text": "不存在", "new_text": "x",
+                               "source": "settings"}], source="story")
+    assert out["text"] == "他来自南方。"
+    assert "来自南方" in out["text"]
+    assert len(out["applied"]) == 1
+    assert out["applied"][0]["id"] == "c1"
+    assert len(out["skipped"]) == 1  # settings patch 被 source 过滤
+    assert out["skipped"][0]["reason"] == "source 不匹配"
+
+
+def test_compat_shim_old_append_and_conflict():
+    from app.services.patch_apply import apply_patches as legacy_apply
+    text = "正文。"
+    out = legacy_apply(text, [
+        {"op": "replace", "old_text": "正文", "new_text": "改动", "source": "story", "id": "a"},
+        {"op": "replace", "old_text": "正文", "new_text": "二次", "source": "story", "id": "b"},
+    ], source="story")
+    # 同 anchor 冲突：b 覆盖 a
+    assert "二次" in out["text"]
+    assert any("冲突" in s["reason"] or "覆盖" in s["reason"] for s in out["skipped"])
