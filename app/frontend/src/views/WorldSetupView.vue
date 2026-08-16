@@ -715,7 +715,10 @@
 
         <!-- 世界线之树 -->
         <div v-if="worldTree.length" class="world-tree">
-          <div class="world-tree-title">🌳 {{ $t('world.worldTreeTitle') }}</div>
+          <div class="world-tree-title">
+            🌳 {{ $t('world.worldTreeTitle') }}
+            <button v-if="metaUndoStack.length" class="mini-btn ghost" @click="undoLastMeta">{{ $t('world.undoMeta') }}</button>
+          </div>
           <div v-for="root in worldTree" :key="root.simulation_id" class="tree-node root">
             <div class="tree-node-row">
               <button class="mini-btn ghost" @click="toggleRoot(root.simulation_id)">{{ collapsedRoots.has(root.simulation_id) ? '▶' : '▼' }}</button>
@@ -1216,6 +1219,7 @@ const simEvents = ref([])
 const simHistory = ref([])
 const simProgress = ref({})
 const compareMode = ref(false)
+const metaUndoStack = ref([])
 const compareSelected = ref([])
 const compareOpen = ref(false)
 const compareData = ref([])
@@ -2409,6 +2413,25 @@ async function editWorldlineMeta(sim) {
       note,
     })
     simMsg.value = t('world.msgMetaSaved')
+    simMsgError.value = false
+    metaUndoStack.value.push({ simulation_id: sim.simulation_id, name: currentName, note: currentNote })
+    loadSimHistory()
+  } catch (e) {
+    simMsg.value = e?.message || t('world.msgUnknownError')
+    simMsgError.value = true
+  }
+}
+
+async function undoLastMeta() {
+  const last = metaUndoStack.value.pop()
+  if (!last) return
+  try {
+    await runAssistantAction(projectId, 'update_worldline_meta', {
+      simulation_id: last.simulation_id,
+      name: last.name,
+      note: last.note,
+    })
+    simMsg.value = t('world.msgMetaUndone')
     simMsgError.value = false
     loadSimHistory()
   } catch (e) {

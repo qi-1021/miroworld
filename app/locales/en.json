@@ -1019,6 +1019,8 @@
     "metaNamePrompt": "Name this worldline (leave empty to keep):",
     "metaNotePrompt": "Note (leave empty to keep):",
     "msgMetaSaved": "Worldline info saved",
+    "msgMetaUndone": "Last name/note undone",
+    "undoMeta": "Undo name",
     "compareWorldlines": "Compare Worldlines",
     "compare": "Compare",
     "mergeWorldlines": "Merge Selected",
