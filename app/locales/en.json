@@ -998,6 +998,7 @@
     "eventAction": "Action",
     "eventResult": "Result",
     "eventLinks": "Linked Events",
+    "loadMoreEvents": "Load more events…",
     "allCharacters": "All Characters",
     "exportGraph": "Export Graph",
     "eventCount": "{count} events",

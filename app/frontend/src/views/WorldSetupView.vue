@@ -572,7 +572,7 @@
               <span class="sim-summary-text">{{ s.text }}</span>
             </div>
           </div>
-          <div v-for="(group, gi) in groupedSimEvents" :key="gi" class="sim-step-group" :class="{ active: gi === playbackIndex }">
+          <div v-for="(group, gi) in visibleSimGroups" :key="gi" class="sim-step-group" :class="{ active: gi === playbackIndex }">
             <div class="sim-step-head">
               {{ $t('world.simStepLabel', { step: group.step }) }} · {{ group.time }}
             </div>
@@ -583,6 +583,9 @@
               <span class="sim-event-result">{{ e.result }}</span>
             </div>
           </div>
+          <button v-if="simGroupLimit < groupedSimEvents.length" class="mini-btn sim-load-more" @click="simGroupLimit += 50">
+            {{ $t('world.loadMoreEvents') }}
+          </button>
         </div>
 
         <!-- 事件因果图 -->
@@ -1380,6 +1383,8 @@ const graphCharacters = computed(() => {
 // 事件回放/时间轴播放器
 const playbackIndex = ref(0)
 const playbackPlaying = ref(false)
+const simGroupLimit = ref(50)
+const visibleSimGroups = computed(() => groupedSimEvents.value.slice(0, simGroupLimit.value))
 let playbackTimer = null
 function playbackToggle() {
   if (playbackPlaying.value) {
