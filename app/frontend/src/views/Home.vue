@@ -117,7 +117,7 @@
             <div class="upload-zone" :class="{ 'drag-over': isDragOver, 'has-files': files.length > 0 }"
               @dragover.prevent="handleDragOver" @dragleave.prevent="handleDragLeave"
               @drop.prevent="handleDrop" @click="triggerFileInput">
-              <input ref="fileInput" type="file" multiple accept=".pdf,.md,.txt" @change="handleFileSelect" style="display: none" :disabled="loading" />
+              <input ref="fileInput" type="file" multiple accept=".pdf,.md,.txt,.docx,.html,.htm,.epub,.odt,.rtf" @change="handleFileSelect" style="display: none" :disabled="loading" />
               <div v-if="files.length === 0" class="upload-placeholder">
                 <div class="upload-icon">↑</div>
                 <div class="upload-title">{{ $t('home.dragToUpload') }}</div>
@@ -168,7 +168,7 @@
             <div class="upload-zone compact" :class="{ 'drag-over': bgDragOver, 'has-files': worldBgFiles.length > 0 }"
               @dragover.prevent="bgDragOver = true" @dragleave.prevent="bgDragOver = false"
               @drop.prevent="handleWorldDrop($event, 'bg')" @click="triggerWorldInput('bg')">
-              <input ref="bgFileInput" type="file" multiple accept=".pdf,.md,.txt" @change="handleWorldFiles($event, 'bg')" style="display: none" :disabled="loading" />
+              <input ref="bgFileInput" type="file" multiple accept=".pdf,.md,.txt,.docx,.html,.htm,.epub,.odt,.rtf" @change="handleWorldFiles($event, 'bg')" style="display: none" :disabled="loading" />
               <div v-if="worldBgFiles.length === 0" class="upload-placeholder">
                 <div class="upload-icon">↑</div>
                 <div class="upload-title">{{ $t('home.worldBgUpload') }}</div>
@@ -190,7 +190,7 @@
             <div class="upload-zone compact" :class="{ 'drag-over': storyDragOver, 'has-files': worldStoryFiles.length > 0 }"
               @dragover.prevent="storyDragOver = true" @dragleave.prevent="storyDragOver = false"
               @drop.prevent="handleWorldDrop($event, 'story')" @click="triggerWorldInput('story')">
-              <input ref="storyFileInput" type="file" multiple accept=".pdf,.md,.txt" @change="handleWorldFiles($event, 'story')" style="display: none" :disabled="loading" />
+              <input ref="storyFileInput" type="file" multiple accept=".pdf,.md,.txt,.docx,.html,.htm,.epub,.odt,.rtf" @change="handleWorldFiles($event, 'story')" style="display: none" :disabled="loading" />
               <div v-if="worldStoryFiles.length === 0" class="upload-placeholder">
                 <div class="upload-icon">↑</div>
                 <div class="upload-title">{{ $t('home.worldStoryUpload') }}</div>
@@ -387,12 +387,16 @@ const handleDrop = (e) => {
   addFiles(droppedFiles)
 }
 
+// 前台可接收的文件扩展名（与后端 Config.ALLOWED_EXTENSIONS 对齐）
+const ACCEPTED_EXTS = ['pdf', 'md', 'markdown', 'txt', 'docx', 'html', 'htm', 'epub', 'odt', 'rtf']
+const isAcceptedFile = (file) => {
+  const ext = file.name.split('.').pop().toLowerCase()
+  return ACCEPTED_EXTS.includes(ext)
+}
+
 // 添加文件
 const addFiles = (newFiles) => {
-  const validFiles = newFiles.filter(file => {
-    const ext = file.name.split('.').pop().toLowerCase()
-    return ['pdf', 'md', 'txt'].includes(ext)
-  })
+  const validFiles = newFiles.filter(isAcceptedFile)
   files.value.push(...validFiles)
 }
 
@@ -411,10 +415,7 @@ const triggerWorldInput = (kind) => {
 
 const handleWorldFiles = (event, kind) => {
   const target = kind === 'bg' ? worldBgFiles : worldStoryFiles
-  const selected = Array.from(event.target.files).filter(file => {
-    const ext = file.name.split('.').pop().toLowerCase()
-    return ['pdf', 'md', 'txt', 'markdown'].includes(ext)
-  })
+  const selected = Array.from(event.target.files).filter(isAcceptedFile)
   target.value.push(...selected)
   // 允许再次选择同一文件
   event.target.value = ''
@@ -424,10 +425,7 @@ const handleWorldDrop = (e, kind) => {
   if (kind === 'bg') bgDragOver.value = false
   else storyDragOver.value = false
   if (loading.value) return
-  const droppedFiles = Array.from(e.dataTransfer.files).filter(file => {
-    const ext = file.name.split('.').pop().toLowerCase()
-    return ['pdf', 'md', 'txt', 'markdown'].includes(ext)
-  })
+  const droppedFiles = Array.from(e.dataTransfer.files).filter(isAcceptedFile)
   const target = kind === 'bg' ? worldBgFiles : worldStoryFiles
   target.value.push(...droppedFiles)
 }

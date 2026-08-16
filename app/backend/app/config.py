@@ -106,7 +106,10 @@ class Config:
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
     UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '../uploads')
-    ALLOWED_EXTENSIONS = {'pdf', 'md', 'txt', 'markdown'}
+    ALLOWED_EXTENSIONS = {
+        'pdf', 'md', 'txt', 'markdown',
+        'docx', 'html', 'htm', 'epub', 'odt', 'rtf',
+    }
 
     # 文本处理配置
     # 说明：500 字符/块 会导致长文档拆出大量 episode，每个 episode 要串行
