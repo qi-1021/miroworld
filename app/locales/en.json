@@ -993,6 +993,7 @@
     "chronicleBtn": "Chronicle",
     "loadSimulation": "Load this timeline",
     "continueSimulation": "Continue",
+    "exportSimulation": "Export",
     "msgSimContinueStarted": "Continuation started: {id}",
     "compareWorldlines": "Compare Worldlines",
     "compare": "Compare",

@@ -993,6 +993,7 @@
     "chronicleBtn": "编年史",
     "loadSimulation": "载入此世界线",
     "continueSimulation": "续推",
+    "exportSimulation": "导出",
     "msgSimContinueStarted": "续推已启动：{id}",
     "compareWorldlines": "对比世界线",
     "compare": "对比",

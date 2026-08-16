@@ -672,6 +672,7 @@
               <span class="tree-node-count">{{ $t('world.eventCount', { count: (root.result || {}).event_count || 0 }) }}</span>
               <button class="mini-btn ghost" @click="loadSimulation(root)">{{ $t('world.loadSimulation') }}</button>
               <button class="mini-btn" :disabled="simStarting" @click="continueSimulation(root)">{{ $t('world.continueSimulation') }}</button>
+              <button class="mini-btn ghost" @click="exportSimulation(root)">{{ $t('world.exportSimulation') }}</button>
               <button v-if="root.status === 'completed' && !((root.result || {}).meta || {}).whatif_question" class="mini-btn" @click="startWhatIf(root)">{{ $t('world.whatifBtn') }}</button>
             </div>
             <div v-for="child in root.children" :key="child.simulation_id" class="tree-node child">
@@ -682,6 +683,7 @@
                 <span class="tree-node-count">{{ $t('world.eventCount', { count: (child.result || {}).event_count || 0 }) }}</span>
                 <button class="mini-btn ghost" @click="loadSimulation(child)">{{ $t('world.loadSimulation') }}</button>
                 <button class="mini-btn" :disabled="simStarting" @click="continueSimulation(child)">{{ $t('world.continueSimulation') }}</button>
+                <button class="mini-btn ghost" @click="exportSimulation(child)">{{ $t('world.exportSimulation') }}</button>
               </div>
             </div>
           </div>
@@ -712,6 +714,7 @@
               <span v-if="(h.result || {}).meta && (h.result || {}).meta.whatif_question" class="sim-history-flag">{{ $t('world.whatifFlag') }}</span>
               <button class="mini-btn ghost" @click="loadSimulation(h)">{{ $t('world.loadSimulation') }}</button>
               <button class="mini-btn" :disabled="simStarting" @click="continueSimulation(h)">{{ $t('world.continueSimulation') }}</button>
+              <button class="mini-btn ghost" @click="exportSimulation(h)">{{ $t('world.exportSimulation') }}</button>
               <template v-if="h.status === 'completed' && !((h.result || {}).meta || {}).whatif_question">
                 <button class="mini-btn" :disabled="whatIfing === h.simulation_id" @click="startWhatIf(h)">
                   <span v-if="whatIfing === h.simulation_id" class="spinner-xs"></span>
@@ -2118,6 +2121,33 @@ async function continueSimulation(sim) {
     simMsgError.value = true
   } finally {
     simStarting.value = false
+  }
+}
+
+async function exportSimulation(sim) {
+  try {
+    const res = await getWorldSimulation(projectId, sim.simulation_id)
+    const s = res.simulation
+    const data = {
+      simulation_id: s.simulation_id,
+      project_id: projectId,
+      status: s.status,
+      created_at: s.created_at,
+      events: (s.result || {}).events || [],
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${s.simulation_id}.json`
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (e) {
+    simMsg.value = e?.message || t('world.msgUnknownError')
+    simMsgError.value = true
   }
 }
 
