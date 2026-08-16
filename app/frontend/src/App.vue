@@ -182,9 +182,12 @@ html, body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: var(--mf-ink);
-  /* 苹果风：干净浅灰画布，不做花哨渐变。液态玻璃靠卡片自身的 LGGC 效果呈现。 */
+  /* 苹果风：极淡冷暖透射层，让卡片背面的模糊有内容可透。 */
   background-color: #f5f5f7;
-  background-image: none;
+  background-image:
+    linear-gradient(118deg, rgba(255, 246, 232, 0.7), rgba(235, 247, 250, 0.72) 38%, rgba(245, 238, 255, 0.62) 70%, rgba(255, 244, 230, 0.68)),
+    linear-gradient(180deg, #f8f8fa, #eef1f6);
+  background-attachment: fixed;
   min-height: 100vh;
 }
 
@@ -209,9 +212,9 @@ button { font-family: inherit; }
 .liquid-glass {
   --lggc-radius: 8px;
   --lggc-padding: 1.5rem 1.75rem;
-  --lggc-bg: rgba(255, 255, 255, 0.42);
+  --lggc-bg: rgba(255, 255, 255, 0.28);
   --lggc-border: rgba(255, 255, 255, 0.92);
-  --lggc-blur: 16px;
+  --lggc-blur: 22px;
   --lggc-highlight: rgba(255, 255, 255, 1);
   position: relative;
   isolation: isolate;
@@ -221,8 +224,8 @@ button { font-family: inherit; }
     radial-gradient(120% 140% at 18% -12%, rgba(255, 255, 255, 0.62), transparent 46%),
     var(--lggc-bg);
   color: var(--mf-ink);
-  backdrop-filter: blur(var(--lggc-blur)) saturate(185%) brightness(1.08);
-  -webkit-backdrop-filter: blur(var(--lggc-blur)) saturate(185%) brightness(1.08);
+  backdrop-filter: blur(var(--lggc-blur)) saturate(190%) brightness(1.08);
+  -webkit-backdrop-filter: blur(var(--lggc-blur)) saturate(190%) brightness(1.08);
   box-shadow:
     /* 玻璃投影：轻微冷灰、柔和 */
     0 0 0 1px rgba(16, 32, 58, 0.07),
@@ -326,6 +329,28 @@ input[type="email"], input[type="search"] {
 }
 
 /* 世界设定页 step-card / sim 控件、时间线控件的玻璃降级 */
+.step-card {
+  background: rgba(255, 255, 255, 0.30) !important;
+  backdrop-filter: blur(18px) saturate(190%) brightness(1.08) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(190%) brightness(1.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.80) !important;
+  box-shadow:
+    0 0 0 1px rgba(16, 32, 58, 0.06),
+    0 18px 38px rgba(16, 32, 58, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.45) !important;
+}
+.step-card::before {
+  content: '';
+  position: absolute;
+  top: -1px; left: 6%; right: 6%; height: 2px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.98) 22%, rgba(255, 255, 255, 0.7) 50%, rgba(255, 255, 255, 0.98) 78%, transparent);
+  filter: url(#lg-morph);
+  -webkit-filter: url(#lg-morph);
+  pointer-events: none;
+  z-index: 1;
+}
 .step-card button,
 .step-card input,
 .step-card select,
