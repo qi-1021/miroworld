@@ -1012,6 +1012,8 @@
     "msgMetaSaved": "世界线信息已保存",
     "compareWorldlines": "对比世界线",
     "compare": "对比",
+    "mergeWorldlines": "合并所选",
+    "msgMerged": "世界线已合并：{id}",
     "noEvents": "暂无事件",
     "whatifBaseTitle": "基于「{label}」的假设推演",
     "whatifPlaceholder": "输入假设前提，如：若魔法需要付出生命代价？",

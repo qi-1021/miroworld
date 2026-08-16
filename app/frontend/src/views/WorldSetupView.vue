@@ -738,6 +738,9 @@
             <button v-if="compareMode && compareSelected.length === 2" class="mini-btn" @click="openCompare">
               {{ $t('world.compare') }}
             </button>
+            <button v-if="compareMode && compareSelected.length === 2" class="mini-btn" @click="mergeSelected">
+              {{ $t('world.mergeWorldlines') }}
+            </button>
           </div>
           <div v-for="(h, i) in simHistory" :key="i" class="sim-history-item">
             <input
@@ -2368,6 +2371,27 @@ async function exportSimulation(sim) {
     a.click()
     a.remove()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (e) {
+    simMsg.value = e?.message || t('world.msgUnknownError')
+    simMsgError.value = true
+  }
+}
+
+async function mergeSelected() {
+  if (compareSelected.value.length !== 2) return
+  const [a, b] = compareSelected.value
+  try {
+    const res = await runAssistantAction(projectId, 'merge_worldlines', {
+      base_simulation_id: a,
+      branch_simulation_id: b,
+      label: 'merged',
+    })
+    const r = res?.data?.action_result || {}
+    simMsg.value = t('world.msgMerged', { id: r.simulation_id || '' })
+    simMsgError.value = false
+    compareMode.value = false
+    compareSelected.value = []
+    loadSimHistory()
   } catch (e) {
     simMsg.value = e?.message || t('world.msgUnknownError')
     simMsgError.value = true

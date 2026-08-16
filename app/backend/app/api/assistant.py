@@ -386,6 +386,23 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
             "target_step": target_step,
         }
 
+    if action == "merge_worldlines":
+        from ..services.world_simulation import WorldSimulationService
+        base_id = str(params.get("base_simulation_id") or params.get("simulation_id") or "").strip()
+        branch_id = str(params.get("branch_simulation_id") or "").strip()
+        if not base_id or not branch_id:
+            raise ValueError("merge_worldlines 需要 base_simulation_id 和 branch_simulation_id")
+        state = WorldSimulationService.merge_simulations(
+            base_id,
+            branch_id,
+            label=str(params.get("label") or "merged").strip(),
+        )
+        return {
+            "simulation_id": state.simulation_id,
+            "status": state.status,
+            "event_count": (state.result or {}).get("event_count", 0),
+        }
+
     if action == "update_worldline_meta":
         from ..services.world_simulation import WorldSimulationService
         sim_id = str(params.get("simulation_id") or "").strip()
@@ -481,6 +498,7 @@ _SYSTEM_PROMPT = (
     "batch_whatif(simulation_id, questions, steps)、"
     "rollback_worldline(simulation_id, target_step, additional_steps, goal)、"
     "update_worldline_meta(simulation_id, name, note, tags)、"
+    "merge_worldlines(base_simulation_id, branch_simulation_id, label)、"
     "get_worldline_summary(simulation_id)、"
     "get_project_status()。"
     "否则输出普通中文回答，简洁、分点，不超过 400 字。"

@@ -1010,6 +1010,89 @@ class WorldSimulationService:
         return state
 
     @classmethod
+    def merge_simulations(
+        cls,
+        base_simulation_id: str,
+        branch_simulation_id: str,
+        label: str = "merged",
+    ) -> WorldSimulationState:
+        """把两条世界线合并成一条新世界线：主线事件 + 分支事件（步号顺延）。"""
+        base = cls.get_state(base_simulation_id)
+        branch = cls.get_state(branch_simulation_id)
+        if base is None or branch is None:
+            raise ValueError("两条世界线都必须存在")
+        project_id = base.project_id
+        if branch.project_id != project_id:
+            raise ValueError("两条世界线必须属于同一项目")
+
+        def _load_events(state):
+            path = state.events_path or os.path.join(
+                WORLD_SIM_ROOT, state.project_id, state.simulation_id, "events.json"
+            )
+            if not os.path.exists(path):
+                return []
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+
+        base_events = _load_events(base)
+        branch_events = _load_events(branch)
+        if not base_events or not branch_events:
+            raise ValueError("两条世界线都需要有事件才能合并")
+
+        max_step = max(int(e.get("step") or 0) for e in base_events)
+        offset = max_step
+        for e in branch_events:
+            e = dict(e)
+            e["step"] = int(e.get("step") or 0) + offset
+            e["id"] = f"{e.get('id') or 'ev'}_merged_{len(base_events)}"
+            e["links"] = []
+            base_events.append(e)
+
+        base_config_path = base.config_path or os.path.join(
+            WORLD_SIM_ROOT, project_id, base.simulation_id, "world_config.json"
+        )
+        with open(base_config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        sim_id = f"{base.simulation_id}_merge_{branch.simulation_id[-8:]}"
+        counter = 2
+        while cls.get_state(sim_id) is not None:
+            sim_id = f"{base.simulation_id}_merge_{branch.simulation_id[-8:]}_{counter}"
+            counter += 1
+
+        sim_dir = os.path.join(WORLD_SIM_ROOT, project_id, sim_id)
+        os.makedirs(sim_dir, exist_ok=True)
+        config_path = os.path.join(sim_dir, "world_config.json")
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        events_path = os.path.join(sim_dir, "events.json")
+        with open(events_path, "w", encoding="utf-8") as f:
+            json.dump(base_events, f, ensure_ascii=False, indent=2)
+
+        state = WorldSimulationState(
+            simulation_id=sim_id,
+            project_id=project_id,
+            status="completed",
+            config_path=config_path,
+            events_path=events_path,
+            created_at=datetime.now().isoformat(timespec="seconds"),
+            updated_at=datetime.now().isoformat(timespec="seconds"),
+        )
+        state.result = {
+            "event_count": len(base_events),
+            "events": base_events,
+            "meta": {
+                "merge_base": base.simulation_id,
+                "merge_branch": branch.simulation_id,
+                "label": label,
+            },
+        }
+        with cls._lock:
+            cls._states[sim_id] = state
+        cls._save_state(state)
+        return state
+
+    @classmethod
     def update_simulation_meta(
         cls,
         simulation_id: str,

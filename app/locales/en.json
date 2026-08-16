@@ -1012,6 +1012,8 @@
     "msgMetaSaved": "Worldline info saved",
     "compareWorldlines": "Compare Worldlines",
     "compare": "Compare",
+    "mergeWorldlines": "Merge Selected",
+    "msgMerged": "Worldlines merged: {id}",
     "noEvents": "No events",
     "whatifBaseTitle": "Hypothetical based on 「{label}」",
     "whatifPlaceholder": "Enter a premise, e.g. If magic demanded a life as its price?",
