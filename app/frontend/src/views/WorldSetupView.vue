@@ -913,6 +913,7 @@
               <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickGraph')">🕸️ {{ $t('assistant.quickGraph') }}</button>
               <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickExtract')">📜 {{ $t('assistant.quickExtract') }}</button>
               <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickTree')">🌳 {{ $t('assistant.quickTree') }}</button>
+              <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickWorldlineSummary')">📊 {{ $t('assistant.quickWorldlineSummary') }}</button>
               <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickSim')">🌍 {{ $t('assistant.quickSim') }}</button>
               <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickCharacters')">👥 {{ $t('assistant.quickCharacters') }}</button>
               <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickReport')">📄 {{ $t('assistant.quickReport') }}</button>
@@ -1621,6 +1622,10 @@ async function quickAsk(key) {
       res = await runAssistantAction(projectId, 'start_timeline_extraction', { source: 'bg', resume: true })
     } else if (key === 'assistant.quickTree') {
       res = await runAssistantAction(projectId, 'list_world_tree')
+    } else if (key === 'assistant.quickWorldlineSummary') {
+      const sid = simPollingId || (simHistory.value[0]?.simulation_id)
+      if (!sid) throw new Error(t('world.msgUnknownError'))
+      res = await runAssistantAction(projectId, 'get_worldline_summary', { simulation_id: sid })
     } else if (key === 'assistant.quickSim') {
       res = await runAssistantAction(projectId, 'start_world_simulation', {
         goal: simGoal.value.trim() || undefined,

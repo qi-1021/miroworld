@@ -1090,6 +1090,7 @@
     "quickGraph": "Build World Graph",
     "quickExtract": "Extract Timeline",
     "quickTree": "View World Tree",
+    "quickWorldlineSummary": "Worldline Summary",
     "quickSim": "Start World Sim",
     "quickCharacters": "Generate Characters",
     "quickReport": "Generate Final Report",

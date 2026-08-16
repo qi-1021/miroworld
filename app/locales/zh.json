@@ -1090,6 +1090,7 @@
     "quickGraph": "构建世界图谱",
     "quickExtract": "抽取时间线",
     "quickTree": "查看世界线",
+    "quickWorldlineSummary": "世界线摘要",
     "quickSim": "启动世界模拟",
     "quickCharacters": "生成人物档案",
     "quickReport": "生成最终报告",

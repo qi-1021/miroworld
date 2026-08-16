@@ -339,6 +339,37 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
             "continue_base": base_id,
         }
 
+    if action == "get_worldline_summary":
+        from ..services.world_simulation import WorldSimulationService
+        sim_id = str(params.get("simulation_id") or "").strip()
+        if not sim_id:
+            raise ValueError("get_worldline_summary 需要 simulation_id")
+        state = WorldSimulationService.get_state(sim_id)
+        if state is None:
+            raise ValueError("模拟不存在")
+        events = (state.result or {}).get("events") or []
+        by_step = {}
+        for e in events:
+            by_step.setdefault(e.get("step"), []).append(e)
+        steps = []
+        for step in sorted(by_step):
+            evs = by_step[step]
+            steps.append({
+                "step": step,
+                "time": evs[0].get("time"),
+                "summary": "；".join(
+                    f"{e.get('character_name')}{e.get('action_desc', '')[:30]}" for e in evs[:6]
+                )[:240],
+                "event_count": len(evs),
+            })
+        return {
+            "simulation_id": sim_id,
+            "status": state.status,
+            "event_count": len(events),
+            "steps": steps,
+            "meta": (state.result or {}).get("meta") or {},
+        }
+
     if action == "list_world_tree":
         from ..services.world_simulation import WorldSimulationService
         sims = WorldSimulationService.list_simulations(project_id, limit=100)
@@ -387,6 +418,7 @@ _SYSTEM_PROMPT = (
     "list_simulations(limit)、"
     "list_world_tree()、"
     "continue_world_simulation(simulation_id, additional_steps, goal)、"
+    "get_worldline_summary(simulation_id)、"
     "get_project_status()。"
     "否则输出普通中文回答，简洁、分点，不超过 400 字。"
 )
