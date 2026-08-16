@@ -984,6 +984,7 @@
     "msgNovelEmpty": "Novel continuation generated, but no text content",
     "msgNovelFailed": "Novel continuation failed",
     "reportHistoryTitle": "Simulation History",
+    "worldTreeTitle": "World Tree",
     "eventCount": "{count} events",
     "whatifFlag": "What-if",
     "whatifBtn": "What-if",

@@ -618,6 +618,29 @@
           <div v-else-if="reportEmptyNote" class="empty-note">{{ reportEmptyNote }}</div>
         </div>
 
+        <!-- 世界线之树 -->
+        <div v-if="worldTree.length" class="world-tree">
+          <div class="world-tree-title">🌳 {{ $t('world.worldTreeTitle') }}</div>
+          <div v-for="root in worldTree" :key="root.simulation_id" class="tree-node root">
+            <div class="tree-node-row">
+              <span class="tree-node-name">{{ formatTime(root.created_at) }}</span>
+              <span class="badge" :class="root.status">{{ statusLabel(root.status) }}</span>
+              <span class="tree-node-count">{{ $t('world.eventCount', { count: (root.result || {}).event_count || 0 }) }}</span>
+              <button class="mini-btn ghost" @click="loadSimulation(root)">{{ $t('world.loadSimulation') }}</button>
+              <button v-if="root.status === 'completed' && !((root.result || {}).meta || {}).whatif_question" class="mini-btn" @click="startWhatIf(root)">{{ $t('world.whatifBtn') }}</button>
+            </div>
+            <div v-for="child in root.children" :key="child.simulation_id" class="tree-node child">
+              <div class="tree-node-row">
+                <span class="tree-branch">└─</span>
+                <span class="tree-node-name">{{ child.result?.meta?.whatif_question || formatTime(child.created_at) }}</span>
+                <span class="badge" :class="child.status">{{ statusLabel(child.status) }}</span>
+                <span class="tree-node-count">{{ $t('world.eventCount', { count: (child.result || {}).event_count || 0 }) }}</span>
+                <button class="mini-btn ghost" @click="loadSimulation(child)">{{ $t('world.loadSimulation') }}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div v-if="simHistory.length" class="sim-history">
           <div class="sim-history-title">
             <span>{{ $t('world.reportHistoryTitle') }}</span>
@@ -994,6 +1017,27 @@ const compareMode = ref(false)
 const compareSelected = ref([])
 const compareOpen = ref(false)
 const compareData = ref([])
+
+// 世界线之树：基础模拟为根，what-if 分支挂到父节点下
+const worldTree = computed(() => {
+  const byId = new Map()
+  simHistory.value.forEach(s => byId.set(s.simulation_id, { ...s, children: [] }))
+  const roots = []
+  byId.forEach(node => {
+    const base = node.result?.meta?.whatif_base
+    if (base && byId.has(base)) {
+      byId.get(base).children.push(node)
+    } else {
+      roots.push(node)
+    }
+  })
+  const sortRec = (nodes) => {
+    nodes.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
+    nodes.forEach(n => sortRec(n.children))
+  }
+  sortRec(roots)
+  return roots
+})
 const simSection = ref(null)
 const inputSection = ref(null)
 const timelineSection = ref(null)
@@ -2791,6 +2835,53 @@ onUnmounted(() => {
 .sim-history-status.running { background: #f3f7e6; color: #5f7008; }
 .sim-history-status.preparing { background: #f3f7e6; color: #5f7008; }
 .sim-history-status.created { background: #F5F5F5; color: #666; }
+
+/* 世界线之树 */
+.world-tree {
+  margin-top: 14px;
+  border: 1px solid #EFEFEF;
+  border-radius: 8px;
+  padding: 12px;
+  background: #FCFCFC;
+}
+.world-tree-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #10203a;
+  margin-bottom: 8px;
+}
+.tree-node {
+  margin-bottom: 6px;
+}
+.tree-node.child {
+  margin-left: 22px;
+  border-left: 1px dashed #D8D8D8;
+  padding-left: 10px;
+}
+.tree-node-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+  font-size: 11.5px;
+}
+.tree-node-name {
+  font-weight: 600;
+  color: #10203a;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-node-count {
+  color: #999;
+  font-size: 11px;
+}
+.tree-branch {
+  color: #a1c50a;
+  font-family: 'JetBrains Mono', monospace;
+}
 .sim-history-count {
   color: #666;
   font-family: 'JetBrains Mono', monospace;
