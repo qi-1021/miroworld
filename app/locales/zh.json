@@ -212,7 +212,7 @@
     "worldEmptyHint": "请先填写背景资料或章节正文（支持上传文件或直接粘贴）",
     "modelConfigRequired": "尚未配置可用模型，请先完成模型设置",
     "modelConfigCheckFailed": "模型配置检查失败或超时，请先完成模型设置",
-    "importSnapshot": "导入快照 (.mirofish.json)",
+    "importSnapshot": "导入快照 (.miroworld.json)",
     "importSnapshotDone": "快照导入成功，正在进入新世界…",
     "importSnapshotFailed": "快照导入失败",
     "importSnapshotInvalid": "快照文件不是有效的 JSON"
@@ -828,7 +828,7 @@
     "backProject": "返回项目",
     "exportSnapshot": "导出快照",
     "importSnapshot": "导入快照",
-    "snapshotExported": "项目快照已导出（.mirofish.json）",
+    "snapshotExported": "项目快照已导出（.miroworld.json）",
     "snapshotExportFailed": "导出快照失败",
     "snapshotImportFailed": "导入快照失败",
     "snapshotImported": "导入成功，新项目：{id}，正在跳转...",

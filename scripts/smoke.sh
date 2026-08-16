@@ -1,5 +1,5 @@
 #!/bin/bash
-# MiroFish 全流程冒烟测试：启动完整栈 → 等待前后端就绪 → 停止全部。
+# Miroworld 全流程冒烟测试：启动完整栈 → 等待前后端就绪 → 停止全部。
 # 用法：
 #   bash scripts/smoke.sh
 # 退出码 0=通过，非 0=失败（服务未就绪或端口被无关程序占用）。
@@ -16,7 +16,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "== MiroFish 全流程冒烟测试 =="
+echo "== Miroworld 全流程冒烟测试 =="
 echo "项目: $PROJECT_ROOT"
 echo "日志: $LOG"
 

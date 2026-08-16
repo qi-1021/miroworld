@@ -128,7 +128,7 @@ class TestDeleteSimulationIdempotent:
         assert body2["removed_any"] is False
 
     def test_non_mirofish_missing_returns_404(self, client):
-        """非 MiroFish 标识且不存在 → 404"""
+        """非 Miroworld 标识且不存在 → 404"""
         rv = client.delete("/api/simulation/random_missing_id")
         assert rv.status_code == 404
 

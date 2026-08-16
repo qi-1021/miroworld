@@ -13,7 +13,7 @@
         <LanguageSwitcher />
         <button class="nav-link nav-btn" @click="openWorldLibrary">{{ $t('home.openWorldLibrary') }}</button>
         <button class="nav-link nav-btn" :disabled="importingSnapshot" @click="triggerSnapshotImport">{{ $t('home.importSnapshot') }}</button>
-        <input ref="snapshotInput" type="file" accept=".json,.mirofish.json" style="display:none" @change="handleSnapshotFile" />
+        <input ref="snapshotInput" type="file" accept=".json,.miroworld.json" style="display:none" @change="handleSnapshotFile" />
         <a class="nav-link" :href="BRAND.repo" target="_blank" rel="noopener">{{ $t('nav.visitGithub') }}<span class="arrow">↗</span></a>
       </div>
     </nav>
@@ -415,7 +415,7 @@ async function handleSnapshotFile(event) {
     const pid = project.project_id || project.id
     if (!pid) throw new Error(t('home.importSnapshotFailed'))
     // 通知历史列表刷新 + 跳到新项目世界页
-    window.dispatchEvent(new CustomEvent('mirofish:history-reload'))
+    window.dispatchEvent(new CustomEvent('miroworld:history-reload'))
     importMsg.value = t('home.importSnapshotDone')
     if (pid) {
       router.push(`/world/${pid}`)

@@ -66,7 +66,7 @@ scripts\stop.bat --all
 - 如果构建任务因重启丢失，页面会提示“任务不存在，请重新构建”。
 
 ### 项目快照
-- 页面右上角“导出快照”可下载 `.mirofish.json`。
+- 页面右上角“导出快照”可下载 `.miroworld.json`。
 - “导入快照”可从文件恢复一个全新项目（含时间线、设定库、冲突、人物、模型绑定）。
 
 ---
@@ -116,8 +116,8 @@ python scripts/mirofish_cli.py --json health
 # 项目
 python scripts/mirofish_cli.py --json project list
 python scripts/mirofish_cli.py --json project create --name "新项目"
-python scripts/mirofish_cli.py --json project export --project-id proj_xxx --output backup.mirofish.json
-python scripts/mirofish_cli.py --json project import --file backup.mirofish.json
+python scripts/mirofish_cli.py --json project export --project-id proj_xxx --output backup.miroworld.json
+python scripts/mirofish_cli.py --json project import --file backup.miroworld.json
 
 # 世界设定库
 python scripts/mirofish_cli.py --json world save --project-id proj_xxx --background "..." --story "..."
@@ -167,7 +167,7 @@ python scripts/mirofish_cli.py --json assistant ask --project-id proj_xxx --ques
 - `world-graph/`：图谱补边缓存
 - `task-manager/`：通用任务持久化
 
-最稳妥的备份方式：在世界设定库页面“导出快照”，得到一个 `.mirofish.json` 文件。
+最稳妥的备份方式：在世界设定库页面“导出快照”，得到一个 `.miroworld.json` 文件。
 
 ---
 

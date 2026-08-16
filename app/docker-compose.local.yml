@@ -1,12 +1,12 @@
 version: '3.8'
 
-# MiroFish 本地开发环境
+# Miroworld 本地开发环境
 # 使用 Graphiti + Neo4j 替代 Zep Cloud
 
 services:
   neo4j:
     image: neo4j:5.26
-    container_name: mirofish-neo4j
+    container_name: miroworld-neo4j
     ports:
       - "7474:7474"  # HTTP (Browser)
       - "7687:7687"  # Bolt (Driver)
@@ -39,4 +39,4 @@ volumes:
 #    export NEO4J_URI=bolt://localhost:7687
 #    export NEO4J_USER=neo4j
 #    export NEO4J_PASSWORD=password
-# 5. 启动 MiroFish 后端：cd backend && uv run python -m flask run
+# 5. 启动 Miroworld 后端：cd backend && uv run python -m flask run

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# MiroFish 停止脚本：关闭上一次启动的前端+后端（端口 3000/5001 上的本项目进程），
+# Miroworld 停止脚本：关闭上一次启动的前端+后端（端口 3000/5001 上的本项目进程），
 # 可选一并停止 Neo4j，并清理未绑定端口的残留壳进程/模拟子进程。
 # 用法:
 #   bash scripts/stop.sh           仅停前端+后端（推荐日常使用）
@@ -24,7 +24,7 @@ for arg in "$@"; do
     esac
 done
 
-echo "🛑 MiroFish 停止脚本"
+echo "🛑 Miroworld 停止脚本"
 echo "===================="
 echo "项目路径: $PROJECT_ROOT"
 echo ""

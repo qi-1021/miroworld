@@ -1,5 +1,5 @@
 @echo off
-REM MiroFish 依赖环境一键搭建（Windows）
+REM Miroworld 依赖环境一键搭建（Windows）
 REM 主环境：Graphiti + Neo4j 本地优先；OASIS 隔离到 .venv-simulation
 REM 用法：setup-env.bat
 

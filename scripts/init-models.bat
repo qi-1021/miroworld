@@ -1,5 +1,5 @@
 @echo off
-REM MiroFish 模型配置初始化 (Windows)
+REM Miroworld 模型配置初始化 (Windows)
 REM 用途：在启动前后端之前运行，完成两件事：
 REM   1. 首次运行时把旧 .env 的 LLM 配置导入模型注册表（幂等，不会覆盖已有配置）
 REM   2. 检查模型库状态，并提示如何配置模型

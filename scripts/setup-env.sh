@@ -1,5 +1,5 @@
 #!/bin/bash
-# MiroFish 依赖环境一键搭建（Graphiti 本地优先 + OASIS 隔离）
+# Miroworld 依赖环境一键搭建（Graphiti 本地优先 + OASIS 隔离）
 #
 # 背景：
 # - 主环境安装 Graphiti/Neo4j 本地图谱依赖（graphiti-core 需要 neo4j>=5.26）

@@ -212,7 +212,7 @@
     "worldEmptyHint": "Add background or story material first (upload or paste)",
     "modelConfigRequired": "No usable model configured. Please set up a model first.",
     "modelConfigCheckFailed": "Model check failed or timed out. Please set up a model first.",
-    "importSnapshot": "Import Snapshot (.mirofish.json)",
+    "importSnapshot": "Import Snapshot (.miroworld.json)",
     "importSnapshotDone": "Snapshot imported, entering new world…",
     "importSnapshotFailed": "Snapshot import failed",
     "importSnapshotInvalid": "Snapshot file is not valid JSON"
@@ -828,7 +828,7 @@
     "backProject": "Back to Project",
     "exportSnapshot": "Export Snapshot",
     "importSnapshot": "Import Snapshot",
-    "snapshotExported": "Project snapshot exported (.mirofish.json)",
+    "snapshotExported": "Project snapshot exported (.miroworld.json)",
     "snapshotExportFailed": "Failed to export snapshot",
     "snapshotImportFailed": "Failed to import snapshot",
     "snapshotImported": "Imported as {id}, redirecting...",

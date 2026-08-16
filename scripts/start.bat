@@ -1,5 +1,5 @@
 @echo off
-REM MiroFish 可移植部署 - Windows 启动脚本
+REM Miroworld 可移植部署 - Windows 启动脚本
 REM
 REM 统一入口逻辑与 start.sh 一致：前端/后端各自独立启动并写入独立日志，
 REM 逐服务校验端口，失败即提示日志路径与排查引导（避免"提示已就绪但打不开"的端口失效）。
@@ -17,7 +17,7 @@ set BACKEND_LOG=%LOG_DIR%\start-backend.log
 set FRONTEND_LOG=%LOG_DIR%\start-frontend.log
 
 echo ================================================
-echo    MiroFish 可移植部署启动脚本 (Windows)
+echo    Miroworld 可移植部署启动脚本 (Windows)
 echo ================================================
 echo.
 
@@ -98,7 +98,7 @@ if not errorlevel 1 (
     echo [INFO] Neo4j 已在监听端口 7687，跳过启动
 ) else (
     REM 启动 Neo4j（独立最小化窗口，输出写入日志）
-    start "MiroFish-Neo4j" /min cmd /c "cd /d "%NEO4J_HOME%\bin" && neo4j.bat console > "%LOG_DIR%\neo4j-console.log" 2>&1"
+    start "Miroworld-Neo4j" /min cmd /c "cd /d "%NEO4J_HOME%\bin" && neo4j.bat console > "%LOG_DIR%\neo4j-console.log" 2>&1"
     echo [INFO] Neo4j 启动中... (请稍候 10 秒初始化)
     timeout /t 10 /nobreak
 )
@@ -114,7 +114,7 @@ if errorlevel 1 (
 echo [INFO] ✓ Neo4j 已就绪 (neo4j/password)
 
 echo.
-echo [INFO] 启动 MiroFish 应用...
+echo [INFO] 启动 Miroworld 应用...
 
 cd /d "%APP_DIR%"
 
@@ -161,7 +161,7 @@ if exist "%SCRIPT_DIR%init-models.bat" (
 echo [INFO] 启动后端 (Flask) → 日志 %BACKEND_LOG%
 REM 启动后端 (Flask)：直接使用 .venv 解释器，避免 uv run 触发 graphiti/oasis
 REM 冲突导致的 "No solution found" 解析失败。
-start "MiroFish-Backend" /min cmd /c "cd /d "%APP_DIR%\backend" && .venv\Scripts\python run.py > "%BACKEND_LOG%" 2>&1"
+start "Miroworld-Backend" /min cmd /c "cd /d "%APP_DIR%\backend" && .venv\Scripts\python run.py > "%BACKEND_LOG%" 2>&1"
 
 REM 等待后端端口 5001（最多 20 秒）
 set READY=0
@@ -188,7 +188,7 @@ if "%READY%"=="0" (
 echo [INFO] ✓ 后端就绪 (http://localhost:5001)
 
 echo [INFO] 启动前端 (Vue3) → 日志 %FRONTEND_LOG%
-start "MiroFish-Frontend" /min cmd /c "cd /d "%APP_DIR%\frontend" && npm run dev > "%FRONTEND_LOG%" 2>&1"
+start "Miroworld-Frontend" /min cmd /c "cd /d "%APP_DIR%\frontend" && npm run dev > "%FRONTEND_LOG%" 2>&1"
 
 REM 等待前端端口 3000（最多 30 秒）
 set READY2=0

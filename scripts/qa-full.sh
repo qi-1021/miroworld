@@ -1,5 +1,5 @@
 #!/bin/bash
-# MiroFish CLI 全流程 QA 脚本（可重复运行）
+# Miroworld CLI 全流程 QA 脚本（可重复运行）
 #
 # 用法：
 #   bash scripts/qa-full.sh
@@ -161,7 +161,7 @@ except Exception: print('')")
 
 # ===========================================================================
 echo
-timeouts "==== MiroFish 全流程 QA 开始 ===="
+timeouts "==== Miroworld 全流程 QA 开始 ===="
 echo "后端: $BASE  测试项目: $PID  日志: $LOG"
 
 # ---- 预检：后端可达 ----

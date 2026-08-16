@@ -14,7 +14,7 @@
         <span class="project-id">{{ projectId }}</span>
         <button class="back-btn" :disabled="snapshotBusy" @click="exportSnapshot">{{ $t('world.exportSnapshot') }}</button>
         <button class="back-btn" :disabled="snapshotBusy" @click="importFileInput.click()">{{ $t('world.importSnapshot') }}</button>
-        <input ref="importFileInput" type="file" accept=".json,.mirofish.json,application/json" style="display:none" @change="onImportSnapshot" />
+        <input ref="importFileInput" type="file" accept=".json,.miroworld.json,application/json" style="display:none" @change="onImportSnapshot" />
         <button class="back-btn" @click="assistantOpen = true">{{ $t('assistant.open') }}</button>
         <button class="back-btn" @click="goBack">← {{ $t('world.backProject') }}</button>
       </div>
@@ -1246,7 +1246,7 @@ async function exportSnapshot() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${projectId}.mirofish.json`
+    a.download = `${projectId}.miroworld.json`
     a.click()
     URL.revokeObjectURL(url)
     saveMsg.value = t('world.snapshotExported')
@@ -1272,7 +1272,7 @@ async function onImportSnapshot(e) {
     if (!newId) throw new Error(t('world.snapshotImportFailed'))
     saveMsg.value = t('world.snapshotImported', { id: newId })
     // 通知首页历史数据库刷新（若首页保持挂载则立即刷新）
-    window.dispatchEvent(new CustomEvent('mirofish:history-reload'))
+    window.dispatchEvent(new CustomEvent('miroworld:history-reload'))
     // 路由参数变化时组件复用不会刷新 projectId，直接整页跳转
     setTimeout(() => { window.location.href = '/world/' + newId }, 800)
   } catch (err) {

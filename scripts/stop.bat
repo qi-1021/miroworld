@@ -1,7 +1,7 @@
 @echo off
-REM MiroFish Windows 停止脚本
+REM Miroworld Windows 停止脚本
 REM 用法：stop.bat [--all] [--force]
-REM   stop.bat         停前端(:3000) + 后端(:5001)，仅终止"MiroFish 相关"进程
+REM   stop.bat         停前端(:3000) + 后端(:5001)，仅终止"Miroworld 相关"进程
 REM   stop.bat --all   连本项目 Neo4j(:7687) 一起停
 REM   stop.bat --force 不等待优雅退出，直接强杀
 REM
@@ -17,7 +17,7 @@ for %%a in (%*) do (
     if /i "%%a"=="--force" set FORCE_ALL=1
 )
 
-echo [INFO] 停止 MiroFish 前端/后端进程...
+echo [INFO] 停止 Miroworld 前端/后端进程...
 
 call :stop_listening_port 3000 "前端"
 call :stop_listening_port 5001 "后端"

@@ -961,8 +961,8 @@ onMounted(async () => {
   measureContainer()
 
   // 事件驱动的刷新：其它页面（例如世界设定页导入新项目后）派发
-  // 'mirofish:history-reload' 即可让首页历史列表即时更新。
-  window.addEventListener('mirofish:history-reload', reloadHistoryListener)
+  // 'miroworld:history-reload' 即可让首页历史列表即时更新。
+  window.addEventListener('miroworld:history-reload', reloadHistoryListener)
   // 视口宽度变化时重算卡片布局
   window.addEventListener('resize', onViewportResize)
 
@@ -984,7 +984,7 @@ onUnmounted(() => {
     observer = null
   }
   // 清理 event 监听
-  window.removeEventListener('mirofish:history-reload', reloadHistoryListener)
+  window.removeEventListener('miroworld:history-reload', reloadHistoryListener)
   window.removeEventListener('resize', onViewportResize)
   // 清理防抖定时器
   if (expandDebounceTimer) {

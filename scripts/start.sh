@@ -1,5 +1,5 @@
 #!/bin/bash
-# MiroFish 可移植部署 - 主启动脚本 (macOS/Linux)
+# Miroworld 可移植部署 - 主启动脚本 (macOS/Linux)
 #
 # 统一入口：本脚本吸收 quick-start.sh 的"独立启动 + 逐服务端口校验 + 失败引导"逻辑，
 # quick-start.sh 已收敛为指向本脚本的薄包装（见文件末尾提示）。
@@ -224,7 +224,7 @@ start_neo4j() {
 
 # 安装和启动前端/后端（独立启动 + 逐服务端口校验，见 wait_for_port）
 start_app() {
-    log_info "启动 MiroFish 应用..."
+    log_info "启动 Miroworld 应用..."
     mkdir -p "$LOG_DIR"
 
     cd "$APP_DIR"
@@ -374,7 +374,7 @@ cleanup_previous() {
 # 主程序
 main() {
     echo "================================================"
-    echo "   MiroFish 可移植部署启动脚本"
+    echo "   Miroworld 可移植部署启动脚本"
     echo "================================================"
     echo ""
 

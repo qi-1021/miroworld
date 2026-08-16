@@ -107,7 +107,7 @@ export function resetProject(projectId) {
 }
 
 /**
- * 导出项目完整快照（JSON，可保存为 .mirofish.json）
+ * 导出项目完整快照（JSON，可保存为 .miroworld.json）
  * @param {String} projectId
  * @returns {Promise} { success, snapshot }
  */

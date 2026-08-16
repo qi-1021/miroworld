@@ -113,7 +113,7 @@ def list_projects():
 
 @graph_bp.route('/project/<project_id>/export', methods=['GET'])
 def export_project(project_id: str):
-    """导出项目完整快照（JSON，可下载保存为 .mirofish.json）。"""
+    """导出项目完整快照（JSON，可下载保存为 .miroworld.json）。"""
     try:
         from ..services.project_snapshot import export_project_snapshot
         snapshot = export_project_snapshot(project_id)

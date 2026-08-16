@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./static/image/Miroworld_logo_compressed.jpeg" alt="Miroworld Logo" width="75%"/>
+<img src="./static/image/miroworld-logo.png" alt="Miroworld Logo" width="75%"/>
 
 简洁通用的群体智能引擎，预测万物
 </br>
@@ -40,11 +40,7 @@ From serious predictions to playful simulations, we let every "what if" see its 
 
 ## 🎬 Demo Videos
 
-<div align="center">
-<a href="https://www.bilibili.com/video/BV1VYBsBHEMY/" target="_blank"><img src="./static/image/武大模拟演示封面.png" alt="Miroworld Demo Video" width="75%"/></a>
-
-Click the image to watch the complete demo video for prediction using Miroworld-generated "Wuhan University Event Report"
-</div>
+- [Watch: Wuhan University Event Simulation + Miroworld Introduction](https://www.bilibili.com/video/BV1VYBsBHEMY/)
 
 > More demo videos coming soon: "Dream of the Red Chamber" ending simulation, financial prediction examples...
 

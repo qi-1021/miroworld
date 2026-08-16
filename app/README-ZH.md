@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./static/image/Miroworld_logo_compressed.jpeg" alt="Miroworld Logo" width="75%"/>
+<img src="./static/image/miroworld-logo.png" alt="Miroworld Logo" width="75%"/>
 
 <a href="https://trendshift.io/repositories/16144" target="_blank"><img src="https://trendshift.io/api/badge/repositories/16144" alt="qi-1021/miroworld | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
@@ -46,40 +46,17 @@ Miroworld 致力于打造映射现实的群体智能镜像，通过捕捉个体�
 
 ## 📸 系统截图
 
-<div align="center">
-<table>
-<tr>
-<td><img src="./static/image/Screenshot/运行截图1.png" alt="截图1" width="100%"/></td>
-<td><img src="./static/image/Screenshot/运行截图2.png" alt="截图2" width="100%"/></td>
-</tr>
-<tr>
-<td><img src="./static/image/Screenshot/运行截图3.png" alt="截图3" width="100%"/></td>
-<td><img src="./static/image/Screenshot/运行截图4.png" alt="截图4" width="100%"/></td>
-</tr>
-<tr>
-<td><img src="./static/image/Screenshot/运行截图5.png" alt="截图5" width="100%"/></td>
-<td><img src="./static/image/Screenshot/运行截图6.png" alt="截图6" width="100%"/></td>
-</tr>
-</table>
-</div>
+> Miroworld 界面截图整理中，稍后补充。
 
 ## 🎬 演示视频
 
 ### 1. 武汉大学事件推演 + Miroworld项目讲解
 
-<div align="center">
-<a href="https://www.bilibili.com/video/BV1VYBsBHEMY/" target="_blank"><img src="./static/image/武大模拟演示封面.png" alt="Miroworld Demo Video" width="75%"/></a>
-
-点击图片查看使用镜世界Miroworld生成的《武大事件报告》进行预测的完整演示视频
-</div>
+- [观看：武汉大学事件推演 + Miroworld 项目讲解](https://www.bilibili.com/video/BV1VYBsBHEMY/)
 
 ### 2. 《红楼梦》失传结局推演预测
 
-<div align="center">
-<a href="https://www.bilibili.com/video/BV1cPk3BBExq" target="_blank"><img src="./static/image/红楼梦模拟推演封面.jpg" alt="Miroworld Demo Video" width="75%"/></a>
-
-点击图片查看基于《红楼梦》前80回数十万字，Miroworld深度预测失传结局
-</div>
+- [观看：《红楼梦》失传结局推演预测](https://www.bilibili.com/video/BV1cPk3BBExq)
 
 > **金融方向推演预测**、**时政要闻推演预测**等示例陆续更新中...
 
@@ -178,13 +155,7 @@ docker compose up -d
 
 ## 📬 更多交流
 
-<div align="center">
-<img src="./static/image/QQ群.png" alt="QQ交流群" width="60%"/>
-</div>
-
-&nbsp;
-
-Miroworld团队长期招募全职/实习，如果你对多Agent应用感兴趣，欢迎投递简历至：**mirofish@shanda.com**
+Miroworld 团队长期招募全职/实习，如果你对多 Agent 应用感兴趣，欢迎投递简历（联系方式稍后更新）。
 
 ## 📄 致谢
 

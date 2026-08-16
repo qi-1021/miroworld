@@ -1,5 +1,5 @@
 #!/bin/bash
-# MiroFish 快速启动入口（统一到 scripts/start.sh）
+# Miroworld 快速启动入口（统一到 scripts/start.sh）
 #
 # 用法: bash scripts/quick-start.sh
 # 说明：quick-start.sh 已统一到 scripts/start.sh —— 同一套"独立启动 + 逐服务端口校验 +
@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-echo "🚀 MiroFish 快速启动（统一调用 scripts/start.sh）"
+echo "🚀 Miroworld 快速启动（统一调用 scripts/start.sh）"
 echo "=================="
 echo ""
 echo -e "${YELLOW}[WARN]${NC} quick-start.sh 已统一到 start.sh，本脚本等价于直接运行 scripts/start.sh。"

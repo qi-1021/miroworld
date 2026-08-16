@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./static/image/Miroworld_logo_compressed.jpeg" alt="Miroworld Logo" width="75%"/>
+<img src="./static/image/miroworld-logo.png" alt="Miroworld Logo" width="75%"/>
 
 <a href="https://trendshift.io/repositories/16144" target="_blank"><img src="https://trendshift.io/api/badge/repositories/16144" alt="qi-1021/miroworld | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
@@ -46,40 +46,17 @@ Welcome to visit our online demo environment and experience a prediction simulat
 
 ## 📸 Screenshots
 
-<div align="center">
-<table>
-<tr>
-<td><img src="./static/image/Screenshot/运行截图1.png" alt="Screenshot 1" width="100%"/></td>
-<td><img src="./static/image/Screenshot/运行截图2.png" alt="Screenshot 2" width="100%"/></td>
-</tr>
-<tr>
-<td><img src="./static/image/Screenshot/运行截图3.png" alt="Screenshot 3" width="100%"/></td>
-<td><img src="./static/image/Screenshot/运行截图4.png" alt="Screenshot 4" width="100%"/></td>
-</tr>
-<tr>
-<td><img src="./static/image/Screenshot/运行截图5.png" alt="Screenshot 5" width="100%"/></td>
-<td><img src="./static/image/Screenshot/运行截图6.png" alt="Screenshot 6" width="100%"/></td>
-</tr>
-</table>
-</div>
+> Miroworld 界面截图整理中，稍后补充。
 
 ## 🎬 Demo Videos
 
 ### 1. Wuhan University Event Simulation + Miroworld Project Introduction
 
-<div align="center">
-<a href="https://www.bilibili.com/video/BV1VYBsBHEMY/" target="_blank"><img src="./static/image/武大模拟演示封面.png" alt="Miroworld Demo Video" width="75%"/></a>
-
-Click the image to watch the complete demo video for prediction using Miroworld-generated "Wuhan University Event Report"
-</div>
+- [Watch: Wuhan University Event Simulation + Miroworld Introduction](https://www.bilibili.com/video/BV1VYBsBHEMY/)
 
 ### 2. Dream of the Red Chamber Lost Ending Simulation
 
-<div align="center">
-<a href="https://www.bilibili.com/video/BV1cPk3BBExq" target="_blank"><img src="./static/image/红楼梦模拟推演封面.jpg" alt="Miroworld Demo Video" width="75%"/></a>
-
-Click the image to watch Miroworld's deep prediction of the lost ending based on hundreds of thousands of words from the first 80 chapters of "Dream of the Red Chamber"
-</div>
+- [Watch: Dream of the Red Chamber Lost Ending Simulation](https://www.bilibili.com/video/BV1cPk3BBExq)
 
 > **Financial Prediction**, **Political News Prediction** and more examples coming soon...
 
@@ -178,13 +155,7 @@ Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 
 
 ## 📬 Join the Conversation
 
-<div align="center">
-<img src="./static/image/QQ群.png" alt="QQ Group" width="60%"/>
-</div>
-
-&nbsp;
-
-The Miroworld team is recruiting full-time/internship positions. If you're interested in multi-agent simulation and LLM applications, feel free to send your resume to: **mirofish@shanda.com**
+The Miroworld team is recruiting full-time/internship positions. If you're interested in multi-agent simulation and LLM applications, feel free to reach out (contact info will be updated).
 
 ## 📄 Acknowledgments
 
