@@ -764,11 +764,11 @@ def get_conflict_history(project_id: str, conflict_id: str):
 
 @world_bp.route('/<project_id>/conflicts/<conflict_id>/corrections', methods=['POST'])
 def generate_conflict_corrections(project_id: str, conflict_id: str):
-    """确定性重算本项目全部生效冲突的改正文件（不依赖 LLM；幂等，多轮追加不重复）。
+    """确定性重算本项目全部生效冲突的外挂补丁（不复制全文、不依赖 LLM；幂等多轮）。
 
     - 以 conflict_id 校验项目有该冲突；改正集按项目整份生成。
-    - 生成 corrected_settings.md / corrected_story.md / corrections.json 并落盘。
-    - 返回三份文件的完整内容供前端预览。
+    - 只落盘 corrected_patches.md + corrections.json（外挂小补丁，不复制语料全文）。
+    - 返回两个文件内容 + 补丁/注解计数供前端预览。
     """
     if load_conflict(project_id, conflict_id) is None:
         return jsonify({"success": False, "error": "冲突不存在"}), 404
@@ -780,12 +780,15 @@ def generate_conflict_corrections(project_id: str, conflict_id: str):
             "conflict_id": conflict_id,
             "has_files": True,
             "correction_count": len(result.corrections),
+            "patch_count": len(result.patches),
+            "patches": result.patches,
+            "corrections": [e.to_dict() for e in result.corrections],
             "files": result.file_snapshot()["files"],
             "generated_at": result.generated_at,
         })
     except Exception as e:
-        logger.error(f"生成改正文件失败: {e}")
-        return jsonify({"success": False, "error": f"生成改正文件失败: {e}"}), 500
+        logger.error(f"生成改正补丁失败: {e}")
+        return jsonify({"success": False, "error": f"生成改正补丁失败: {e}"}), 500
 
 
 @world_bp.route('/<project_id>/conflicts/<conflict_id>/corrections', methods=['GET'])
@@ -810,27 +813,62 @@ def get_conflict_corrections(project_id: str, conflict_id: str):
             "conflict_id": conflict_id,
             "has_files": True,
             "correction_count": len(result.corrections),
+            "patch_count": len(result.patches),
+            "patches": result.patches,
+            "corrections": [e.to_dict() for e in result.corrections],
             "files": result.file_snapshot()["files"],
             "generated_at": result.generated_at,
         })
     except Exception as e:
-        logger.error(f"读取改正文件失败: {e}")
-        return jsonify({"success": False, "error": f"读取改正文件失败: {e}"}), 500
+        logger.error(f"读取改正补丁失败: {e}")
+        return jsonify({"success": False, "error": f"读取改正补丁失败: {e}"}), 500
+
+
+@world_bp.route('/<project_id>/conflicts/<conflict_id>/corrections/render', methods=['GET'])
+def render_corrected_corpus(project_id: str, conflict_id: str):
+    """对原始语料 + 外挂补丁做确定性叠加，按需渲染合并全文（不落盘）。
+
+    参数：?source=settings|story
+    返回 {"source","text","applied","skipped"}；可接 ?download=1 直接下载 md。"""
+    if load_conflict(project_id, conflict_id) is None:
+        return jsonify({"success": False, "error": "冲突不存在"}), 404
+    source = (request.args.get('source') or 'story').strip().lower()
+    if source not in ('settings', 'story'):
+        return jsonify({"success": False, "error": "source 必须是 settings 或 story"}), 400
+    try:
+        merged = ConflictCorrectionService().render_merged(project_id, source)
+        if request.args.get('download'):
+            from flask import send_file, Response
+            body = f"# 改正后的{'设定' if source=='settings' else '正文'}（动态渲染）\n\n"
+            if merged.get('skipped'):
+                body += "> 以下补丁未能应用（已旁路）：\n" + \
+                        "\n".join(f"> - {s.get('reason')}" for s in merged['skipped']) + "\n\n"
+            body += (merged.get('text') or '')
+            filename = "corrected_settings.md" if source == "settings" else "corrected_story.md"
+            return Response(body, mimetype='text/markdown',
+                            headers={"Content-Disposition": f"attachment; filename={filename}"})
+        return jsonify({"success": True, **merged})
+    except Exception as e:
+        logger.error(f"渲染合并全文失败: {e}")
+        return jsonify({"success": False, "error": f"渲染合并全文失败: {e}"}), 500
 
 
 @world_bp.route('/<project_id>/conflicts/<conflict_id>/corrections/<filename>/download', methods=['GET'])
 def download_conflict_correction(project_id: str, conflict_id: str, filename: str):
-    """下载某份改正文件（corrected_settings.md / corrected_story.md / corrections.json）。"""
+    """下载外挂补丁文件（corrected_patches.md / corrections.json）。
+
+    完整合并稿用 GET .../corrections/render?source=...&download=1 动态生成下载。
+    """
     if load_conflict(project_id, conflict_id) is None:
         return jsonify({"success": False, "error": "冲突不存在"}), 404
-    allowed = {"corrected_settings.md", "corrected_story.md", "corrections.json"}
+    allowed = {"corrected_patches.md", "corrections.json"}
     if filename not in allowed:
         return jsonify({"success": False, "error": "未知文件名"}), 400
     from flask import send_file
     d = ConflictCorrectionService.corrections_dir(project_id)
     path = os.path.join(d, filename)
     if not os.path.exists(path):
-        return jsonify({"success": False, "error": "改正文件尚未生成"}), 404
+        return jsonify({"success": False, "error": "改正补丁尚未生成"}), 404
     return send_file(path, as_attachment=True, download_name=filename)
 
 

@@ -333,27 +333,54 @@
               </div>
               <div v-if="c.corrections && c.corrections.hasFiles" class="correction-files">
                 <div class="correction-files-head">
-                  <span class="cfh-title">{{ $t('world.corrFilesTitle') }}（{{ c.corrections.count }}）</span>
+                  <span class="cfh-title">{{ $t('world.corrFilesTitle') }}（{{ c.corrections.patchCount }} {{ $t('world.corrPatchLabel') }}）</span>
                   <button class="mini-btn" @click="c.corrOpen = !c.corrOpen">
                     {{ c.corrOpen ? $t('world.corrHidePreview') : $t('world.corrShowPreview') }}
                   </button>
                 </div>
                 <div v-if="c.corrOpen" class="correction-files-body">
-                  <div
-                    v-for="(f, fn) in c.corrections.files"
-                    :key="fn"
-                    class="correction-file"
-                  >
-                    <div class="correction-file-head">
-                      <span class="correction-filename">{{ f.filename }}</span>
-                      <span class="correction-file-meta">{{ f.mime }}</span>
-                      <a
-                        class="correction-download"
-                        :href="correctionDownloadUrl(projectId, c.conflict_id, f.filename)"
-                        download
-                      >{{ $t('world.corrDownload') }}</a>
+                  <!-- 补丁清单 -->
+                  <div v-if="c.corrections.patches && c.corrections.patches.length" class="correction-patch-list">
+                    <div
+                      v-for="(p, pi) in c.corrections.patches"
+                      :key="pi"
+                      class="correction-patch"
+                    >
+                      <div class="correction-patch-head">
+                        <span class="cp-op">{{ p.op }}</span>
+                        <span class="cp-src">{{ p.source }}</span>
+                        <span class="cp-cid">{{ p.conflict_id }}</span>
+                      </div>
+                      <div class="cp-line"><span class="cp-label">{{ $t('world.corrLocator') }}</span>“{{ p.locator }}”</div>
+                      <div v-if="p.new_text" class="cp-line"><span class="cp-label">{{ $t('world.corrNewText') }}</span>“{{ p.new_text }}”</div>
+                      <div v-if="p.note" class="cp-note">{{ p.note }}</div>
                     </div>
-                    <pre class="correction-preview">{{ f.content }}</pre>
+                  </div>
+                  <div v-else class="correction-empty">{{ $t('world.corrNoPatch') }}</div>
+                  <!-- 渲染合并全文 -->
+                  <div class="correction-render">
+                    <span class="cr-label">{{ $t('world.corrRenderMerged') }}</span>
+                    <button class="mini-btn" :disabled="confRenderBusyId === c.conflict_id" @click="renderCorrectionMerged(c, 'story')">
+                      {{ $t('world.corrRenderStory') }}
+                    </button>
+                    <button class="mini-btn" :disabled="confRenderBusyId === c.conflict_id" @click="renderCorrectionMerged(c, 'settings')">
+                      {{ $t('world.corrRenderSettings') }}
+                    </button>
+                    <a
+                      class="correction-download"
+                      :href="confCorrectionRenderUrl(projectId, c.conflict_id, 'story', true)"
+                      target="_blank"
+                    >{{ $t('world.corrDownloadStory') }}</a>
+                    <span class="cr-sep">|</span>
+                    <a class="correction-download" :href="correctionDownloadUrl(projectId, c.conflict_id, 'corrected_patches.md')" download>{{ $t('world.corrDownloadPatch') }}</a>
+                    <a class="correction-download" :href="correctionDownloadUrl(projectId, c.conflict_id, 'corrections.json')" download>corrections.json</a>
+                  </div>
+                  <div v-if="c.corrMerged" class="correction-merged">
+                    <div class="correction-merged-head">
+                      <span class="cmh-title">{{ c.corrMerged.source === 'story' ? $t('world.corrMergedStory') : $t('world.corrMergedSettings') }}</span>
+                      <span class="cmh-meta">{{ $t('world.corrApplied', { n: c.corrMerged.applied.length }) }} / {{ $t('world.corrSkipped', { n: c.corrMerged.skipped.length }) }}</span>
+                    </div>
+                    <pre class="correction-preview">{{ c.corrMerged.text }}</pre>
                   </div>
                 </div>
               </div>
@@ -765,6 +792,7 @@ import {
   updateConflictStatus,
   generateConflictCorrections,
   getConflictCorrections,
+  renderConflictsCorrection,
   correctionDownloadUrl,
   searchWorld,
   startWorldSimulation,
@@ -1436,6 +1464,7 @@ async function toggleConflictHistory(conflict) {
 // ---------------- 冲突改正文件（corrected_settings/corrected_story/corrections.json） ----
 
 const corrGeneratingId = ref('')
+const confRenderBusyId = ref('')
 
 /**
  * 生成或读取冲突改正文件并挂到冲突对象上。
@@ -1457,16 +1486,45 @@ async function loadConflictCorrections(conflict, generate = false) {
     conflict.corrections = {
       hasFiles,
       count: res.correction_count || 0,
+      patchCount: res.patch_count || 0,
+      patches: res.patches || [],
       files: res.files || {},
       loaded: true,
       corrOpen: hasFiles,
     }
   } catch (e) {
     console.error('加载/生成改正文件失败', e)
-    conflict.corrections = { hasFiles: false, count: 0, files: {}, loaded: true }
+    conflict.corrections = { hasFiles: false, count: 0, patchCount: 0, patches: [], files: {}, loaded: true }
   } finally {
     corrGeneratingId.value = ''
   }
+}
+
+/**
+ * 动态渲染合并全文（原始语料 + 外挂补丁）到冲突卡片内。
+ */
+async function renderCorrectionMerged(conflict, source) {
+  confRenderBusyId.value = conflict.conflict_id
+  try {
+    const res = await renderConflictsCorrection(projectId, conflict.conflict_id, source)
+    conflict.corrMerged = {
+      source,
+      text: res.text || '',
+      applied: res.applied || [],
+      skipped: res.skipped || [],
+    }
+  } catch (e) {
+    console.error('渲染合并全文失败', e)
+    conflict.corrMerged = { source, text: '', applied: [], skipped: [] }
+  } finally {
+    confRenderBusyId.value = ''
+  }
+}
+
+/** 构造动态渲染下载 URL（下载时直接以 md 附件返回）。 */
+function confCorrectionRenderUrl(projectId, conflictId, source, download) {
+  const q = download ? '&download=1' : ''
+  return `/api/world/${projectId}/conflicts/${conflictId}/corrections/render?source=${source}${q}`
 }
 
 // 冲突列表多选标记 通过/驳回
@@ -2843,6 +2901,103 @@ onUnmounted(() => {
   margin-top: 6px;
   font-size: 12px;
   color: #888;
+}
+
+/* ---- 外挂补丁清单 ---- */
+.correction-patch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.correction-patch {
+  border: 1px solid #E0E0E0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #FBFCFF;
+}
+.correction-patch-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.cp-op {
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: #1565C0;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.cp-src {
+  font-size: 10px;
+  color: #555;
+  background: #EEEEEE;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.cp-cid {
+  font-size: 10px;
+  color: #999;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.cp-line {
+  font-size: 12px;
+  color: #333;
+  line-height: 1.5;
+  margin: 2px 0;
+  word-break: break-word;
+}
+.cp-label {
+  font-weight: 700;
+  color: #333;
+  margin-right: 4px;
+}
+.cp-note {
+  font-size: 11px;
+  color: #555;
+  background: #FAFAFA;
+  border-left: 2px solid #90CAF9;
+  padding: 3px 6px;
+  margin-top: 4px;
+  border-radius: 2px;
+}
+.correction-render {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 0;
+  border-top: 1px dashed #E0E0E0;
+}
+.cr-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #333;
+  margin-right: 4px;
+}
+.cr-sep {
+  color: #BBB;
+}
+.correction-merged {
+  margin-top: 8px;
+}
+.correction-merged-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.cmh-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1B5E20;
+}
+.cmh-meta {
+  font-size: 11px;
+  color: #777;
 }
 
 /* 检索 */

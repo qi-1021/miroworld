@@ -137,10 +137,25 @@ export function getConflictCorrections(projectId, conflictId) {
 }
 
 /**
- * 构造下载某份改正文件的绝对 URL（用于 window.open / <a download>）
+ * 动态渲染合并全文（原始语料 + 外挂补丁，不落盘大文件）
  * @param {String} projectId
  * @param {String} conflictId
- * @param {String} filename - corrected_settings.md | corrected_story.md | corrections.json
+ * @param {String} source - settings | story
+ * @param {Boolean} download - 是否直接下载为 md
+ */
+export function renderConflictsCorrection(projectId, conflictId, source, download = false) {
+  const q = download ? '&download=1' : ''
+  return service({
+    url: `/api/world/${projectId}/conflicts/${conflictId}/corrections/render?source=${source}${q}`,
+    method: 'get'
+  })
+}
+
+/**
+ * 构造下载外挂补丁文件的绝对 URL（用于 window.open / <a download>）
+ * @param {String} projectId
+ * @param {String} conflictId
+ * @param {String} filename - corrected_patches.md | corrections.json
  */
 export function correctionDownloadUrl(projectId, conflictId, filename) {
   return `/api/world/${projectId}/conflicts/${conflictId}/corrections/${filename}/download`
