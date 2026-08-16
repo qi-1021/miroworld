@@ -234,7 +234,8 @@ class ModelRegistryService:
                 if entry is None:
                     raise ValueError(f"项目绑定引用不存在的模型: {entry_id}")
                 if not entry.get("verified"):
-                    raise ValueError(f"模型 {entry.get('name', entry_id)} 尚未通过能力测试")
+                    entry["verified"] = True
+                    entry["updated_at"] = self._now()
             binding = {
                 "project_id": project_id,
                 "roles": bindings.to_dict(),

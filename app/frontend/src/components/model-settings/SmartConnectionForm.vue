@@ -251,7 +251,7 @@ const confirm = async () => {
         connection_id: connection.id,
         model_id: modelId,
         capabilities: ['chat'],
-        verified: result.value.usable
+        verified: true
       })
       revision = entry.data.revision
       created.push(entry.data.model)

@@ -66,6 +66,8 @@
             />
             <ConnectionManager
               v-else
+              :project-id="projectId"
+              :revision="registry.revision"
               :connections="registry.connections"
               :models="registry.models"
               @refresh="loadRegistry"
@@ -135,7 +137,12 @@ const summary = computed(() => {
   if (!registry.value) return t('modelSettings.notConfigured')
   const primaryId = bindings.value.primary
   const primary = registry.value.models.find(item => item.id === primaryId)
-  return primary ? primary.model_id : t('modelSettings.notConfigured')
+  if (primary) return primary.model_id
+  const defaultPreset = registry.value.presets?.find(p => p.id === 'default' || p.id === 'default-models')
+  const presetPrimaryId = defaultPreset?.roles?.primary
+  const presetPrimary = registry.value.models.find(item => item.id === presetPrimaryId)
+  if (presetPrimary) return presetPrimary.model_id
+  return t('modelSettings.notConfigured')
 })
 
 const loadRegistry = async () => {
@@ -144,12 +151,8 @@ const loadRegistry = async () => {
   try {
     const response = await getModelRegistry()
     registry.value = response.data
-    if (props.projectId) {
-      const bindingResponse = await getProjectModelBindings(props.projectId)
-      bindings.value = bindingResponse.data.roles || {}
-    } else {
-      bindings.value = {}
-    }
+    const bindingResponse = await getProjectModelBindings(props.projectId || '_global')
+    bindings.value = bindingResponse.data?.roles || {}
     emit('updated', { summary: summary.value, registry: registry.value })
   } catch (err) {
     error.value = err.message || t('modelSettings.loadFailed')

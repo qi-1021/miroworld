@@ -2,18 +2,18 @@
   <section class="bindings-editor">
     <div class="section-heading">
       <div>
-        <span class="eyebrow">ROLE BINDINGS</span>
-        <h3>{{ $t('modelSettings.roleBindings') }}</h3>
+        <span class="eyebrow">{{ projectId ? 'PROJECT ROLES' : 'GLOBAL DEFAULT' }}</span>
+        <h3>{{ projectId ? $t('modelSettings.roleBindings') : $t('modelSettings.globalDefault') }}</h3>
       </div>
-      <span v-if="projectId" class="context-chip">{{ projectId }}</span>
+      <span class="context-chip">{{ projectId || 'GLOBAL' }}</span>
     </div>
 
-    <p v-if="!projectId" class="empty-note">
+    <p v-if="!projectId" class="global-note">
       <Info :size="16" />
-      {{ $t('modelSettings.noProjectContext') }}
+      {{ $t('modelSettings.globalDefaultDesc') }}
     </p>
 
-    <div v-else class="roles">
+    <div class="roles">
       <label v-for="role in roleDefinitions" :key="role.id" class="role-row">
         <span class="role-copy">
           <strong>{{ $t(role.label) }}</strong>
@@ -22,7 +22,7 @@
         <select v-model="localBindings[role.id]">
           <option value="">{{ role.inherit ? $t('modelSettings.inheritPrimary') : $t('modelSettings.notConfigured') }}</option>
           <option v-for="model in modelsFor(role.capability)" :key="model.id" :value="model.id">
-            {{ connectionName(model.connection_id) }} / {{ model.model_id }}
+            {{ connectionName(model.connection_id) }} / {{ model.model_id }}{{ model.verified ? '' : ` (${$t('modelSettings.unverified')})` }}
           </option>
         </select>
         <span class="role-status" :class="localBindings[role.id] ? 'ready' : 'empty'">
@@ -39,7 +39,7 @@
     <div v-if="error" class="message error">{{ error }}</div>
     <div v-if="saved" class="message success">{{ $t('modelSettings.bindingsSaved') }}</div>
 
-    <div v-if="projectId" class="actions">
+    <div class="actions">
       <button type="button" class="secondary-button" :disabled="saving" @click="resetBindings">
         <RotateCcw :size="15" />
         {{ $t('modelSettings.reset') }}
@@ -88,9 +88,9 @@ const resetBindings = () => {
 watch(() => props.bindings, resetBindings, { immediate: true, deep: true })
 watch(() => props.projectId, resetBindings)
 
-const modelsFor = (capability) => props.models.filter(model => (
-  model.verified && model.capabilities?.includes(capability)
-))
+const modelsFor = (capability) => props.models
+  .filter(model => model.capabilities?.includes(capability))
+  .sort((a, b) => (b.verified ? 1 : 0) - (a.verified ? 1 : 0))
 
 const connectionName = (connectionId) => (
   props.connections.find(item => item.id === connectionId)?.name || 'Local'
@@ -130,7 +130,7 @@ const save = async () => {
 .eyebrow { color: #a1c50a; font-size: 9px; font-weight: 800; }
 h3 { margin-top: 4px; font-size: 17px; }
 .context-chip { max-width: 170px; overflow: hidden; padding: 5px 7px; background: #eee; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.empty-note { display: flex; gap: 8px; margin-top: 15px; padding: 12px; border-left: 3px solid #d69a00; background: #fff7d9; font-size: 11px; line-height: 1.45; }
+.empty-note, .global-note { display: flex; gap: 8px; margin-top: 15px; padding: 12px; border-left: 3px solid #a1c50a; background: #f3f7e6; font-size: 11px; line-height: 1.45; color: #333; }
 .roles { margin-top: 15px; border-top: 1px solid #ddd; }
 .role-row { display: grid; grid-template-columns: 145px minmax(0, 1fr) 58px; gap: 9px; align-items: center; padding: 12px 0; border-bottom: 1px solid #e7e7e3; }
 .role-copy strong, .role-copy small { display: block; }

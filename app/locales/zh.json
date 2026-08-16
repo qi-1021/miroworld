@@ -136,7 +136,15 @@
     "prefCloudHint": "仅云端：只用注册表中已验证的云端向量模型；云端不可用则降级为关键词检索。",
     "prefLocalHint": "仅本地：只用 app/models/embeddings/ 下已就绪的本地模型（需先下载模型文件）。",
     "prefSaved": "向量模型偏好已保存",
-    "prefSaveFailed": "保存失败"
+    "prefSaveFailed": "保存失败",
+    "setPrimary": "设为主模型",
+    "setPrimarySuccess": "已将 {name} 设为当前主模型",
+    "verified": "已验证",
+    "unverified": "未验证",
+    "testing": "正在测试...",
+    "testSuccess": "模型测试通过，已验证可用",
+    "globalDefault": "全局默认角色绑定",
+    "globalDefaultDesc": "未单独配置模型绑定的项目将默认继承这组模型设置。"
   },
   "meta": {
     "title": "Miroworld - 预测万物",

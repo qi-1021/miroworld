@@ -136,7 +136,15 @@
     "prefCloudHint": "Cloud only: use a verified cloud embedding model from the registry; falls back to keyword search if unavailable.",
     "prefLocalHint": "Local only: use ready local models under app/models/embeddings/ (download models first).",
     "prefSaved": "Embedding preference saved",
-    "prefSaveFailed": "Failed to save"
+    "prefSaveFailed": "Failed to save",
+    "setPrimary": "Set as Primary",
+    "setPrimarySuccess": "{name} set as primary model",
+    "verified": "Verified",
+    "unverified": "Unverified",
+    "testing": "Testing...",
+    "testSuccess": "Model test passed and verified",
+    "globalDefault": "Global Default Role Bindings",
+    "globalDefaultDesc": "Projects without explicit model bindings will inherit these settings."
   },
   "meta": {
     "title": "Miroworld - Predict Everything",

@@ -36,12 +36,20 @@ export const deleteModelEntry = (entryId, revision) => (
   service.delete(`/api/models/entries/${entryId}`, { params: { revision } })
 )
 
+export const testModelEntry = (entryId) => (
+  service.post(`/api/models/entries/${entryId}/test`)
+)
+
+export const savePreset = (preset) => (
+  service.post('/api/models/presets', preset)
+)
+
 export const getProjectModelBindings = (projectId) => (
-  service.get(`/api/models/projects/${projectId}/bindings`)
+  service.get(`/api/models/projects/${projectId || '_global'}/bindings`)
 )
 
 export const updateProjectModelBindings = (projectId, payload) => (
-  service.put(`/api/models/projects/${projectId}/bindings`, payload)
+  service.put(`/api/models/projects/${projectId || '_global'}/bindings`, payload)
 )
 
 // ==================== 本地向量模型 ====================

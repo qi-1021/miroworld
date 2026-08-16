@@ -272,17 +272,21 @@ def test_model_entry(entry_id: str):
         api_key = registry_service.resolve_connection_secret(entry["connection_id"])
 
         from openai import OpenAI
+        import httpx
 
-        client = OpenAI(api_key=api_key, base_url=connection["endpoint"])
+        http_client = httpx.Client(timeout=30)
+        client = OpenAI(api_key=api_key, base_url=connection["endpoint"], http_client=http_client)
         response = client.chat.completions.create(
             model=entry["model_id"],
             messages=[{"role": "user", "content": "Reply with OK."}],
-            max_tokens=8,
+            max_tokens=32,
             temperature=0,
             timeout=30,
         )
-        content = response.choices[0].message.content if response.choices else ""
-        if not content or not content.strip():
+        choice = response.choices[0].message if response.choices else None
+        content = choice.content if choice else ""
+        reasoning = getattr(choice, "reasoning_content", "") if choice else ""
+        if not (content and content.strip()) and not (reasoning and reasoning.strip()):
             raise ValueError("模型返回了空响应，请重试或更换模型")
 
         result = registry_service.save_model_entry(
@@ -347,6 +351,12 @@ def delete_preset(preset_id: str):
 @models_bp.route("/projects/<project_id>/bindings", methods=["GET"])
 def get_project_bindings(project_id: str):
     bindings = registry_service.get_project_bindings(project_id)
+    if not bindings and (project_id in ["_global", "global", "default"] or not project_id):
+        preset = next((p for p in registry_service.get_redacted_registry().get("presets", []) if p["id"] in ["default", "default-models"]), None)
+        if not preset and registry_service.get_redacted_registry().get("presets"):
+            preset = registry_service.get_redacted_registry().get("presets")[0]
+        if preset:
+            bindings = RoleBindings.from_dict(preset.get("roles", {}))
     return _success({"project_id": project_id, "roles": bindings.to_dict() if bindings else {}})
 
 
@@ -354,9 +364,20 @@ def get_project_bindings(project_id: str):
 def update_project_bindings(project_id: str):
     try:
         body = _json_body()
+        bindings = RoleBindings.from_dict(body.get("roles") or {})
+        if project_id in ["_global", "global", "default"]:
+            try:
+                registry_service.save_preset(
+                    preset_id="default",
+                    name="全局默认模型",
+                    bindings=bindings,
+                    expected_revision=None,
+                )
+            except Exception:
+                pass
         result = registry_service.save_project_bindings(
             project_id=project_id,
-            bindings=RoleBindings.from_dict(body.get("roles") or {}),
+            bindings=bindings,
             expected_revision=body.get("revision"),
         )
         return _success(result)
