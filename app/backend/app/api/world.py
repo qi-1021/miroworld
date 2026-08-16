@@ -392,8 +392,32 @@ def build_world_graph(project_id: str):
         batch_size = 8
     batch_size = max(1, min(16, batch_size))
 
+    # 同项目并发构建守卫：已有 processing/pending 的 world_graph_build 任务时，
+    # 直接返回进行中的 task_id，避免重复线程写同一图谱（导致进度混乱/拖慢）。
+    for _task in task_manager.list_tasks():
+        try:
+            _meta = _task.get("metadata") if isinstance(_task, dict) else {}
+            _status = _task.get("status")
+        except Exception:
+            continue
+        if (
+            _meta.get("kind") == "world_graph_build"
+            and _meta.get("project_id") == project_id
+            and _status in ("pending", "processing")
+        ):
+            return jsonify({
+                "success": True,
+                "task_id": _task.get("task_id"),
+                "graph_id": project.graph_id,
+                "already_running": True,
+                "message": "该项目的世界图谱构建任务已在进行中，复用现有任务",
+            })
+
     # 后台任务：本体生成 → 建图 → 写回 project.graph_id
-    task_id = task_manager.create_task(f"构建世界图谱: {project.name or project_id}")
+    task_id = task_manager.create_task(
+        f"构建世界图谱: {project.name or project_id}",
+        metadata={"kind": "world_graph_build", "project_id": project_id},
+    )
     project.graph_build_task_id = task_id
     project.status = ProjectStatus.GRAPH_BUILDING
     ProjectManager.save_project(project)
