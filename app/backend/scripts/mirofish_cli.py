@@ -316,12 +316,31 @@ def cmd_assistant(args) -> dict:
     context = _build_project_context(args.project_id)
     if context == "项目不存在。":
         raise ValueError("项目不存在")
+
+    direct_action = getattr(args, "direct_action", "") or ""
+    if direct_action:
+        params = {}
+        for kv in getattr(args, "param", []) or []:
+            if "=" in kv:
+                k, v = kv.split("=", 1)
+                params[k.strip()] = v.strip()
+        result = _execute_assistant_action(args.project_id, direct_action, params)
+        return {
+            "answer": f"已执行操作：{direct_action}",
+            "action": direct_action,
+            "action_result": result,
+        }
+
+    question = getattr(args, "question", "") or ""
+    if not question.strip():
+        raise ValueError("缺少 --question 或 --direct-action")
+
     llm = _build_llm_client(args.project_id)
     from app.api.assistant import _SYSTEM_PROMPT
     answer = llm.chat(
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": f"项目上下文：\n{context}\n\n用户问题：{args.question}"},
+            {"role": "user", "content": f"项目上下文：\n{context}\n\n用户问题：{question}"},
         ],
         temperature=0.3,
         max_tokens=1000,
@@ -772,7 +791,9 @@ def _parser() -> argparse.ArgumentParser:
     aa = a.add_subparsers(dest="action", required=True)
     ask = _add_json(aa.add_parser("ask"))
     ask.add_argument("--project-id", required=True)
-    ask.add_argument("--question", required=True)
+    ask.add_argument("--question", default="", help="自然语言问题")
+    ask.add_argument("--direct-action", default="", help="直接执行动作名，跳过 LLM 决策")
+    ask.add_argument("--param", action="append", default=[], help="动作参数 key=value，可多次")
 
     m = sub.add_parser("models")
     ma = m.add_subparsers(dest="action", required=True)
