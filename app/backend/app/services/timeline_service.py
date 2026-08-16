@@ -1663,6 +1663,21 @@ def _extract_progress_path(project_id: str, source: str) -> str:
     )
 
 
+def has_resumable_progress(project_id: str, source: str) -> bool:
+    """是否存在可供续传的断点：progress 文件存在且有任一"已完成"条目。
+
+    "已完成"判定：entry.status == "ok"（成功抽取）或 entry.events 非空。
+    用于 start_extract 在未显式传 resume/force 时自动判断是否续传（页面刷新/重启后不丢进度）。
+    """
+    entries = _load_extract_progress(project_id, source)
+    for entry in entries:
+        if str(entry.get("status") or "").strip() in ("ok", "done", "completed"):
+            return True
+        if entry.get("events"):
+            return True
+    return False
+
+
 def _load_extract_progress(project_id: str, source: str) -> List[Dict[str, Any]]:
     """读取抽取断点；不存在/损坏返回 []。"""
     try:
@@ -2063,18 +2078,38 @@ def _source_text(project_id: str, story: bool) -> str:
 # ---------------------------------------------------------------------------
 # 对外启动接口
 # ---------------------------------------------------------------------------
-def start_extract(project_id: str, source: str, resume: bool = False) -> str:
+def start_extract(project_id: str, source: str, resume: Optional[bool] = None,
+                  force: bool = False) -> str:
     """校验 project_id/source，创建后台任务并返回 task_id。
 
-    resume=True 时读取 extract-progress-<source>.json，跳过已完成且
-    源文本 hash 未变的 chunk，从失败/未处理处续跑。
+    语义（三态 resume：None=未指定 | True=强制续传 | False=强制全新）：
+    - force=True        : 强制全新抽取，忽略已有断点。
+    - resume=True       : 强制续传，读取 extract-progress-<source>.json，跳过已完成且
+                          源文本 hash 未变的 chunk，从失败/未处理处续跑。
+    - resume=False      : 强制全新抽取（显式不发 resume，供"重抽"语义）。
+    - resume=None(未传)  : 自动续传 —— 若存在已有断点且有已完成条目则续传，
+                          否则全新抽取（页面刷新/重启后不发 resume 也能自动续上，不丢进度）。
     """
     validate_project_id(project_id)
     if source not in ("story", "bg"):
         raise ValueError("source 必须是 story 或 bg")
+
+    # 解析最终是否续传：force 优先全新建；resume 三态；None → 自动检测。
+    if force:
+        eff_resume = False
+    elif resume is True:
+        eff_resume = True
+    elif resume is False:
+        eff_resume = False
+    else:  # resume is None → 自动检测
+        eff_resume = has_resumable_progress(project_id, source)
+        if eff_resume:
+            logger.info(
+                f"[{project_id}/{source}] 检测到已有断点，自动续传（未显式传 resume）")
+
     task_id = _new_task("tl_task", "任务已创建")
     threading.Thread(target=_extract_task_body,
-                     args=(project_id, source, task_id, resume),
+                     args=(project_id, source, task_id, eff_resume),
                      daemon=True).start()
     return task_id
 

@@ -30,14 +30,19 @@ def extract():
     body:
         project_id: str 必填
         source: 'story' | 'bg'，默认 story
-        resume: bool 可选，true 时从上次断点续跑
+        resume: bool 可选，true 时强制从上次断点续跑（不传则由后端自动检测已有断点续传）
+        force: bool 可选，true 时忽略已有断点强制全新抽取
     """
     try:
         data = request.get_json(silent=True) or {}
         project_id = str(data.get('project_id') or '').strip()
         source = str(data.get('source') or 'story').strip()
-        resume = bool(data.get('resume', False))
-        task_id = timeline_service.start_extract(project_id, source, resume=resume)
+        # resume 三态：未传=None（后端自动检测已有断点续传）；True 强制续传；False 强制全新
+        resume_raw = data.get('resume')
+        resume = True if resume_raw is True else (False if resume_raw is False else None)
+        force = bool(data.get('force', False))
+        task_id = timeline_service.start_extract(
+            project_id, source, resume=resume, force=force)
         return jsonify({"success": True, "data": {"task_id": task_id}})
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 400

@@ -1145,6 +1145,8 @@
     "notHappened": "未发生",
     "taskLost": "任务不存在，请重新发起",
     "retryLaunch": "重新发起",
+    "forceExtract": "强制重抽",
+    "forceExtractHint": "忽略已有断点，从零重新抽取",
     "structureType": "结构类型",
     "structure": {
       "linear": "线性",

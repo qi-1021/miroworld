@@ -1145,6 +1145,8 @@
     "notHappened": "Not happened",
     "taskLost": "Task not found. Please restart.",
     "retryLaunch": "Restart",
+    "forceExtract": "Force re-extract",
+    "forceExtractHint": "Ignore existing progress and re-extract from scratch",
     "structureType": "Structure Type",
     "structure": {
       "linear": "Linear",

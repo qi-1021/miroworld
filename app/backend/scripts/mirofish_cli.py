@@ -126,7 +126,11 @@ def cmd_world(args) -> dict:
 def cmd_timeline(args) -> dict:
     from app.services import timeline_service
     if args.action == "extract":
-        task_id = timeline_service.start_extract(args.project_id, args.source)
+        task_id = timeline_service.start_extract(
+            args.project_id, args.source,
+            resume=getattr(args, "resume", False),
+            force=getattr(args, "force", False),
+        )
         if args.wait:
             st = _wait_task(task_id, timeout=args.timeout)
             st["task_id"] = task_id
@@ -651,6 +655,8 @@ def _parser() -> argparse.ArgumentParser:
     te.add_argument("--source", choices=["story", "bg"], default="story")
     te.add_argument("--wait", action="store_true")
     te.add_argument("--timeout", type=float, default=600.0)
+    te.add_argument("--resume", action="store_true", help="强制从已有断点续传")
+    te.add_argument("--force", action="store_true", help="忽略已有断点强制全新抽取")
     _add_json(ta.add_parser("get")).add_argument("--project-id", required=True)
     _add_json(ta.add_parser("threads")).add_argument("--project-id", required=True)
     _add_json(ta.add_parser("characters")).add_argument("--project-id", required=True)

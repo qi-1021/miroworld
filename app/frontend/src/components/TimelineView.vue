@@ -35,6 +35,7 @@
         <span v-if="extracting" class="spinner-sm"></span>
         {{ extracting ? extractingLabel() : $t('timeline.extract') }}
       </button>
+      <button v-if="!extracting && !loading" class="tl-btn ghost" :title="$t('timeline.forceExtractHint')" @click="runExtract('force')">{{ $t('timeline.forceExtract') }}</button>
       <div class="tl-type-select" :class="{ open: displayPickerOpen }">
         <button class="tl-btn ghost type-trigger" @click="displayPickerOpen = !displayPickerOpen" :title="$t('timeline.displayMode')">
           <span class="type-trigger-label">{{ $t('timeline.displayMode') }}：{{ displayModeLabel }}</span>
@@ -1628,15 +1629,21 @@ async function loadEvents(force) {
   finally { loading.value = false; }
 }
 
-async function runExtract() {
+async function runExtract(mode) {
   if (extracting.value) return;
   extracting.value = true; statusMessage.value = ''; statusError.value = false;
   extractProgress.value = { done: 0, total: 0 };
   extractStage.value = ''; extractSteps.value = []; extractError.value = ''; extractDetail.value = true; extractTries = 0; extractInterrupted.value = false;
+  // resume 只在确有失败/中断记录时传 true；否则不发 resume/force，让后端自动检测已有断点续传
+  // （页面刷新/重启后 extractResumable 已复位，也能自动续上，不丢 100+ 条进度）。
   const resume = extractResumable.value;
+  const force = (mode === 'force');
   extractResumable.value = false;
+  const payload = { project_id: props.projectId, source: source.value, timeline_type: timelineType.value };
+  if (force) payload.force = true;
+  else if (resume) payload.resume = true;
   try {
-    const res = await extractTimeline({ project_id: props.projectId, source: source.value, timeline_type: timelineType.value, resume });
+    const res = await extractTimeline(payload);
     typePickerOpen.value = false;
     const taskId = res?.data?.task_id || res?.task_id;
     if (!taskId) throw new Error(t('timeline.extractFailed'));
