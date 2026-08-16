@@ -430,14 +430,21 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
     if action == "export_all_worldlines":
         from ..services.world_simulation import WorldSimulationService
         sims = WorldSimulationService.list_simulations(project_id, limit=1000)
+        try:
+            from ..models.project import ProjectManager
+            project = ProjectManager.get_project(project_id)
+            graph_id = project.graph_id if project else None
+        except Exception:
+            graph_id = None
         for s in sims:
+            s["graph_id"] = graph_id
             ev_path = s.get("events_path") or ""
             if ev_path and os.path.exists(ev_path):
                 with open(ev_path, "r", encoding="utf-8") as f:
                     s["events"] = json.load(f)
             else:
                 s["events"] = []
-        return {"simulations": sims}
+        return {"simulations": sims, "graph_id": graph_id}
 
     if action == "merge_worldlines":
         from ..services.world_simulation import WorldSimulationService
@@ -465,10 +472,22 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
         if state is None:
             raise ValueError("模拟不存在")
         events = (state.result or {}).get("events") or []
+        graph_id = None
+        timeline_count = 0
+        try:
+            from ..models.project import ProjectManager
+            from ..services import timeline_service
+            project = ProjectManager.get_project(state.project_id)
+            graph_id = project.graph_id if project else None
+            timeline_count = len(timeline_service.load_timeline(state.project_id, None).get("events", []))
+        except Exception:
+            pass
         return {
             "simulation_id": sim_id,
             "status": state.status,
             "events": events,
+            "graph_id": graph_id,
+            "timeline_event_count": timeline_count,
         }
 
     if action == "copy_worldline":
