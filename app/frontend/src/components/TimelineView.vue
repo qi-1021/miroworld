@@ -187,7 +187,7 @@
           <div class="tl-split" :style="{ left: scrubPct + '%' }"></div>
           <!-- 事件点 -->
           <div
-            v-for="(ev, i) in filteredEvents"
+            v-for="(ev, i) in visibleEvents"
             :key="ev.event_id || i"
             class="tl-point-wrap"
             :style="{ left: pointLeft(ev) }"
@@ -244,7 +244,7 @@
       <!-- 事件卡列表 -->
       <div class="tl-events">
         <div
-          v-for="(ev, i) in displayEvents"
+          v-for="(ev, i) in visibleEvents"
           :key="'c' + (ev.event_id || i)"
           class="tl-card"
           :ref="(el) => setCardRef(ev.event_id, el)"
@@ -386,6 +386,15 @@
         </div>
       </div>
       <!-- /网状 / 元叙事模式 -->
+
+      <!-- 渲染限流：加载更多 / 显示全部（所有显示模式通用） -->
+      <div v-if="visibleEventsCount < filteredEvents.length" class="tl-render-limit-bar">
+        <span class="rl-info">{{ $t('timeline.renderedCount', { shown: visibleEventsCount, total: filteredEvents.length }) }}</span>
+        <div class="rl-actions">
+          <button class="mini-act" @click="expandRender">{{ $t('timeline.loadMore') }}</button>
+          <button class="mini-act" @click="showAllEvents">{{ $t('timeline.showAll') }}</button>
+        </div>
+      </div>
     </template>
 
     <!-- 详情弹层：详情 + 异议列表 + 修正（所有事件） -->
@@ -760,10 +769,10 @@ async function resolveAutoMode() {
   }
 }
 
-// 并行泳道
+// 并行泳道（渲染用 visibleEvents 限流；过滤/计数仍走全量 filteredEvents）
 const parallelLanes = computed(() => {
   const map = new Map()
-  filteredEvents.value.forEach(ev => {
+  visibleEvents.value.forEach(ev => {
     const key = threadKey(ev) || 'main'
     if (!map.has(key)) map.set(key, { key, label: ev.thread_name || ev.thread_id || (ev.dimension && ev.dimension !== 'main' ? ev.dimension : t('timeline.mode.linear')), events: [] })
     map.get(key).events.push(ev)
@@ -774,7 +783,7 @@ const parallelLanes = computed(() => {
 // 受限调色板：柑橘强调 + 墨色灰阶 + 语义红（冲突）
 const LANE_COLORS = ['#a1c50a', '#10203a', '#536078', '#7b879e', '#b9c2d0', '#c5283d', '#374a63', '#9aa5b8', '#67748a', '#d8dee8']
 function laneStyle(lane) {
-  const i = filteredEvents.value.findIndex(ev => (threadKey(ev) || 'main') === lane.key)
+  const i = visibleEvents.value.findIndex(ev => (threadKey(ev) || 'main') === lane.key)
   const idx = i < 0 ? lane.key.length || 0 : i
   const c = LANE_COLORS[idx % LANE_COLORS.length]
   return { borderLeftColor: c }
@@ -984,14 +993,14 @@ const STRUCT_LAYOUTS = {
 
 // 结构弹窗当前布局类型（默认按后端/事件推断）
 const structureType = ref('linear')
-// 结构弹窗节点集合（模板渲染用）
+// 结构弹窗节点集合（模板渲染用；渲染限流走 visibleEvents，避免 2600+ 事件布局卡死）
 const strucNodes = computed(() => {
   const layout = STRUCT_LAYOUTS[structureType.value] || linearLayout
-  return layout(displayEvents.value).nodes
+  return layout(visibleEvents.value).nodes
 })
 const strucLinks = computed(() => {
   const layout = STRUCT_LAYOUTS[structureType.value] || linearLayout
-  return layout(displayEvents.value).links
+  return layout(visibleEvents.value).links
 })
 // 结构弹窗推断默认类型（打开时设置）
 function inferStructureType() {
@@ -1001,9 +1010,9 @@ function inferStructureType() {
 
 function clearNetSelection() { selectedEvent.value = null }
 
-// 页面内树状模式布局（高于/复用于结构弹窗的 tree 布局）
-const pageTreeNodes = computed(() => treeLayout(displayEvents.value).nodes)
-const pageTreeLinks = computed(() => treeLayout(displayEvents.value).links)
+// 页面内树状模式布局（高于/复用于结构弹窗的 tree 布局；渲染限流走 visibleEvents）
+const pageTreeNodes = computed(() => treeLayout(visibleEvents.value).nodes)
+const pageTreeLinks = computed(() => treeLayout(visibleEvents.value).links)
 function treeBezier(a, b) {
   // 垂直贝塞尔：父在 b（下方），子父在 a（上方）
   const midY = (a.y + b.y) / 2
@@ -1039,7 +1048,7 @@ function renderNetSvg() {
   const svg = d3.select(svgEl)
   svg.selectAll('*').remove()
 
-  const list = displayEvents.value
+  const list = visibleEvents.value
   if (!list.length) return
 
   const nodes = list.map(ev => {
@@ -1351,6 +1360,19 @@ function isFuture(ev) { return ev.kind === 'future'; }
 
 // 主显示列表（用于渲染） = filteredEvents 兼容旧接口，用 displayEvents
 const filteredEvents = computed(() => displayEvents.value);
+
+// ===== 渲染限流：2600+ 事件会把 DOM / 布局 / SVG 卡死 =====
+// renderLimit 只限制「渲染/布局」用的可见列表，过滤与计数仍走全量 displayEvents。
+const renderLimit = ref(300)
+const RENDER_STEP = 300
+const visibleEvents = computed(() => {
+  const list = displayEvents.value
+  if (!list.length || renderLimit.value === Infinity) return list
+  return list.slice(0, renderLimit.value)
+})
+const visibleEventsCount = computed(() => visibleEvents.value.length)
+function expandRender() { renderLimit.value += RENDER_STEP }
+function showAllEvents() { renderLimit.value = Infinity }
 
 // 网状/元叙事页面内模式：事件或模式变化时重绘力导向 SVG
 watch(() => [displayMode.value, filterKey()], () => {
@@ -2249,6 +2271,23 @@ onUnmounted(() => {
 .loc-active-hist { color: #333; }
 /* 事件列表 */
 .tl-events { display: flex; flex-direction: column; gap: 8px; max-height: 380px; overflow-y: auto; }
+/* 渲染限流条：已显示 X / 共 Y + 加载更多 / 显示全部 */
+.tl-render-limit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px dashed #d2d2d7;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  color: #7b879e;
+}
+.rl-info { font-weight: 500; }
+.rl-actions { display: flex; gap: 6px; }
 .tl-card { border: 1px solid #EAEAEA; border-radius: 6px; padding: 10px 12px; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s, opacity 0.2s; background: #FFF; }
 .tl-card:hover { border-color: #a1c50a; }
 .tl-card.active { border-color: #000; box-shadow: 0 0 0 1px #000; }
