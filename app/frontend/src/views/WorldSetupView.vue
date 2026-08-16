@@ -62,7 +62,7 @@
                 ref="bgFileInput"
                 type="file"
                 multiple
-                accept=".txt,.md,.markdown,.pdf"
+                accept=".txt,.md,.markdown,.pdf,.docx,.html,.htm,.epub,.odt,.rtf"
                 style="display: none"
                 @change="onBgFilesChange"
               />
@@ -111,7 +111,7 @@
                 ref="stFileInput"
                 type="file"
                 multiple
-                accept=".txt,.md,.markdown,.pdf"
+                accept=".txt,.md,.markdown,.pdf,.docx,.html,.htm,.epub,.odt,.rtf"
                 style="display: none"
                 @change="onStFilesChange"
               />
@@ -317,6 +317,48 @@
                   <span class="de-label">{{ $t('world.effectLabel') }}</span>
                   <span class="de-text">{{ r.effect }}</span>
                 </div>
+              </div>
+            </div>
+            <div class="correction-block">
+              <div class="correction-actions">
+                <button
+                  class="mini-btn correction-gen"
+                  :disabled="corrGeneratingId === c.conflict_id"
+                  @click="loadConflictCorrections(c, true)"
+                >
+                  {{ corrGeneratingId === c.conflict_id
+                      ? $t('world.corrGenerating')
+                      : (c.corrections?.hasFiles ? $t('world.corrRegenerate') : $t('world.corrGenerate')) }}
+                </button>
+              </div>
+              <div v-if="c.corrections && c.corrections.hasFiles" class="correction-files">
+                <div class="correction-files-head">
+                  <span class="cfh-title">{{ $t('world.corrFilesTitle') }}（{{ c.corrections.count }}）</span>
+                  <button class="mini-btn" @click="c.corrOpen = !c.corrOpen">
+                    {{ c.corrOpen ? $t('world.corrHidePreview') : $t('world.corrShowPreview') }}
+                  </button>
+                </div>
+                <div v-if="c.corrOpen" class="correction-files-body">
+                  <div
+                    v-for="(f, fn) in c.corrections.files"
+                    :key="fn"
+                    class="correction-file"
+                  >
+                    <div class="correction-file-head">
+                      <span class="correction-filename">{{ f.filename }}</span>
+                      <span class="correction-file-meta">{{ f.mime }}</span>
+                      <a
+                        class="correction-download"
+                        :href="correctionDownloadUrl(projectId, c.conflict_id, f.filename)"
+                        download
+                      >{{ $t('world.corrDownload') }}</a>
+                    </div>
+                    <pre class="correction-preview">{{ f.content }}</pre>
+                  </div>
+                </div>
+              </div>
+              <div v-else-if="c.corrections && c.corrections.loaded && !c.corrections.hasFiles" class="correction-empty">
+                {{ $t('world.corrEmpty') }}
               </div>
             </div>
           </div>
@@ -721,6 +763,9 @@ import {
   getWorldConflicts,
   getConflictHistory,
   updateConflictStatus,
+  generateConflictCorrections,
+  getConflictCorrections,
+  correctionDownloadUrl,
   searchWorld,
   startWorldSimulation,
   listWorldSimulations,
@@ -1349,6 +1394,9 @@ async function setConflictStatus(conflict, status) {
     await updateConflictStatus(projectId, conflict.conflict_id, status, conflict.resolution_note || '')
     conflict.status = status
     await refreshConflictDetail(conflict)
+    if (status === 'accepted' || status === 'dismissed') {
+      await loadConflictCorrections(conflict, true)  // 生效 → 刷新改正文件
+    }
   } catch (e) {
     console.error('更新冲突状态失败', e)
   }
@@ -1382,6 +1430,42 @@ async function toggleConflictHistory(conflict) {
   conflict.historyOpen = !conflict.historyOpen
   if (conflict.historyOpen) {
     await refreshConflictDetail(conflict)
+  }
+}
+
+// ---------------- 冲突改正文件（corrected_settings/corrected_story/corrections.json） ----
+
+const corrGeneratingId = ref('')
+
+/**
+ * 生成或读取冲突改正文件并挂到冲突对象上。
+ * @param {Object} conflict  - 冲突对象（会写入 conflict.corrections）
+ * @param {Boolean} generate - true=强制重新生成；false=仅读取（已有则不重复拉取）
+ */
+async function loadConflictCorrections(conflict, generate = false) {
+  try {
+    corrGeneratingId.value = conflict.conflict_id
+    let res
+    if (generate) {
+      res = await generateConflictCorrections(projectId, conflict.conflict_id)
+    } else if (conflict.corrections && conflict.corrections.loaded) {
+      return
+    } else {
+      res = await getConflictCorrections(projectId, conflict.conflict_id)
+    }
+    const hasFiles = Boolean(res.has_files) && !!(res.files && Object.keys(res.files).length)
+    conflict.corrections = {
+      hasFiles,
+      count: res.correction_count || 0,
+      files: res.files || {},
+      loaded: true,
+      corrOpen: hasFiles,
+    }
+  } catch (e) {
+    console.error('加载/生成改正文件失败', e)
+    conflict.corrections = { hasFiles: false, count: 0, files: {}, loaded: true }
+  } finally {
+    corrGeneratingId.value = ''
   }
 }
 
@@ -1442,6 +1526,7 @@ async function submitJustify(conflict) {
     conflict.justifyOpen = false
     conflict.historyOpen = true  // 自动展开历史，立即看到本轮裁定与效果
     await refreshConflictDetail(conflict)
+    await loadConflictCorrections(conflict, true)  // 辩驳成功 → 拉取/刷新改正文件
   } catch (e) {
     console.error('提交自定义辩解失败', e)
   } finally {
@@ -2669,6 +2754,95 @@ onUnmounted(() => {
 }
 .de-text {
   color: #BF360C;
+}
+
+/* ---- 冲突改正文件 ---- */
+.correction-block {
+  margin-top: 12px;
+  border-top: 1px dashed #E0E0E0;
+  padding-top: 10px;
+}
+.correction-actions {
+  margin-bottom: 6px;
+}
+.correction-gen {
+  border-color: #1565C0;
+  color: #1565C0;
+}
+.correction-gen:disabled {
+  opacity: 0.6;
+}
+.correction-files {
+  margin-top: 8px;
+}
+.correction-files-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.cfh-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1565C0;
+}
+.correction-files-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.correction-file {
+  border: 1px solid #E0E0E0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #FAFAFA;
+}
+.correction-file-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #F1F5FB;
+  border-bottom: 1px solid #E0E0E0;
+}
+.correction-filename {
+  font-weight: 700;
+  font-size: 12px;
+  color: #0D47A1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.correction-file-meta {
+  font-size: 10px;
+  color: #777;
+  margin-left: auto;
+}
+.correction-download {
+  font-size: 12px;
+  color: #1565C0;
+  text-decoration: none;
+  border: 1px solid #90CAF9;
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+.correction-download:hover {
+  background: #E3F2FD;
+}
+.correction-preview {
+  margin: 0;
+  padding: 10px;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.correction-empty {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #888;
 }
 
 /* 检索 */

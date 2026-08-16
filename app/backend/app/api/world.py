@@ -31,6 +31,10 @@ from ..services.conflict_detector import (
     load_conflict_report,
     load_conflict,
 )
+from ..services.conflict_correction import (
+    ConflictCorrectionService,
+    load_corrections,
+)
 from ..utils.llm_client import LLMClient
 
 logger = get_logger('mirofish.api.world')
@@ -756,6 +760,97 @@ def get_conflict_history(project_id: str, conflict_id: str):
     return jsonify({"success": True, "conflict": data})
 
 
+# ---------------------------------------------------------------- 冲突改正文件
+
+@world_bp.route('/<project_id>/conflicts/<conflict_id>/corrections', methods=['POST'])
+def generate_conflict_corrections(project_id: str, conflict_id: str):
+    """确定性重算本项目全部生效冲突的改正文件（不依赖 LLM；幂等，多轮追加不重复）。
+
+    - 以 conflict_id 校验项目有该冲突；改正集按项目整份生成。
+    - 生成 corrected_settings.md / corrected_story.md / corrections.json 并落盘。
+    - 返回三份文件的完整内容供前端预览。
+    """
+    if load_conflict(project_id, conflict_id) is None:
+        return jsonify({"success": False, "error": "冲突不存在"}), 404
+    try:
+        result = ConflictCorrectionService().generate(project_id)
+        return jsonify({
+            "success": True,
+            "project_id": project_id,
+            "conflict_id": conflict_id,
+            "has_files": True,
+            "correction_count": len(result.corrections),
+            "files": result.file_snapshot()["files"],
+            "generated_at": result.generated_at,
+        })
+    except Exception as e:
+        logger.error(f"生成改正文件失败: {e}")
+        return jsonify({"success": False, "error": f"生成改正文件失败: {e}"}), 500
+
+
+@world_bp.route('/<project_id>/conflicts/<conflict_id>/corrections', methods=['GET'])
+def get_conflict_corrections(project_id: str, conflict_id: str):
+    """读取最近一次生成的改正文件（不重算）；未生成过则返回 has_files=false。"""
+    if load_conflict(project_id, conflict_id) is None:
+        return jsonify({"success": False, "error": "冲突不存在"}), 404
+    try:
+        result = load_corrections(project_id)
+        if result is None:
+            return jsonify({
+                "success": True,
+                "project_id": project_id,
+                "conflict_id": conflict_id,
+                "has_files": False,
+                "correction_count": 0,
+                "files": {},
+            })
+        return jsonify({
+            "success": True,
+            "project_id": project_id,
+            "conflict_id": conflict_id,
+            "has_files": True,
+            "correction_count": len(result.corrections),
+            "files": result.file_snapshot()["files"],
+            "generated_at": result.generated_at,
+        })
+    except Exception as e:
+        logger.error(f"读取改正文件失败: {e}")
+        return jsonify({"success": False, "error": f"读取改正文件失败: {e}"}), 500
+
+
+@world_bp.route('/<project_id>/conflicts/<conflict_id>/corrections/<filename>/download', methods=['GET'])
+def download_conflict_correction(project_id: str, conflict_id: str, filename: str):
+    """下载某份改正文件（corrected_settings.md / corrected_story.md / corrections.json）。"""
+    if load_conflict(project_id, conflict_id) is None:
+        return jsonify({"success": False, "error": "冲突不存在"}), 404
+    allowed = {"corrected_settings.md", "corrected_story.md", "corrections.json"}
+    if filename not in allowed:
+        return jsonify({"success": False, "error": "未知文件名"}), 400
+    from flask import send_file
+    d = ConflictCorrectionService.corrections_dir(project_id)
+    path = os.path.join(d, filename)
+    if not os.path.exists(path):
+        return jsonify({"success": False, "error": "改正文件尚未生成"}), 404
+    return send_file(path, as_attachment=True, download_name=filename)
+
+
+def _regenerate_corrections_if_settled(project_id: str, conflict) -> bool:
+    """当冲突辩驳成功生效（非 open）后，自动重算改正文件。
+
+    返回 True 表示已重算（包括无新生效裁定时的空集重写）；失败降级返回 False，
+    不阻断辩驳主流程。
+    """
+    if not getattr(conflict, "effective", False):
+        return False
+    try:
+        from ..services.conflict_correction import ConflictCorrectionService
+        ConflictCorrectionService().generate(project_id)
+        return True
+    except Exception as e:
+        logger.warning(f"辩驳成功后自动生成改正文件失败: {e}")
+        return False
+
+
 @world_bp.route('/<project_id>/conflicts/<conflict_id>', methods=['PATCH'])
 def update_conflict_status(project_id: str, conflict_id: str):
     """更新冲突处理状态（open/accepted/dismissed/justified），可附自定义辩解说明。
@@ -838,7 +933,12 @@ def update_conflict_status(project_id: str, conflict_id: str):
             return jsonify({"success": False, "error": "冲突不存在"}), 404
 
         save_conflict_report(project_id, report)
-        return jsonify({"success": True, "conflict": c.to_dict()})
+        # 辩驳成功生效后自动重算改正文件（确定性、幂等；失败不阻断主流程）
+        correction_settled = _regenerate_corrections_if_settled(project_id, c)
+        resp = {"success": True, "conflict": c.to_dict()}
+        if correction_settled is True:
+            resp["corrections_regenerated"] = True
+        return jsonify(resp)
     except Exception as e:
         logger.error(f"更新冲突状态失败: {e}")
         return jsonify({"success": False, "error": str(e)}), 500

@@ -224,6 +224,13 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
         if updated is None:
             raise ValueError("冲突不存在")
         save_conflict_report(project_id, report)
+        # 辩驳成功生效后自动重算改正文件（确定性、幂等；失败不阻断）
+        if getattr(updated, "effective", False):
+            try:
+                from ..services.conflict_correction import ConflictCorrectionService
+                ConflictCorrectionService().generate(project_id)
+            except Exception as e:
+                logger.warning(f"助手自动生成改正文件失败: {e}")
         return {"conflict_id": conflict_id, "status": updated.status,
                 "effective": updated.effective, "last_verdict": updated.last_verdict}
 

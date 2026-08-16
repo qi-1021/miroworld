@@ -113,6 +113,40 @@ export function updateConflictStatus(projectId, conflictId, status, note = '') {
 }
 
 /**
+ * 生成（重算）本项目全部生效冲突的改正文件（确定性，幂等）
+ * @param {String} projectId
+ * @param {String} conflictId
+ */
+export function generateConflictCorrections(projectId, conflictId) {
+  return service({
+    url: `/api/world/${projectId}/conflicts/${conflictId}/corrections`,
+    method: 'post'
+  })
+}
+
+/**
+ * 读取最近一次生成的改正文件
+ * @param {String} projectId
+ * @param {String} conflictId
+ */
+export function getConflictCorrections(projectId, conflictId) {
+  return service({
+    url: `/api/world/${projectId}/conflicts/${conflictId}/corrections`,
+    method: 'get'
+  })
+}
+
+/**
+ * 构造下载某份改正文件的绝对 URL（用于 window.open / <a download>）
+ * @param {String} projectId
+ * @param {String} conflictId
+ * @param {String} filename - corrected_settings.md | corrected_story.md | corrections.json
+ */
+export function correctionDownloadUrl(projectId, conflictId, filename) {
+  return `/api/world/${projectId}/conflicts/${conflictId}/corrections/${filename}/download`
+}
+
+/**
  * 删除项目的世界设定库
  */
 export function deleteWorldData(projectId) {
