@@ -35,6 +35,21 @@
         <span v-if="extracting" class="spinner-sm"></span>
         {{ extracting ? extractingLabel() : $t('timeline.extract') }}
       </button>
+      <div class="tl-type-select" :class="{ open: displayPickerOpen }">
+        <button class="tl-btn ghost type-trigger" @click="displayPickerOpen = !displayPickerOpen" :title="$t('timeline.displayMode')">
+          <span class="type-trigger-label">{{ $t('timeline.displayMode') }}：{{ displayModeLabel }}</span>
+          <span class="type-caret">▾</span>
+        </button>
+        <div v-if="displayPickerOpen" class="tl-type-menu">
+          <button
+            v-for="dm in displayModes"
+            :key="dm.key"
+            class="tl-type-option"
+            :class="{ active: displayMode === dm.key }"
+            @click="selectDisplayMode(dm.key)"
+          >{{ dm.label }}<span class="tl-type-desc">{{ dm.desc }}</span></button>
+        </div>
+      </div>
       <div class="future-box">
         <input v-model="futureGoal" class="future-input" :placeholder="$t('timeline.futureGoalPlaceholder')" :disabled="futureRunning" @keyup.enter="runFuture" />
         <button class="tl-btn ghost" :disabled="futureRunning || !futureGoal.trim()" @click="runFuture">
@@ -154,7 +169,8 @@
         >{{ th.label }}</button>
       </div>
 
-      <!-- 时间条（可拖动 scrubber） -->
+      <!-- 线性模式：时间条 + 事件卡列表 -->
+      <div v-if="displayMode === 'linear'" class="tl-linear-mode">
       <div class="timeline-bar-wrap">
         <div class="tl-tick-row">
           <span class="tl-tick">{{ $t('timeline.early') }}</span>
@@ -258,6 +274,101 @@
           </div>
         </div>
       </div>
+      </div>
+      <!-- /线性模式 -->
+
+      <!-- 并行模式：线程泳道 -->
+      <div v-else-if="displayMode === 'parallel'" class="tl-parallel-mode">
+        <div v-if="parallelLanes.length === 0" class="tl-state">{{ $t('timeline.noThreads') }}</div>
+        <div v-for="lane in parallelLanes" :key="lane.key" class="lane-block">
+          <div class="lane-head" :style="laneStyle(lane)">
+            <span class="lane-dot"></span>
+            <span class="lane-name">{{ lane.label }}</span>
+            <span class="lane-count">{{ $t('timeline.nodeCount') }} {{ lane.events.length }}</span>
+          </div>
+          <div class="lane-cards">
+            <div
+              v-for="(ev, i) in lane.events"
+              :key="'pl' + (ev.event_id || i)"
+              class="tl-card"
+              :class="{ active: selectedEvent && ev.event_id === selectedEvent.event_id, future: ev.kind === 'future', fork: isBranchEvent(ev), none: !isHappened(ev) }"
+              @click="selectEvent(ev)"
+            >
+              <div class="tl-card-head">
+                <input v-if="selectionMode" type="checkbox" class="tl-card-check" :checked="isSelected(ev.event_id)" @click.stop="toggleSelect(ev.event_id)" />
+                <span class="tl-card-type" :class="'et-' + (ev.ev_type || 'other')">{{ evTypeLabel(ev.ev_type) }}</span>
+                <span v-if="ev.kind === 'future'" class="tl-card-kind">{{ $t('timeline.kindFuture') }}</span>
+                <span v-if="isBranchEvent(ev)" class="tl-card-fork" :style="branchStyle(ev.branch_id)">{{ $t('fork.forkBadge') }}</span>
+                <span v-if="isLowConfidence(ev)" class="tl-card-low"><span class="low-dot"></span>{{ $t('timeline.lowConfidence') }}</span>
+                <span v-if="objs(ev).length" class="tl-card-obj">{{ $t('objection.objectionBadge') }} {{ objs(ev).length }}</span>
+                <span class="tl-card-time">{{ ev.time_text || formatSort(ev) }}</span>
+              </div>
+              <div class="tl-card-summary">{{ ev.summary }}</div>
+              <div v-if="ev.location_name" class="tl-card-loc">{{ $t('timeline.location') }}：{{ ev.location_name }}</div>
+              <div class="tl-card-actions">
+                <button class="mini-act" @click.stop="openFork(ev)">{{ $t('fork.forkBtn') }}</button>
+                <button class="mini-act" @click.stop="openObjection(ev)">{{ $t('objection.objectionBtn') }}</button>
+                <button class="mini-act" @click.stop="openEdit(ev)">{{ $t('timeline.manualEdit') }}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- /并行模式 -->
+
+      <!-- 树状模式：可展开树 + 结构视图 -->
+      <div v-else-if="displayMode === 'tree'" class="tl-tree-mode">
+        <div class="tl-tree-toolbar">
+          <span class="tl-tree-hint">{{ $t('timeline.structureTree') }} · {{ $t('timeline.treeToggle') }}</span>
+        </div>
+        <div v-if="structureData.treeRows.length" class="tl-tree">
+          <div v-for="row in structureData.treeRows" :key="row.event.event_id" class="tree-row" :style="{ paddingLeft: (row.depth * 22) + 'px' }">
+            <span class="tree-depth" v-if="row.depth">└─</span>
+            <span class="tree-summary" @click="selectEvent(row.event)">{{ row.event.summary }}</span>
+          </div>
+        </div>
+        <div v-else class="tl-state">{{ $t('timeline.structureEmpty') }}</div>
+      </div>
+      <!-- /树状模式 -->
+
+      <!-- 网状 / 元叙事模式：简化 SVG 关联图 -->
+      <div v-else-if="displayMode === 'network' || displayMode === 'meta'" class="tl-net-mode">
+        <div class="tl-net-title">{{ displayMode === 'meta' ? $t('timeline.metaTitle') : $t('timeline.networkTitle') }}</div>
+        <svg v-if="netNodes.length" class="tl-net-svg" :viewBox="'0 0 ' + netW + ' ' + netH" @click.self="selectedEvent = null">
+          <line
+            v-for="(link, i) in netLinks"
+            :key="'l' + i"
+            :x1="link.a.x" :y1="link.a.y" :x2="link.b.x" :y2="link.b.y"
+            class="tl-net-link"
+          />
+          <g
+            v-for="n in netNodes"
+            :key="n.id"
+            class="tl-net-node"
+            :class="{ active: selectedEvent && String(n.id) === 'event_' + String(selectedEvent.event_id) }"
+            @click="selectGraphNode(n)"
+          >
+            <circle :cx="n.x" :cy="n.y" :r="n.r" :style="netNodeStyle(n)"></circle>
+            <text :x="n.x" :y="n.y" class="tl-net-label" text-anchor="middle">{{ n.shortLabel }}</text>
+          </g>
+        </svg>
+        <div v-else class="tl-state">{{ $t('timeline.graphPlaceholder') }}</div>
+        <div v-if="selectedEvent" class="tl-net-preview">
+          <div class="tl-card">
+            <div class="tl-card-head">
+              <span class="tl-card-type" :class="'et-' + (selectedEvent.ev_type || 'other')">{{ evTypeLabel(selectedEvent.ev_type) }}</span>
+              <span class="tl-card-time">{{ selectedEvent.time_text || formatSort(selectedEvent) }}</span>
+            </div>
+            <div class="tl-card-summary">{{ selectedEvent.summary }}</div>
+            <div class="tl-card-actions">
+              <button class="mini-act" @click.stop="openFork(selectedEvent)">{{ $t('fork.forkBtn') }}</button>
+              <button class="mini-act" @click.stop="openObjection(selectedEvent)">{{ $t('objection.objectionBtn') }}</button>
+              <button class="mini-act" @click.stop="openEdit(selectedEvent)">{{ $t('timeline.manualEdit') }}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- /网状 / 元叙事模式 -->
     </template>
 
     <!-- 详情弹层：详情 + 异议列表 + 修正（所有事件） -->
@@ -536,6 +647,7 @@ import {
   extractTimeline,
   getTimelineStatus,
   getTimeline,
+  getTimelineStructure,
   updateTimelineEvent,
   generateTimelineFuture,
   generateTimelineFork,
@@ -586,6 +698,117 @@ const timelineTypeLabel = computed(() => {
 function selectTimelineType(key) {
   timelineType.value = key
   typePickerOpen.value = false
+}
+
+// ===== 展示模式（自动/线性/并行/树状/网状/元叙事）=====
+const displayMode = ref('auto')
+const displayPickerOpen = ref(false)
+const displayModes = computed(() => [
+  { key: 'auto', label: t('timeline.mode.auto'), desc: '' },
+  { key: 'linear', label: t('timeline.mode.linear'), desc: '' },
+  { key: 'parallel', label: t('timeline.mode.parallel'), desc: '' },
+  { key: 'tree', label: t('timeline.mode.tree'), desc: '' },
+  { key: 'network', label: t('timeline.mode.network'), desc: '' },
+  { key: 'meta', label: t('timeline.mode.meta'), desc: '' }
+])
+const displayModeLabel = computed(() => {
+  const found = displayModes.value.find(m => m.key === displayMode.value)
+  return found ? found.label : t('timeline.mode.auto')
+})
+// 后端结构类型 → 展示模式
+const BUILD_TYPE_TO_MODE = {
+  single: 'linear',
+  parallel: 'parallel',
+  tree: 'tree',
+  network: 'network',
+  meta: 'meta',
+  mixed: 'network'
+}
+function selectDisplayMode(key) {
+  displayMode.value = key
+  displayPickerOpen.value = false
+  if (key === 'auto') resolveAutoMode()
+}
+async function resolveAutoMode() {
+  if (displayMode.value !== 'auto') return
+  try {
+    const res = await getTimelineStructure(props.projectId)
+    const body = res?.data || res || {}
+    const type = body.structure?.type || (body.data?.structure?.type)
+    if (type && BUILD_TYPE_TO_MODE[type]) {
+      displayMode.value = BUILD_TYPE_TO_MODE[type]
+    }
+  } catch (e) {
+    // 结构端不可用时不报错，保持线性默认
+  }
+}
+
+// 并行泳道
+const parallelLanes = computed(() => {
+  const map = new Map()
+  filteredEvents.value.forEach(ev => {
+    const key = threadKey(ev) || 'main'
+    if (!map.has(key)) map.set(key, { key, label: ev.thread_name || ev.thread_id || (ev.dimension && ev.dimension !== 'main' ? ev.dimension : t('timeline.mode.linear')), events: [] })
+    map.get(key).events.push(ev)
+  })
+  return Array.from(map.values())
+    .map(lane => ({ ...lane, events: lane.events.slice().sort((a, b) => sortNum(a) - sortNum(b)) }))
+})
+const LANE_COLORS = ['#7C3AED', '#0EA5E9', '#16A34A', '#DC2626', '#D97706', '#DB2777', '#4F46E5', '#0D9488', '#A855F7', '#F59E0B']
+function laneStyle(lane) {
+  const i = filteredEvents.value.findIndex(ev => (threadKey(ev) || 'main') === lane.key)
+  const idx = i < 0 ? lane.key.length || 0 : i
+  const c = LANE_COLORS[idx % LANE_COLORS.length]
+  return { borderLeftColor: c }
+}
+
+// 网状 / 元叙事 SVG 关联图
+const netW = 900
+const netH = 420
+const netNodes = computed(() => {
+  const list = filteredEvents.value
+  const ids = list.map(ev => ev.event_id).filter(Boolean)
+  const cols = Math.max(1, Math.ceil(Math.sqrt(list.length)))
+  return list.map((ev, i) => {
+    const col = i % cols
+    const row = Math.floor(i / cols)
+    const x = 80 + col * (netW - 160) / cols + ((row % 2) * 30)
+    const y = 60 + row * (netH - 120) / Math.max(1, Math.ceil(list.length / cols))
+    const short = (ev.summary || ev.time_text || '').slice(0, 14)
+    return {
+      id: 'event_' + String(ev.event_id),
+      event_id: ev.event_id,
+      summary: ev.summary || ev.time_text || '',
+      shortLabel: short,
+      x, y,
+      r: 22 + Math.min(10, (short || '').length),
+      color: pointColor(ev).borderColor || '#a1c50a'
+    }
+  })
+})
+const netLinks = computed(() => {
+  const idSet = new Set(netNodes.value.map(n => n.event_id))
+  const links = []
+  const byId = new Map(netNodes.value.map(n => [n.event_id, n]))
+  filteredEvents.value.forEach(ev => {
+    ;(ev.linked_event_ids || []).forEach(tid => {
+      if (idSet.has(tid) && byId.has(ev.event_id) && byId.has(tid)) {
+        links.push({ a: byId.get(ev.event_id), b: byId.get(tid) })
+      }
+    })
+    const p = ev.parent_event_id
+    if (p && idSet.has(p) && byId.has(ev.event_id) && byId.has(p)) {
+      links.push({ a: byId.get(p), b: byId.get(ev.event_id) })
+    }
+  })
+  return links
+})
+function netNodeStyle(n) {
+  return { fill: '#ffffff', stroke: n.color, borderColor: n.color }
+}
+function selectGraphNode(n) {
+  const ev = events.value.find(x => x.event_id === n.event_id)
+  if (ev) selectEvent(ev)
 }
 const savingEdit = ref(false)
 const editMsg = ref('')
@@ -1562,7 +1785,7 @@ function stopCharGen() {
 }
 const forkCharChips = computed(() => charactersList.value.filter(c => c.name).slice(0, 8));
 
-onMounted(() => { loadEvents(true); loadCharacters(); });
+onMounted(() => { loadEvents(true); loadCharacters(); resolveAutoMode(); });
 onUnmounted(() => {
   stopCharGen();
   stopExtractPoll();
@@ -1926,5 +2149,29 @@ onUnmounted(() => {
 .meta-row { display: flex; gap: 8px; font-size: 12px; align-items: baseline; }
 .meta-dim { background: #FFEDD5; color: #C2410C; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; flex-shrink: 0; }
 .meta-summary { color: #333; }
+
+/* r4 t1: 展示模式 x 并行泳道 / 树 / 网状-元叙事 */
+.tl-linear-mode .timeline-bar-wrap { margin-top: 2px; }
+.tl-parallel-mode { display: flex; flex-direction: column; gap: 12px; }
+.lane-block { border: 1px solid #EEE; border-radius: 10px; overflow: hidden; background: #FFF; }
+.lane-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-left: 4px solid #7C3AED; background: #FAFAFA; font-weight: 700; font-size: 12px; }
+.lane-count { margin-left: auto; color: #999; font-weight: 500; font-size: 11px; }
+.lane-cards { display: flex; flex-direction: column; gap: 8px; padding: 8px 12px; }
+.tl-tree-mode { display: flex; flex-direction: column; gap: 8px; }
+.tl-tree-toolbar { display: flex; align-items: center; gap: 8px; }
+.tl-tree-hint { font-size: 11px; color: #888; }
+.tl-tree { background: #FFF; border: 1px solid #EEE; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+.tl-tree .tree-row { cursor: pointer; }
+.tl-tree .tree-row:hover .tree-summary { color: #FF5722; }
+.tl-net-mode { display: flex; flex-direction: column; gap: 10px; }
+.tl-net-title { font-size: 13px; font-weight: 700; }
+.tl-net-svg { width: 100%; height: auto; background: #FFF; border: 1px solid #EEE; border-radius: 10px; }
+.tl-net-link { stroke: #D1D5DB; stroke-width: 1.5; }
+.tl-net-node { cursor: pointer; }
+.tl-net-node text { pointer-events: none; font-size: 9px; fill: #333; }
+.tl-net-node circle { stroke-width: 2; fill: #FFF; }
+.tl-net-node.active circle { stroke: #FF5722; stroke-width: 3; }
+.tl-net-preview { max-width: 460px; }
+.tl-net-preview .tl-card { box-shadow: none; }
 
 </style>

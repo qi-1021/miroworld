@@ -1014,7 +1014,9 @@
     "event": "事件",
     "time": "时间",
     "location": "地点",
-    "type": "类型",
+    "type": {
+      "auto": "自动判断"
+    },
     "confidence": "置信度",
     "lowConfidence": "低置信度，建议核对",
     "manualEdit": "修正",
@@ -1074,9 +1076,6 @@
     "structureMeta": "世界外/元叙事",
     "structureEmpty": "暂无数据",
     "typeSelectHint": "选择时间线类型（影响抽取策略）",
-    "type": {
-      "auto": "自动判断"
-    },
     "typeDesc": {
       "auto": "由 AI 自动判断时间线结构",
       "linear": "单一连续的线性故事",
@@ -1084,7 +1083,24 @@
       "tree": "单点分叉、树状展开",
       "network": "事件间网状关联",
       "meta": "含世界外/元叙事层"
-    }
+    },
+    "displayMode": "展示模式",
+    "mode": {
+      "auto": "自动",
+      "linear": "线性",
+      "parallel": "并行",
+      "tree": "树状",
+      "network": "网状",
+      "meta": "元叙事"
+    },
+    "laneHeader": "线索泳道",
+    "nodeCount": "节点",
+    "linkedCount": "关联",
+    "treeToggle": "展开/收起",
+    "noThreads": "暂无并行线索",
+    "networkTitle": "事件关联图",
+    "metaTitle": "元叙事视角",
+    "graphPlaceholder": "暂无可用关联关系"
   },
   "fork": {
     "forkBtn": "在此分叉推演",

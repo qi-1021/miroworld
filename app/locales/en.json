@@ -1014,7 +1014,9 @@
     "event": "Event",
     "time": "Time",
     "location": "Location",
-    "type": "Type",
+    "type": {
+      "auto": "Auto Detect"
+    },
     "confidence": "Confidence",
     "lowConfidence": "Low confidence - please verify",
     "manualEdit": "Edit",
@@ -1074,9 +1076,6 @@
     "structureMeta": "Meta / Outside World",
     "structureEmpty": "No data",
     "typeSelectHint": "Choose timeline type (affects extraction strategy)",
-    "type": {
-      "auto": "Auto Detect"
-    },
     "typeDesc": {
       "auto": "Let AI auto-detect the timeline structure",
       "linear": "A single linear story",
@@ -1084,7 +1083,24 @@
       "tree": "Branching tree from a single point",
       "network": "Events connected in a network",
       "meta": "Includes meta/outside-world narration"
-    }
+    },
+    "displayMode": "Display Mode",
+    "mode": {
+      "auto": "Auto",
+      "linear": "Linear",
+      "parallel": "Parallel",
+      "tree": "Tree",
+      "network": "Network",
+      "meta": "Meta"
+    },
+    "laneHeader": "Thread Lanes",
+    "nodeCount": "nodes",
+    "linkedCount": "links",
+    "treeToggle": "Expand/Collapse",
+    "noThreads": "No parallel threads yet",
+    "networkTitle": "Event Network",
+    "metaTitle": "Meta Narration",
+    "graphPlaceholder": "No relations available yet"
   },
   "fork": {
     "forkBtn": "Fork here",
