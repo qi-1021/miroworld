@@ -18,6 +18,32 @@ from ..utils.llm_client import LLMClient
 
 logger = get_logger("mirofish.assistant")
 
+# Agent 任务记录（内存队列，重启即清；后续可换持久化）
+import threading
+_AGENT_TASKS = {}
+_AGENT_TASKS_LOCK = threading.Lock()
+_AGENT_TASK_SEQ = [0]
+
+
+def _record_agent_task(project_id: str, action: str, status: str, result=None, error=None):
+    with _AGENT_TASKS_LOCK:
+        _AGENT_TASK_SEQ[0] += 1
+        task_id = f"agt_{_AGENT_TASK_SEQ[0]:04d}"
+        _AGENT_TASKS[task_id] = {
+            "task_id": task_id,
+            "project_id": project_id,
+            "action": action,
+            "status": status,
+            "result": result,
+            "error": error,
+            "created_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+        }
+        # 只保留最近 200 条
+        if len(_AGENT_TASKS) > 200:
+            for k in list(_AGENT_TASKS)[:len(_AGENT_TASKS) - 200]:
+                _AGENT_TASKS.pop(k, None)
+        return task_id
+
 
 def _build_llm_client_for_project(project_id: str) -> LLMClient:
     """优先项目绑定模型，其次注册表第一个已验证 chat，最后回退默认。"""
@@ -539,13 +565,19 @@ def ask():
 
         # 直接执行指定动作（前端快捷操作/Agent 工具调用，不经过 LLM 决策）
         if direct_action:
-            action_result = _execute_assistant_action(project_id, direct_action, direct_params)
+            try:
+                action_result = _execute_assistant_action(project_id, direct_action, direct_params)
+                task_id = _record_agent_task(project_id, direct_action, "completed", result=action_result)
+            except Exception as e:
+                task_id = _record_agent_task(project_id, direct_action, "failed", error=str(e))
+                raise
             return jsonify({
                 "success": True,
                 "data": {
                     "answer": f"已执行操作：{direct_action}",
                     "action": direct_action,
                     "action_result": action_result,
+                    "task_id": task_id,
                     "context": context,
                 },
             })
@@ -592,3 +624,21 @@ def ask():
     except Exception as e:
         logger.error(f"项目助手调用失败: {e}")
         return jsonify({"success": False, "error": f"助手调用失败: {e}"}), 500
+
+
+@assistant_bp.route("/tasks", methods=["GET"])
+def list_agent_tasks():
+    """列出 Agent 任务记录（内存，最多 200 条）。"""
+    with _AGENT_TASKS_LOCK:
+        tasks = list(_AGENT_TASKS.values())
+    tasks.sort(key=lambda x: x["created_at"], reverse=True)
+    return jsonify({"success": True, "data": {"tasks": tasks}})
+
+
+@assistant_bp.route("/task/<task_id>", methods=["GET"])
+def get_agent_task(task_id: str):
+    with _AGENT_TASKS_LOCK:
+        task = _AGENT_TASKS.get(task_id)
+    if task is None:
+        return jsonify({"success": False, "error": "任务不存在"}), 404
+    return jsonify({"success": True, "data": {"task": task}})

@@ -1108,6 +1108,8 @@
     "executing": "Agent 正在执行，请稍候…",
     "emptyAnswer": "Agent 没有返回内容，请重试",
     "failed": "Agent 调用失败",
+    "taskList": "任务记录",
+    "taskEmpty": "暂无任务记录",
     "quickStatus": "检查项目状态",
     "quickGraph": "构建世界图谱",
     "quickExtract": "抽取时间线",

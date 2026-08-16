@@ -1108,6 +1108,8 @@
     "executing": "Agent is working, please wait…",
     "emptyAnswer": "Agent returned an empty answer. Please retry.",
     "failed": "Agent call failed",
+    "taskList": "Task Log",
+    "taskEmpty": "No tasks yet",
     "quickStatus": "Check Project",
     "quickGraph": "Build World Graph",
     "quickExtract": "Extract Timeline",
