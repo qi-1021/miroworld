@@ -1010,6 +1010,23 @@
         </div>
       </div>
 
+      <!-- 新手引导 -->
+      <div v-if="showGuide" class="assistant-modal-mask guide-mask" @click.self="closeGuide">
+        <div class="assistant-modal guide-modal">
+          <div class="assistant-head">
+            <span class="assistant-title">👋 {{ $t('world.guideTitle') }}</span>
+            <button class="assistant-close" @click="closeGuide">×</button>
+          </div>
+          <div class="guide-body">
+            <p class="guide-text">{{ $t('world.guideText') }}</p>
+            <ol class="guide-steps">
+              <li v-for="(s, i) in worldSteps" :key="s.key">{{ i + 1 }}. {{ s.label }}</li>
+            </ol>
+            <button class="action-btn" @click="closeGuide">{{ $t('world.guideStart') }} ➝</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 世界线对比 -->
       <div v-if="compareOpen" class="assistant-modal-mask" @click.self="compareOpen = false">
         <div class="assistant-modal compare-modal">
@@ -1118,6 +1135,7 @@ const detecting = ref(false)
 const saveMsg = ref('')
 const saveMsgError = ref(false)
 const loadError = ref('')
+const showGuide = ref(false)
 const stats = ref(null)
 const report = ref(null)
 const justifyingId = ref('')
@@ -2555,6 +2573,11 @@ async function exportAllWorldlines() {
   }
 }
 
+function closeGuide() {
+  localStorage.setItem('miroworld.guide.v1', '1')
+  showGuide.value = false
+}
+
 function extractCharacters(events) {
   const set = new Set()
   for (const e of events || []) {
@@ -2835,6 +2858,11 @@ onMounted(() => {
   loadAll()
   loadSimHistory()
   loadSimTimelineEvents()
+
+  // 新手引导：首次进入显示 5 步说明
+  if (!localStorage.getItem('miroworld.guide.v1')) {
+    showGuide.value = true
+  }
 
   // 从推演回放 Step2 进入时，自动滚动到世界模拟模块
   if (route.query.replay) {
@@ -4838,6 +4866,22 @@ onUnmounted(() => {
 }
 
 /* 内置项目助手 */
+.guide-modal {
+  width: 520px;
+  max-width: 92vw;
+}
+.guide-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.guide-steps {
+  margin: 0;
+  padding-left: 20px;
+  line-height: 2;
+  font-size: 13px;
+  color: #333;
+}
 .assistant-modal-mask {
   position: fixed;
   inset: 0;
