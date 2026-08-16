@@ -171,6 +171,61 @@ def create_app(config_class=Config):
             checks["status"] = "degraded"
         return checks
 
+    # ============================================================
+    # 生产模式前端托管：优先读 app/frontend/dist（Vite 构建产物）。
+    # 手机通过隧道访问时只需 1 个端口、个位数静态资源，速度远快于 Vite dev。
+    # API 404 保持 JSON 404，不落入 SPA fallback。
+    # ============================================================
+    def _register_frontend_spa():
+        from flask import send_file, send_from_directory, abort as flask_abort
+
+        dist_dir = os.path.normpath(os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "..", "frontend", "dist"
+        ))
+        if not os.path.isdir(dist_dir):
+            if should_log_startup:
+                logger.info("前端 dist 不存在，跳过 SPA 托管（开发模式请用 Vite :3000）")
+            return
+
+        index_file = os.path.join(dist_dir, "index.html")
+
+        @app.route("/", defaults={"path": ""})
+        @app.route("/<path:path>")
+        def serve_spa(path):
+            if path == "api" or path.startswith("api/"):
+                flask_abort(404)
+            if not path:
+                target = index_file
+            else:
+                target = os.path.normpath(os.path.join(dist_dir, path))
+                try:
+                    if os.path.commonpath([dist_dir, target]) != dist_dir:
+                        flask_abort(404)
+                except ValueError:
+                    flask_abort(404)
+            if os.path.isfile(target):
+                if not path:
+                    return send_file(index_file)
+                return send_from_directory(dist_dir, path)
+            return send_from_directory(dist_dir, "index.html")
+
+        @app.after_request
+        def _cache_static(response):
+            if request.path.startswith("/assets/"):
+                response.headers.setdefault(
+                    "Cache-Control", "public, max-age=31536000, immutable"
+                )
+            elif request.path.endswith((".js", ".css", ".png", ".ico", ".svg", ".woff2")):
+                response.headers.setdefault("Cache-Control", "public, max-age=3600")
+            else:
+                response.headers.setdefault("Cache-Control", "no-cache")
+            return response
+
+        if should_log_startup:
+            logger.info(f"SPA 托管已启用: {dist_dir}")
+
+    _register_frontend_spa()
+
     if should_log_startup:
         logger.info("MiroFish Backend 启动完成")
 
