@@ -1,5 +1,5 @@
 <template>
-  <div class="world-view">
+  <div class="world-view" :class="{ 'high-contrast': highContrast }">
     <!-- 顶部导航（与主界面一致） -->
     <header class="app-header">
       <div class="header-left">
@@ -11,6 +11,7 @@
         </div>
       </div>
       <div class="header-right">
+        <button class="back-btn ghost" @click="highContrast = !highContrast">{{ highContrast ? $t('world.contrastOff') : $t('world.contrastOn') }}</button>
         <span class="project-id">{{ projectId }}</span>
         <button class="back-btn" :disabled="snapshotBusy" @click="exportSnapshot">{{ $t('world.exportSnapshot') }}</button>
         <button class="back-btn" :disabled="snapshotBusy" @click="importFileInput.click()">{{ $t('world.importSnapshot') }}</button>
@@ -1172,6 +1173,7 @@ const saveMsg = ref('')
 const saveMsgError = ref(false)
 const loadError = ref('')
 const showGuide = ref(false)
+const highContrast = ref(false)
 const globalSearch = ref('')
 const globalSearchResults = ref([])
 const globalSearchOpen = ref(false)
@@ -2950,6 +2952,22 @@ onUnmounted(() => {
 
 <style scoped>
 /* 与主界面一致的视觉规范 */
+.world-view.high-contrast {
+  background: #fff;
+}
+.world-view.high-contrast .step-card,
+.world-view.high-contrast .sim-events,
+.world-view.high-contrast .sim-graph,
+.world-view.high-contrast .world-tree {
+  border-color: #666 !important;
+  box-shadow: none !important;
+}
+.world-view.high-contrast .step-title,
+.world-view.high-contrast .tree-node-name,
+.world-view.high-contrast .sim-event-who {
+  color: #000 !important;
+  font-weight: 700;
+}
 .world-view {
   height: 100vh;
   display: flex;

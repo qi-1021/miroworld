@@ -833,6 +833,8 @@
     "guideText": "Follow the 5 steps in order: set up the world, explore timeline & graph, simulate, branch, and interact deeply.",
     "guideStart": "Start World Setup",
     "globalSearchPlaceholder": "Search events / characters / places…",
+    "contrastOn": "High Contrast",
+    "contrastOff": "Normal",
     "backProject": "Back to Project",
     "exportSnapshot": "Export Snapshot",
     "importSnapshot": "Import Snapshot",
