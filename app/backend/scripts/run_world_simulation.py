@@ -204,6 +204,7 @@ class WorldEnv:
         # - "narrative": 叙事时间跳跃，使用 time_jumps 列表作为每步时间标签
         self.time_mode = str(wc.get("time_mode") or "minutes")
         self.time_jumps = list(wc.get("time_jumps") or []) if isinstance(wc.get("time_jumps"), list) else []
+        self.story_summary_mode = str(wc.get("story_summary_mode") or "rule")  # rule | llm
         self.current_step_label = ""
         try:
             self.current_time = datetime.fromisoformat(wc.get("initial_time", "2026-01-01 08:00"))
@@ -711,12 +712,25 @@ class WorldEnv:
                 if not approved:
                     print(f"    规则: {reason}")
                 print(f"    结果: {result[:60]}")
-            # 每步结束后追加一句剧情脉络（长程记忆）
+            # 每步结束后追加一句剧情脉络（长程记忆；可切换 LLM 生成）
             step_evs = [e for e in self.events if e.step == step]
             if step_evs:
-                summary = f"第{step}步：" + "；".join(
-                    f"{e.character_name}{e.action_desc[:30]}" for e in step_evs[:6]
-                )
+                summary = ""
+                if self.story_summary_mode == "llm":
+                    try:
+                        _step_text = "；".join(
+                            f"{e.character_name}{e.action_desc}" for e in step_evs[:8]
+                        )
+                        summary = await llm_call(
+                            f"用一句话概括这一阶段世界发生的事，要求连贯自然：{_step_text}"
+                        )
+                        summary = (summary or "").strip()
+                    except Exception:
+                        summary = ""
+                if not summary:
+                    summary = f"第{step}步：" + "；".join(
+                        f"{e.character_name}{e.action_desc[:30]}" for e in step_evs[:6]
+                    )
                 self.story_summary.append(summary[:240])
             if _stopped:
                 break

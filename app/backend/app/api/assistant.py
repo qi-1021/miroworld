@@ -252,6 +252,7 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
             time_jumps=[str(x).strip() for x in raw_jumps if str(x).strip()],
             include_timeline=bool(params.get("include_timeline", False)),
             from_event_id=str(params.get("from_event_id") or "").strip() or None,
+            story_summary_mode=str(params.get("story_summary_mode") or "rule").strip(),
         )
         return {"simulation_id": state.simulation_id, "status": state.status}
 

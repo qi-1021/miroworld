@@ -508,6 +508,12 @@
             </label>
           </div>
           <div class="sim-field sim-field-wide">
+            <label class="sim-label">
+              <input v-model="simStorySummaryLlm" type="checkbox" class="sim-check" />
+              {{ $t('world.simStorySummaryLlm') }}
+            </label>
+          </div>
+          <div class="sim-field sim-field-wide">
             <label class="sim-label">{{ $t('world.simStartEventLabel') }}</label>
             <select v-model="simStartEventId" class="sim-input">
               <option value="">{{ $t('world.simStartEventNone') }}</option>
@@ -1064,6 +1070,7 @@ const simStepMin = ref(30)
 const simTimeMode = ref('minutes')
 const simTimeJumps = ref('')
 const simUseTimeline = ref(false)
+const simStorySummaryLlm = ref(false)
 const simStartEventId = ref('')
 const simTimelineEvents = ref([])
 const simGoal = ref('')  // 任务目标（可选，决定推演走向）
@@ -1680,6 +1687,7 @@ async function quickAsk(key) {
         time_jumps: simTimeMode.value === 'narrative'
           ? simTimeJumps.value.split(/[,，]/).map(s => s.trim()).filter(Boolean)
           : [],
+        story_summary_mode: simStorySummaryLlm.value ? 'llm' : 'rule',
       })
     } else if (key === 'assistant.quickCharacters') {
       res = await generateTimelineCharacters(projectId)
@@ -2297,6 +2305,7 @@ async function handleStartSim() {
       time_mode: simTimeMode.value || 'minutes',
       time_jumps: jumps,
       include_timeline: simUseTimeline.value,
+      story_summary_mode: simStorySummaryLlm.value ? 'llm' : 'rule',
       from_event_id: simStartEventId.value || undefined,
       goal: simGoal.value.trim() || undefined
     })

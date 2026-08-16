@@ -1123,6 +1123,7 @@ def start_world_simulation(project_id: str):
         time_jumps = [str(x).strip() for x in raw_jumps if str(x).strip()]
         include_timeline = bool(data.get('include_timeline', False))
         from_event_id = str(data.get('from_event_id') or '').strip() or None
+        story_summary_mode = str(data.get('story_summary_mode') or 'rule').strip() or 'rule'
 
         state = WorldSimulationService.start_simulation(
             project_id=project_id,
@@ -1133,6 +1134,7 @@ def start_world_simulation(project_id: str):
             time_jumps=time_jumps,
             include_timeline=include_timeline,
             from_event_id=from_event_id,
+            story_summary_mode=story_summary_mode,
         )
         return jsonify({"success": True, "simulation": state.to_dict()})
     except ValueError as e:

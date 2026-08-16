@@ -957,6 +957,7 @@
     "simTimeJumpsLabel": "Time labels per step",
     "simTimeJumpsPlaceholder": "e.g. a few days later, three months later, one year later, ten years later",
     "simUseTimeline": "Use current timeline as reasoning context",
+    "simStorySummaryLlm": "LLM story summary (more coherent, slower)",
     "simStartEventLabel": "Start Event (optional)",
     "simStartEventNone": "Start from initial world state",
     "simStartBtn": "Start World Simulation",
