@@ -44,7 +44,7 @@
       <div ref="inputSection" class="step-card">
         <div class="card-header">
           <div class="step-info">
-            <span class="step-num">01</span>
+            <span class="step-num">1</span>
             <span class="step-title">{{ $t('world.inputTitle') }}</span>
           </div>
           <div class="step-status">
@@ -200,7 +200,7 @@
       <div v-if="report" class="step-card">
         <div class="card-header">
           <div class="step-info">
-            <span class="step-num">02</span>
+            <span class="step-num">2</span>
             <span class="step-title">{{ $t('world.conflictTitle') }}</span>
           </div>
           <div class="step-status">
@@ -438,7 +438,7 @@
       <div v-if="stats" ref="simSection" class="step-card">
         <div class="card-header">
           <div class="step-info">
-            <span class="step-num">03</span>
+            <span class="step-num">3</span>
             <span class="step-title">{{ $t('world.simTitle') }}</span>
           </div>
           <div class="step-status">
@@ -659,7 +659,7 @@
       <div v-if="stats" class="step-card">
         <div class="card-header">
           <div class="step-info">
-            <span class="step-num">04</span>
+            <span class="step-num">2</span>
             <span class="step-title">{{ $t('world.searchTitle') }}</span>
           </div>
           <div class="step-status">
@@ -698,7 +698,7 @@
       <div v-if="stats" class="step-card">
         <div class="card-header">
           <div class="step-info">
-            <span class="step-num">05</span>
+            <span class="step-num">2</span>
             <span class="step-title">{{ $t('world.graphTitle') }}</span>
           </div>
           <div class="step-status">
@@ -780,7 +780,7 @@
       <div v-if="stats" ref="timelineSection" class="step-card">
         <div class="card-header">
           <div class="step-info">
-            <span class="step-num">06</span>
+            <span class="step-num">2</span>
             <span class="step-title">{{ $t('timeline.tab') }}</span>
           </div>
         </div>
