@@ -225,6 +225,7 @@ class WorldEnv:
 
         self.events: List[WorldEvent] = []
         self.history: List[str] = []
+        self.story_summary: List[str] = []  # 每步一句剧情脉络（长程记忆）
 
         # IPC 控制（暂停/停止/采访），无则默认为 None
         self.ipc: Optional["WorldIPCHandler"] = None
@@ -410,6 +411,16 @@ class WorldEnv:
             lines.append("- " + body.replace("\n", " "))
         return "\n".join(lines)
 
+    def _story_context(self, limit: int = 4, max_len: int = 80) -> str:
+        """返回最近几步的剧情脉络摘要（长程记忆），帮助角色把握主线。"""
+        lines = []
+        for text in self.story_summary[-limit:]:
+            t = str(text or "").strip().replace("\n", " ")
+            if len(t) > max_len:
+                t = t[:max_len] + "…"
+            lines.append("- " + t)
+        return "\n".join(lines)
+
     def observe(self, character: WorldCharacter) -> str:
         """角色感知：位置 + 在场角色 + 环境 + 规则 + 时间（含视角过滤与知识边界）
 
@@ -573,6 +584,16 @@ class WorldEnv:
             except Exception:
                 continue
         self.history = [e.to_text() for e in self.events]
+        # 重建剧情脉络摘要（长程记忆）
+        by_step = {}
+        for e in self.events:
+            by_step.setdefault(e.step, []).append(e)
+        self.story_summary = []
+        for step in sorted(by_step):
+            evs = by_step[step]
+            self.story_summary.append(
+                f"第{step}步：" + "；".join(f"{e.character_name}{e.action_desc[:30]}" for e in evs[:6])[:240]
+            )
         self.start_step = max(1, int(start_step))
         # 固定分钟模式：把时钟拨到历史最后一条事件的时间，保证时间连续
         if self.time_mode == "minutes" and self.events:
@@ -619,11 +640,13 @@ class WorldEnv:
                 _goal = (char.goal or "").strip() or "按人设自然行动"
                 _recent = self._recent_context(char)
                 _world = self._global_context()
+                _story = self._story_context()
                 prompt = (
                     f"你是{char.name}。{char.persona}\n"
                     f"当前目标：{_goal}\n"
                     f"你的身份知识：{'、'.join(char.knowledge) if char.knowledge else '无'}\n"
                     f"你亲身经历/目睹的最近事：\n{_recent or '（暂无）'}\n\n"
+                    f"故事脉络（最近几步）：\n{_story or '（暂无）'}\n\n"
                     f"世界最新动态（你可能听说或需要留意）：\n{_world or '（暂无）'}\n\n"
                     f"{observation}\n"
                     f"请严格以{char.name}的身份与性格行动：语气、价值观、口癖都符合人物设定（persona），"
@@ -688,6 +711,13 @@ class WorldEnv:
                 if not approved:
                     print(f"    规则: {reason}")
                 print(f"    结果: {result[:60]}")
+            # 每步结束后追加一句剧情脉络（长程记忆）
+            step_evs = [e for e in self.events if e.step == step]
+            if step_evs:
+                summary = f"第{step}步：" + "；".join(
+                    f"{e.character_name}{e.action_desc[:30]}" for e in step_evs[:6]
+                )
+                self.story_summary.append(summary[:240])
             if _stopped:
                 break
 
