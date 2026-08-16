@@ -600,6 +600,9 @@ onMounted(() => {
   --radius: 18px;
   background: transparent;
   color: var(--ink);
+  /* 首页根容器：横向溢出自钳制，手机端不会因装饰光晕/负偏移产生横向滚动 */
+  overflow-x: clip;
+  max-width: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'PingFang SC',
     'Noto Sans SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -754,7 +757,8 @@ onMounted(() => {
 /* ---------- Hero 视觉：时间线示意图 ---------- */
 .hero-visual {
   position: relative;
-  background: linear-gradient(135deg, rgba(255,244,222,0.55), rgba(224,228,255,0.55) 45%, rgba(216,250,238,0.55));
+  /* 移除彩色渐变面板：背景平铺为通透玻璃（0.45~0.55） */
+  background: rgba(255, 255, 255, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.75);
   border-radius: 24px;
   padding: 56px 24px;
@@ -766,13 +770,10 @@ onMounted(() => {
   -webkit-backdrop-filter: saturate(180%) blur(10px);
 }
 .hero-visual::before {
+  /* 去掉彩色径向渐变，保持画布 #f5f5f7 平铺 */
   content: '';
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(circle at 15% 20%, rgba(255,183,107,0.30), transparent 45%),
-    radial-gradient(circle at 85% 75%, rgba(158,167,255,0.30), transparent 45%),
-    radial-gradient(circle at 60% 15%, rgba(107,240,198,0.22), transparent 45%);
   pointer-events: none;
 }
 .tl-demo { position: relative; z-index: 1; }
@@ -905,8 +906,8 @@ onMounted(() => {
   gap: 20px;
 }
 .feature-card {
-  /* 基础（.liquid-glass 的 LGGC 效果在全局覆盖透明背景/亮边框） */
-  background: rgba(255, 255, 255, 0.6);
+  /* 基础（.liquid-glass 的 LGGC 效果在全局覆盖透明背景/亮边框），玻璃降到 0.45~0.55 */
+  background: rgba(255, 255, 255, 0.5);
   border-radius: var(--radius);
   padding: 28px 22px;
   transition: box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
@@ -914,7 +915,7 @@ onMounted(() => {
 .feature-card:hover {
   box-shadow: var(--card-shadow);
   transform: translateY(-2px);
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.55);
 }
 .f-icon {
   font-size: 26px;
@@ -1000,7 +1001,7 @@ onMounted(() => {
 .console-card {
   position: relative;
   z-index: 1;
-  background: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.5);
   border-radius: 24px;
   box-shadow: 0 0 0 1px rgba(16,32,58,0.05), 0 20px 44px rgba(16,32,58,0.12), inset 0 1px 0 rgba(255,255,255,0.9);
   border: 1px solid rgba(255,255,255,0.75);
@@ -1186,7 +1187,6 @@ onMounted(() => {
     padding: 32px 12px;
     margin-bottom: 56px;
   }
-  .hero-visual::before { background-size: 140% 140%; }
   .tl-main { gap: 18px; }
   .dot { width: 11px; height: 11px; }
   .dot.now { width: 14px; height: 14px; box-shadow: 0 0 0 5px rgba(161, 197, 10, 0.18); }

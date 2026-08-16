@@ -182,7 +182,7 @@ button { font-family: inherit; }
 .liquid-glass {
   --lggc-radius: 22px;
   --lggc-padding: 1.5rem 1.75rem;
-  --lggc-bg: rgba(255, 255, 255, 0.72);
+  --lggc-bg: rgba(255, 255, 255, 0.5);  /* 真正通透玻璃：0.45~0.55 */
   --lggc-border: rgba(255, 255, 255, 0.9);
   --lggc-blur: 16px;
   --lggc-highlight: rgba(255, 255, 255, 1);
@@ -212,7 +212,7 @@ button { font-family: inherit; }
   z-index: 1;
 }
 .liquid-glass:hover {
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.55);
   box-shadow:
     0 0 0 1px rgba(16, 32, 58, 0.10),
     0 30px 56px rgba(16, 32, 58, 0.20),
