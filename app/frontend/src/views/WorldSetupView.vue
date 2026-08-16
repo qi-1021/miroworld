@@ -527,6 +527,12 @@
         <!-- 事件流（按 step 分组，更清晰） -->
         <div v-if="simEvents.length" class="sim-events">
           <div class="sim-events-title">{{ $t('world.eventStream') }}</div>
+          <div v-if="stepSummaries.length" class="sim-summary">
+            <div v-for="s in stepSummaries" :key="s.step" class="sim-summary-item">
+              <span class="sim-summary-step">{{ $t('world.simStepLabel', { step: s.step }) }}</span>
+              <span class="sim-summary-text">{{ s.text }}</span>
+            </div>
+          </div>
           <div v-for="(group, gi) in groupedSimEvents" :key="gi" class="sim-step-group">
             <div class="sim-step-head">
               {{ $t('world.simStepLabel', { step: group.step }) }} · {{ group.time }}
@@ -1058,6 +1064,18 @@ const groupedSimEvents = computed(() => {
     map.get(key).events.push(e)
   }
   return groups
+})
+
+// 每步一句话剧情脉络，帮用户快速抓住主线
+const stepSummaries = computed(() => {
+  return groupedSimEvents.value.map(g => ({
+    step: g.step,
+    time: g.time,
+    text: g.events
+      .map(e => `${e.character_name}：${(e.action_desc || '').replace(/\s+/g, ' ').trim()}`)
+      .join('；')
+      .slice(0, 160),
+  }))
 })
 const simSection = ref(null)
 const inputSection = ref(null)
@@ -2816,6 +2834,28 @@ onUnmounted(() => {
   font-weight: 700;
   color: #a1c50a;
   border-bottom: 1px solid #F0F0F0;
+}
+.sim-summary {
+  padding: 10px 12px;
+  background: #FDFDF6;
+  border-bottom: 1px solid #F0F0F0;
+}
+.sim-summary-item {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 3px 0;
+  color: #444;
+}
+.sim-summary-step {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: #a1c50a;
+  font-family: 'JetBrains Mono', monospace;
+}
+.sim-summary-text {
+  color: #333;
 }
 .sim-event-time {
   color: #999;
