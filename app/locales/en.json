@@ -829,6 +829,9 @@
   },
   "world": {
     "headerTitle": "World Settings Library",
+    "guideTitle": "Welcome to Miro World",
+    "guideText": "Follow the 5 steps in order: set up the world, explore timeline & graph, simulate, branch, and interact deeply.",
+    "guideStart": "Start World Setup",
     "backProject": "Back to Project",
     "exportSnapshot": "Export Snapshot",
     "importSnapshot": "Import Snapshot",

@@ -40,8 +40,15 @@
         <button class="action-btn" @click="retryLoad">{{ $t('world.retry') }}</button>
       </div>
 
+      <!-- 新手引导 -->
+      <div class="world-guide">
+        <div class="guide-title">👋 {{ $t('world.guideTitle') }}</div>
+        <div class="guide-text">{{ $t('world.guideText') }}</div>
+        <button class="action-btn guide-btn" @click="goStep('input')">{{ $t('world.guideStart') }} ➝</button>
+      </div>
+
       <!-- 输入区 -->
-      <div ref="inputSection" class="step-card">
+      <div ref="inputSection" class="step-card step-input">
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">1</span>
@@ -197,7 +204,7 @@
       </div>
 
       <!-- 冲突检测结果 -->
-      <div v-if="report" class="step-card">
+      <div v-if="report" class="step-card step-conflict">
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">2</span>
@@ -435,7 +442,7 @@
       </div>
 
       <!-- 世界模拟（独立模式） -->
-      <div v-if="stats" ref="simSection" class="step-card">
+      <div v-if="stats" ref="simSection" class="step-card step-sim">
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">3</span>
@@ -656,7 +663,7 @@
       </div>
 
       <!-- 设定检索 -->
-      <div v-if="stats" class="step-card">
+      <div v-if="stats" class="step-card step-search">
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">2</span>
@@ -695,7 +702,7 @@
       </div>
 
       <!-- 世界图谱（GraphRAG · Neo4j） -->
-      <div v-if="stats" class="step-card">
+      <div v-if="stats" class="step-card step-graph">
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">2</span>
@@ -777,7 +784,7 @@
       </div>
 
       <!-- 时间线 -->
-      <div v-if="stats" ref="timelineSection" class="step-card">
+      <div v-if="stats" ref="timelineSection" class="step-card step-timeline">
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">2</span>
@@ -2172,6 +2179,52 @@ onUnmounted(() => {
   box-sizing: border-box;
   position: relative;
 }
+
+/* Miro World 新 5 步：视觉排序 = 世界设定 → 时间线与图谱 → 世界模拟 */
+.world-body > .step-card { order: 10; }
+.step-input { order: 1; }
+.step-timeline { order: 2; }
+.step-graph { order: 3; }
+.step-conflict { order: 4; }
+.step-search { order: 5; }
+.step-sim { order: 6; }
+
+/* 新手引导 */
+.world-guide {
+  order: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 16px 20px;
+  border: 1px solid rgba(161, 197, 10, 0.35);
+  border-radius: 12px;
+  background: rgba(161, 197, 10, 0.08);
+}
+.guide-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #10203a;
+}
+.guide-text {
+  flex: 1;
+  min-width: 220px;
+  font-size: 13px;
+  color: #536078;
+  line-height: 1.6;
+}
+.guide-btn {
+  width: auto;
+  padding: 10px 18px;
+  background: #a1c50a;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .load-error-bar {
   display: flex;
   align-items: center;
