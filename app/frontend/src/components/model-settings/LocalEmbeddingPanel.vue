@@ -227,7 +227,7 @@ onMounted(() => { load(); loadPreference() })
 <style scoped>
 .local-embedding-panel { padding: 16px; border-top: 4px solid #171717; }
 .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.panel-heading .eyebrow { color: #f25c21; font-size: 9px; font-weight: 800; }
+.panel-heading .eyebrow { color: #a1c50a; font-size: 9px; font-weight: 800; }
 .panel-heading h3 { margin-top: 4px; font-size: 15px; }
 .section-desc { margin-top: 6px; color: #666; font-size: 11px; line-height: 1.6; }
 .pref-block { margin-top: 14px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; background: #fafaf8; }

@@ -453,22 +453,26 @@ onUnmounted(() => {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #FFF;
+  background: transparent;   /* 透出全局渐变光底 */
   overflow: hidden;
-  font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'PingFang SC',
+    'Noto Sans SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
 }
 
 /* Header */
 .app-header {
   height: 60px;
-  border-bottom: 1px solid #EAEAEA;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  background: #FFF;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
   z-index: 100;
   position: relative;
+  box-shadow: 0 1px 12px rgba(16, 32, 58, 0.06);
 }
 
 .header-center {
@@ -487,10 +491,11 @@ onUnmounted(() => {
 
 .view-switcher {
   display: flex;
-  background: #F5F5F5;
+  background: rgba(255, 255, 255, 0.5);
   padding: 4px;
-  border-radius: 6px;
+  border-radius: 999px;
   gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
 }
 
 .switch-btn {
@@ -499,16 +504,16 @@ onUnmounted(() => {
   padding: 6px 16px;
   font-size: 12px;
   font-weight: 600;
-  color: #666;
-  border-radius: 4px;
+  color: var(--mf-ink-muted, #536078);
+  border-radius: 999px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .switch-btn.active {
-  background: #FFF;
-  color: #000;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  background: #fff;
+  color: #10203a;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
 }
 
 .status-indicator {
@@ -557,7 +562,7 @@ onUnmounted(() => {
   background: #CCC;
 }
 
-.status-indicator.processing .dot { background: #FF5722; animation: pulse 1s infinite; }
+.status-indicator.processing .dot { background: #a1c50a; animation: pulse 1s infinite; }
 .status-indicator.completed .dot { background: #4CAF50; }
 .status-indicator.error .dot { background: #F44336; }
 
@@ -599,7 +604,7 @@ onUnmounted(() => {
   transition: border-color 0.2s ease;
 }
 .world-entry:hover {
-  border-color: #FF5722;
+  border-color: #a1c50a;
 }
 .world-entry-info {
   display: flex;
@@ -638,11 +643,27 @@ onUnmounted(() => {
 }
 .world-entry-btn {
   flex-shrink: 0;
-  background: #000;
+  background: #10203a;
   color: #FFF;
   font-size: 11px;
   font-weight: 600;
   padding: 6px 12px;
-  border-radius: 4px;
+  border-radius: 8px;
+}
+
+/* ================= 移动端深化 ================= */
+@media (max-width: 900px) {
+  .header-center { position: static; transform: none; }
+  .app-header { flex-wrap: wrap; height: auto; min-height: 60px; padding: 10px 14px; gap: 8px; }
+  .workflow-step .step-name { display: none; }
+}
+@media (max-width: 600px) {
+  .header-right { gap: 10px; }
+  .step-title, .step-name { display: none; }
+  .view-switcher { padding: 3px; }
+  .switch-btn { padding: 6px 10px; font-size: 11px; }
+  .world-entry { margin: 0 8px 8px; }
+  .world-entry-desc { display: none; }
+  .brand { font-size: 16px; }
 }
 </style>

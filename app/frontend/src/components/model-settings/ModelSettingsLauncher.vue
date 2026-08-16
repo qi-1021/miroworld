@@ -41,17 +41,19 @@ defineEmits(['toggle'])
   width: min(230px, calc(100vw - 36px));
   min-height: 46px;
   padding: 8px 10px;
-  border: 1px solid #1a1a1a;
-  background: #fff;
-  color: #111;
-  box-shadow: 0 7px 20px rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: saturate(160%) blur(12px);
+  -webkit-backdrop-filter: saturate(160%) blur(12px);
+  color: #10203a;
+  box-shadow: 0 7px 20px rgba(16, 32, 58, 0.14);
   cursor: pointer;
   text-align: left;
 }
 
 .model-settings-launcher:hover,
 .model-settings-launcher.active {
-  border-color: #f25c21;
+  border-color: #a1c50a;
 }
 
 .launcher-copy {

@@ -1004,7 +1004,7 @@ onUnmounted(() => {
   background: rgba(255,255,255,0.9);
   cursor: pointer;
 }
-.sel-box.checked { background: #FF5722; border-color: #FF5722; position: relative; }
+.sel-box.checked { background: #a1c50a; border-color: #a1c50a; position: relative; }
 .sel-box.checked::after {
   content: '✓';
   position: absolute;
@@ -1014,7 +1014,7 @@ onUnmounted(() => {
   line-height: 14px;
   text-align: center;
 }
-.project-card.sel { outline: 2px solid #FF5722; outline-offset: 1px; }
+.project-card.sel { outline: 2px solid #a1c50a; outline-offset: 1px; }
 
 /* 卡片容器 */
 .cards-container {
@@ -1385,7 +1385,7 @@ onUnmounted(() => {
 .card-action-btn.empty {
   color: #B45309;
   border-color: #FCD9A5;
-  background: #FFF7E6;
+  background: #f3f7e6;
   margin-left: 0;
 }
 
@@ -1924,7 +1924,7 @@ onUnmounted(() => {
 
 .modal-manage-btn.empty:hover {
   border-color: #F5B861;
-  background: #FFF7E6;
+  background: #f3f7e6;
 }
 
 /* ===== 手机端弹窗 / 布局响应式（置于末尾，确保覆盖上方基础样式） ===== */

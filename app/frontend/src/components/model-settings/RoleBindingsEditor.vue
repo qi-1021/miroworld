@@ -127,7 +127,7 @@ const save = async () => {
 <style scoped>
 .bindings-editor { padding: 18px; }
 .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.eyebrow { color: #f25c21; font-size: 9px; font-weight: 800; }
+.eyebrow { color: #a1c50a; font-size: 9px; font-weight: 800; }
 h3 { margin-top: 4px; font-size: 17px; }
 .context-chip { max-width: 170px; overflow: hidden; padding: 5px 7px; background: #eee; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .empty-note { display: flex; gap: 8px; margin-top: 15px; padding: 12px; border-left: 3px solid #d69a00; background: #fff7d9; font-size: 11px; line-height: 1.45; }
@@ -146,7 +146,7 @@ select { min-width: 0; min-height: 37px; border: 1px solid #aaa; border-radius: 
 .message.success { background: #e8f7ed; color: #126d3e; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .primary-button, .secondary-button { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 8px 12px; font-weight: 800; cursor: pointer; }
-.primary-button { border: 1px solid #f25c21; background: #f25c21; color: white; }
+.primary-button { border: 1px solid #a1c50a; background: #a1c50a; color: white; }
 .secondary-button { border: 1px solid #222; background: white; color: #222; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 .spin { animation: spin .8s linear infinite; }

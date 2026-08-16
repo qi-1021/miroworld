@@ -34,10 +34,10 @@
       </div>
 
       <!-- 产品视觉：纯 CSS 时间线示意图（主线 + 橙色分支）+ 真实 WebGL 液态玻璃 -->
-      <div class="lg-root-hero" ref="heroGlassRoot">
+      <div class="lg-root-hero">
         <div class="lg-glow g2 hg-left" aria-hidden="true"></div>
         <div class="lg-glow g1 hg-right" aria-hidden="true"></div>
-        <div class="hero-visual liquid-glass" ref="heroGlass" aria-hidden="false">
+        <div class="hero-visual liquid-glass" aria-hidden="false">
         <div class="tl-demo">
           <div class="tl-main">
             <span class="dot done"></span>
@@ -74,25 +74,25 @@
         <h2 class="section-title">{{ $t('home.featuresTitle') }}</h2>
         <p class="section-desc">{{ $t('home.featuresDesc') }}</p>
       </div>
-      <div class="feature-grid lg-root-grid" ref="featureGlassRoot">
+      <div class="feature-grid lg-root-grid">
         <div class="lg-glow g2 fgrid-left" aria-hidden="true"></div>
         <div class="lg-glow g1 fgrid-right" aria-hidden="true"></div>
-        <div class="feature-card liquid-glass" ref="featureGlass_0">
+        <div class="feature-card liquid-glass">
           <div class="f-icon">▤</div>
           <h3 class="f-title">{{ $t('home.f1Title') }}</h3>
           <p class="f-desc">{{ $t('home.f1Desc') }}</p>
         </div>
-        <div class="feature-card liquid-glass" ref="featureGlass_1">
+        <div class="feature-card liquid-glass">
           <div class="f-icon">⑃</div>
           <h3 class="f-title">{{ $t('home.f2Title') }}</h3>
           <p class="f-desc">{{ $t('home.f2Desc') }}</p>
         </div>
-        <div class="feature-card liquid-glass" ref="featureGlass_2">
+        <div class="feature-card liquid-glass">
           <div class="f-icon">◉</div>
           <h3 class="f-title">{{ $t('home.f3Title') }}</h3>
           <p class="f-desc">{{ $t('home.f3Desc') }}</p>
         </div>
-        <div class="feature-card liquid-glass" ref="featureGlass_3">
+        <div class="feature-card liquid-glass">
           <div class="f-icon">✎</div>
           <h3 class="f-title">{{ $t('home.f4Title') }}</h3>
           <p class="f-desc">{{ $t('home.f4Desc') }}</p>
@@ -101,7 +101,7 @@
     </section>
 
     <!-- 控制台 -->
-    <section class="console-section" ref="consoleGlassRoot">
+    <section class="console-section">
       <div class="lg-bg console-bg">
         <div class="lg-glow g3 cg-left"></div>
         <div class="lg-glow g4 cg-top"></div>
@@ -259,10 +259,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { LiquidGlass } from '@ybouane/liquidglass'
 import HistoryDatabase from '../components/HistoryDatabase.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import { BRAND } from '../config/brand'
@@ -289,62 +288,9 @@ const isDragOver = ref(false)
 const consoleRef = ref(null)
 const year = new Date().getFullYear()
 
-// ============ 真实 WebGL 液态玻璃（@ybouane/liquidglass） ============
-const heroGlassRoot = ref(null)
-const featureGlassRoot = ref(null)
-const consoleGlassRoot = ref(null)
-let glassInstances = []
-// 玻璃更明显/更透明：静态首页无 data-dynamic，玻璃卡 blur/refraction 适度上调
-// 让折射、色差、边缘高光、高光肉眼可见，同时保持可读性。
-const GLASS_DEFAULTS = {
-  blurAmount: 0.32,
-  refraction: 0.50,
-  chromAberration: 0.05,
-  edgeHighlight: 0.10,
-  specular: 0.15,
-  fresnel: 0.65,
-  distortion: 0.02,
-  cornerRadius: 22,
-  zRadius: 18,
-  opacity: 1,
-  saturation: 0.12,
-  tintStrength: 0.05,
-  brightness: 0.02,
-  shadowOpacity: 0.15,
-  shadowSpread: 8,
-  shadowOffsetY: 1,
-  floating: false,
-  button: true
-}
-async function initLiquidGlass() {
-  // 每类玻璃卡用一个根；根必须是其 glass 卡片的直接父级方可被库接受
-  const specs = [
-    { root: heroGlassRoot.value, selector: '.hero-visual' },
-    { root: featureGlassRoot.value, selector: '.feature-card' },
-    { root: consoleGlassRoot.value, selector: '.console-card' }
-  ]
-  for (const spec of specs) {
-    if (!spec.root) continue
-    const glassEls = Array.from(spec.root.querySelectorAll(spec.selector))
-      .filter(el => el.parentElement === spec.root)
-    if (!glassEls.length) continue
-    try {
-      const inst = await LiquidGlass.init({
-        root: spec.root,
-        glassElements: glassEls,
-        defaults: GLASS_DEFAULTS
-      })
-      if (inst && inst.destroy) glassInstances.push(inst)
-    } catch (err) {
-      // WebGL 不可用或初始化失败：静默降级到 CSS backdrop-filter，不阻塞页面
-      console.warn('[LiquidGlass] init failed, fallback to CSS:', spec.selector, err)
-    }
-  }
-}
-function destroyLiquidGlass() {
-  glassInstances.forEach(inst => { try { inst.destroy() } catch (e) { /* noop */ } })
-  glassInstances = []
-}
+// ============ 液态玻璃（LGGC 纯 CSS，无 WebGL @ybouane/liquidglass） ============
+// 玻璃效果由全局 .liquid-glass 样式基于 LGGC 纯 CSS 驱动（见 App.vue），
+// 无需初始化 WebGL，也不再引入 @ybouane/liquidglass。此部分已停用。
 
 // ============ 模型配置前置校验 ============
 // 空字符串表示已通过；非空表示需要引导用户前往模型设置
@@ -634,28 +580,25 @@ async function handleSnapshotFile(event) {
 }
 
 onMounted(() => {
-  nextTick(() => initLiquidGlass())
-})
-onUnmounted(() => {
-  destroyLiquidGlass()
+  // 液态玻璃由 LGGC 纯 CSS 驱动，无需 JS 初始化。
 })
 </script>
 
 <style scoped>
-/* ============ Apple 极简白 + 柑橘橙 ============ */
+/* ============ LGGC 液态玻璃 + 柔和渐变光底 + 柑橘橙 ============ */
 .home {
-  --canvas: #ffffff;
-  --canvas-alt: #f5f5f7;
-  --ink: #1d1d1f;
-  --ink-muted: #6e6e73;
-  --ink-subtle: #86868b;
-  --hairline: #d2d2d7;
+  --canvas: transparent;          /* 透出全局渐变光底（见 App.vue #app） */
+  --canvas-alt: rgba(255, 255, 255, 0.28);
+  --ink: #10203a;                 /* 与 LGGC 主文字一致 */
+  --ink-muted: #536078;
+  --ink-subtle: #7b879e;
+  --hairline: rgba(16, 32, 58, 0.12);
   --accent: #a1c50a;        /* 柑橘色（用户指定） */
   --accent-hover: #8fae09;
   --accent-soft: #f3f7e6;
-  --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
-  --radius: 16px;
-  background: var(--canvas);
+  --card-shadow: 0 10px 32px rgba(16, 32, 58, 0.10);
+  --radius: 18px;
+  background: transparent;
   color: var(--ink);
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'PingFang SC',
     'Noto Sans SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
@@ -672,9 +615,11 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 18px 40px;
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: saturate(180%) blur(20px);
-  border-bottom: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 1px 12px rgba(16, 32, 58, 0.06);
 }
 .nav-brand {
   font-size: 17px;
@@ -958,8 +903,8 @@ onUnmounted(() => {
   gap: 20px;
 }
 .feature-card {
-  background: rgba(255,255,255,0.60);
-  border: 1px solid var(--hairline);
+  /* 基础（.liquid-glass 的 LGGC 效果在全局覆盖透明背景/亮边框） */
+  background: rgba(255, 255, 255, 0.5);
   border-radius: var(--radius);
   padding: 32px 24px;
   transition: box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
@@ -967,7 +912,7 @@ onUnmounted(() => {
 .feature-card:hover {
   box-shadow: var(--card-shadow);
   transform: translateY(-2px);
-  background: rgba(255,255,255,0.72);
+  background: rgba(255, 255, 255, 0.62);
 }
 .f-icon {
   font-size: 26px;

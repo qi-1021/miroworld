@@ -292,18 +292,20 @@ watch(() => props.systemLogs.length, () => {
 }
 
 .step-card {
-  background: #FFF;
-  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+  border-radius: 16px;
   padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  border: 1px solid #EAEAEA;
+  box-shadow: 0 6px 22px rgba(16, 32, 58, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  backdrop-filter: saturate(160%) blur(10px);
+  -webkit-backdrop-filter: saturate(160%) blur(10px);
   transition: all 0.3s ease;
   position: relative; /* For absolute overlay */
 }
 
 .step-card.active {
-  border-color: #FF5722;
-  box-shadow: 0 4px 12px rgba(255, 87, 34, 0.08);
+  border-color: #a1c50a;
+  box-shadow: 0 4px 16px rgba(161, 197, 10, 0.18);
 }
 
 .card-header {
@@ -346,8 +348,8 @@ watch(() => props.systemLogs.length, () => {
 }
 
 .badge.success { background: #E8F5E9; color: #2E7D32; }
-.badge.processing { background: #FF5722; color: #FFF; }
-.badge.accent { background: #FF5722; color: #FFF; }
+.badge.processing { background: #a1c50a; color: #FFF; }
+.badge.accent { background: #a1c50a; color: #FFF; }
 .badge.pending { background: #F5F5F5; color: #999; }
 
 .api-note {
@@ -628,7 +630,7 @@ watch(() => props.systemLogs.length, () => {
   align-items: center;
   gap: 10px;
   font-size: 12px;
-  color: #FF5722;
+  color: #a1c50a;
   margin-bottom: 12px;
 }
 
@@ -636,7 +638,7 @@ watch(() => props.systemLogs.length, () => {
   width: 14px;
   height: 14px;
   border: 2px solid #FFCCBC;
-  border-top-color: #FF5722;
+  border-top-color: #a1c50a;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }

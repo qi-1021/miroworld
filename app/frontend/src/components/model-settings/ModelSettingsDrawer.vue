@@ -235,25 +235,25 @@ watch(() => props.projectId, () => {
 </script>
 
 <style scoped>
-.drawer-backdrop { position: fixed; inset: 0; z-index: 900; border: 0; background: rgba(0, 0, 0, .32); }
-.model-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 910; display: flex; flex-direction: column; width: min(580px, 100vw); background: #fff; box-shadow: -12px 0 35px rgba(0, 0, 0, .2); }
-.drawer-header { display: flex; align-items: flex-start; justify-content: space-between; min-height: 94px; padding: 18px; background: #171717; color: #fff; }
-.drawer-header span { color: #ff6a2b; font-size: 9px; font-weight: 800; }
+.drawer-backdrop { position: fixed; inset: 0; z-index: 900; border: 0; background: rgba(16, 32, 58, .35); }
+.model-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 910; display: flex; flex-direction: column; width: min(580px, 100vw); background: rgba(255, 255, 255, 0.78); backdrop-filter: saturate(160%) blur(16px); -webkit-backdrop-filter: saturate(160%) blur(16px); box-shadow: -12px 0 35px rgba(16, 32, 58, .22); }
+.drawer-header { display: flex; align-items: flex-start; justify-content: space-between; min-height: 94px; padding: 18px; background: rgba(16, 32, 58, 0.92); color: #fff; }
+.drawer-header span { color: #a1c50a; font-size: 9px; font-weight: 800; }
 .drawer-header h2 { margin-top: 5px; font-size: 20px; }
-.drawer-header small { display: block; max-width: 440px; margin-top: 5px; overflow: hidden; color: #aaa; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.close-button { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid #555; background: transparent; color: #fff; cursor: pointer; }
-.snapshot-summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #ddd; background: #fff4ee; }
+.drawer-header small { display: block; max-width: 440px; margin-top: 5px; overflow: hidden; color: #c7cbd6; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.close-button { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid rgba(255,255,255,.4); background: transparent; color: #fff; cursor: pointer; }
+.snapshot-summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 18px; border-bottom: 1px solid rgba(16, 32, 58, .12); background: rgba(243, 247, 230, 0.6); }
 .snapshot-summary span, .snapshot-summary strong { display: block; }
 .snapshot-summary span { color: #777; font-size: 9px; }
 .snapshot-summary strong { margin-top: 3px; font-size: 12px; }
-.snapshot-summary .revision { padding: 5px 7px; background: #171717; color: white; font-weight: 800; }
-.drawer-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid #ccc; }
-.drawer-tabs button { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 42px; border: 0; border-right: 1px solid #ddd; border-bottom: 3px solid transparent; background: #f7f7f5; cursor: pointer; font-size: 10px; }
+.snapshot-summary .revision { padding: 5px 7px; background: #10203a; color: white; font-weight: 800; }
+.drawer-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid rgba(16, 32, 58, .15); }
+.drawer-tabs button { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 42px; border: 0; border-right: 1px solid rgba(16, 32, 58, .12); border-bottom: 3px solid transparent; background: rgba(255, 255, 255, 0.4); cursor: pointer; font-size: 10px; }
 .drawer-tabs button:last-child { border-right: 0; }
-.drawer-tabs button.active { border-bottom-color: #f25c21; background: #fff; font-weight: 800; }
+.drawer-tabs button.active { border-bottom-color: #a1c50a; background: #fff; font-weight: 800; }
 .drawer-content { flex: 1; overflow: auto; }
 .drawer-loading { display: flex; flex: 1; align-items: center; justify-content: center; gap: 10px; color: #666; }
-.drawer-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; padding: 9px 14px; border-top: 1px solid #ddd; background: #fafaf8; color: #666; font-size: 9px; }
+.drawer-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; padding: 9px 14px; border-top: 1px solid rgba(16, 32, 58, .12); background: rgba(255, 255, 255, 0.5); color: #666; font-size: 9px; }
 .drawer-footer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .drawer-footer .footer-error { color: #d9534f; font-weight: 800; }
 .drawer-footer .footer-success { color: #147342; font-weight: 800; }

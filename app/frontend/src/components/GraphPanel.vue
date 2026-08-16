@@ -825,8 +825,8 @@ onUnmounted(() => {
   position: relative;
   width: 100%;
   height: 100%;
-  background-color: #FAFAFA;
-  background-image: radial-gradient(#D0D0D0 1.5px, transparent 1.5px);
+  background-color: rgba(255, 255, 255, 0.5);
+  background-image: radial-gradient(rgba(83, 96, 120, 0.25) 1.5px, transparent 1.5px);
   background-size: 24px 24px;
   overflow: hidden;
 }

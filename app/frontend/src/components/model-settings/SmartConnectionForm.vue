@@ -285,26 +285,26 @@ const statusLabel = (status) => ({
 <style scoped>
 .settings-section { padding: 18px; }
 .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.eyebrow { color: #f25c21; font-size: 9px; font-weight: 800; }
+.eyebrow { color: #a1c50a; font-size: 9px; font-weight: 800; }
 h3 { margin-top: 4px; font-size: 17px; }
 .section-desc { margin: 10px 0 16px; color: #626262; font-size: 12px; line-height: 1.55; }
 .field { display: block; margin-bottom: 13px; }
 .field > span { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 11px; font-weight: 700; }
 .field small { color: #777; font-weight: 400; }
 input, select { width: 100%; min-height: 38px; border: 1px solid #a8a8a8; border-radius: 0; background: #fff; padding: 8px 10px; color: #111; font: inherit; font-size: 12px; }
-input:focus, select:focus { outline: 2px solid rgba(242, 92, 33, 0.22); border-color: #f25c21; }
+input:focus, select:focus { outline: 2px solid rgba(242, 92, 33, 0.22); border-color: #a1c50a; }
 .secret-input { display: grid; grid-template-columns: 1fr 38px; }
 .secret-input input { border-right: 0; }
 .secret-input button, .icon-button { display: grid; place-items: center; border: 1px solid #a8a8a8; background: #f7f7f5; cursor: pointer; }
 .expert-toggle { display: grid; grid-template-columns: 20px 1fr 18px; align-items: center; width: 100%; margin: 4px 0 13px; border: 1px dashed #aaa; background: #f8f8f6; padding: 9px; text-align: left; cursor: pointer; }
 .expert-toggle .rotated { transform: rotate(180deg); }
-.expert-panel { margin-bottom: 13px; padding: 12px; border-left: 3px solid #f25c21; background: #fff4ee; }
+.expert-panel { margin-bottom: 13px; padding: 12px; border-left: 3px solid #a1c50a; background: #f3f7e6; }
 .check-row { display: grid; grid-template-columns: 18px 1fr; gap: 7px; align-items: start; margin-bottom: 12px; }
 .check-row input { min-height: 16px; height: 16px; padding: 0; }
 .check-row strong, .check-row small { display: block; font-size: 10px; }
 .check-row small { margin-top: 3px; color: #666; line-height: 1.4; }
 .actions { display: flex; justify-content: flex-end; }
-.primary-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 39px; border: 1px solid #f25c21; background: #f25c21; color: #fff; padding: 9px 13px; font-weight: 800; cursor: pointer; }
+.primary-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 39px; border: 1px solid #a1c50a; background: #a1c50a; color: #fff; padding: 9px 13px; font-weight: 800; cursor: pointer; }
 .primary-button:disabled { opacity: 0.45; cursor: not-allowed; }
 .message { display: flex; gap: 7px; margin: 10px 0; padding: 9px; font-size: 11px; line-height: 1.4; }
 .error-message { border-left: 3px solid #c9352d; background: #fff0ef; color: #8c211c; }
@@ -324,7 +324,7 @@ input:focus, select:focus { outline: 2px solid rgba(242, 92, 33, 0.22); border-c
 .capability-row .not_tested { color: #866500; }
 .models-found, .manual-model { margin: 12px; padding: 10px; background: #f7f7f5; }
 .model-list-head { display: flex; justify-content: space-between; margin-bottom: 7px; font-size: 10px; }
-.model-list-head button { border: 0; background: transparent; color: #f25c21; cursor: pointer; }
+.model-list-head button { border: 0; background: transparent; color: #a1c50a; cursor: pointer; }
 .model-option { display: grid; grid-template-columns: 18px 1fr; align-items: center; gap: 7px; padding: 7px 0; border-top: 1px solid #e1e1dd; }
 .model-option input { width: 15px; min-height: 15px; height: 15px; padding: 0; }
 .model-option code { overflow-wrap: anywhere; font-size: 10px; }

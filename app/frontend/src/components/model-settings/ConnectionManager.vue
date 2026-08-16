@@ -86,7 +86,7 @@ const modelsFor = (connectionId) => props.models.filter(item => item.connection_
 <style scoped>
 .connection-manager { padding: 18px; }
 .section-heading { display: flex; justify-content: space-between; gap: 10px; }
-.eyebrow { color: #f25c21; font-size: 9px; font-weight: 800; }
+.eyebrow { color: #a1c50a; font-size: 9px; font-weight: 800; }
 h3 { margin-top: 4px; font-size: 17px; }
 .icon-button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid #222; background: #fff; cursor: pointer; }
 .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 14px; }

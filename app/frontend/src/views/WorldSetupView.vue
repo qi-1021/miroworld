@@ -1732,24 +1732,28 @@ onUnmounted(() => {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #FAFAFA;
+  background: transparent;   /* 透出全局渐变光底 */
   overflow: hidden;
-  font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
-  color: #000;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'PingFang SC',
+    'Noto Sans SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+  color: #10203a;
 }
 
 /* Header（与 MainView 一致） */
 .app-header {
   height: 60px;
-  border-bottom: 1px solid #EAEAEA;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  background: #FFF;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
   z-index: 100;
   position: relative;
   flex-shrink: 0;
+  box-shadow: 0 1px 12px rgba(16, 32, 58, 0.06);
 }
 .header-left {
   display: flex;
@@ -1853,7 +1857,7 @@ onUnmounted(() => {
   gap: 12px;
   padding: 10px 14px;
   border-left: 3px solid #D32F2F;
-  background: #FFF0EF;
+  background: #f3f7e6;
   color: #8C211C;
   font-size: 12px;
   line-height: 1.5;
@@ -1905,7 +1909,7 @@ onUnmounted(() => {
   text-transform: uppercase;
 }
 .badge.success { background: #E8F5E9; color: #2E7D32; }
-.badge.processing { background: #FF5722; color: #FFF; }
+.badge.processing { background: #a1c50a; color: #FFF; }
 .badge.hint { background: #F5F5F5; color: #666; }
 
 /* 输入区 */
@@ -1945,7 +1949,7 @@ onUnmounted(() => {
 }
 .world-textarea:focus {
   outline: none;
-  border-color: #FF5722;
+  border-color: #a1c50a;
   background: #FFF;
 }
 .world-textarea::placeholder {
@@ -1964,10 +1968,10 @@ onUnmounted(() => {
   background: #FAFAFA;
 }
 .drop-zone:hover {
-  border-color: #FF5722;
+  border-color: #a1c50a;
 }
 .drop-zone.drag-over {
-  border-color: #FF5722;
+  border-color: #a1c50a;
   background: #FFF3EE;
 }
 .drop-icon {
@@ -2087,7 +2091,7 @@ onUnmounted(() => {
 }
 .sim-goal-input:focus {
   outline: none;
-  border-color: #FF5722;
+  border-color: #a1c50a;
   background: #FFF;
 }
 .sim-label {
@@ -2109,7 +2113,7 @@ onUnmounted(() => {
 }
 .sim-input:focus {
   outline: none;
-  border-color: #FF5722;
+  border-color: #a1c50a;
   background: #FFF;
 }
 .sim-start {
@@ -2193,8 +2197,8 @@ onUnmounted(() => {
 }
 .sim-history-status.completed { background: #E8F5E9; color: #2E7D32; }
 .sim-history-status.failed { background: #FFEBEE; color: #C62828; }
-.sim-history-status.running { background: #FFF3E0; color: #E65100; }
-.sim-history-status.preparing { background: #FFF3E0; color: #E65100; }
+.sim-history-status.running { background: #f3f7e6; color: #5f7008; }
+.sim-history-status.preparing { background: #f3f7e6; color: #5f7008; }
 .sim-history-status.created { background: #F5F5F5; color: #666; }
 .sim-history-count {
   color: #666;
@@ -2357,7 +2361,7 @@ onUnmounted(() => {
   border-radius: 4px;
 }
 .severity-tag.sev-high { background: #FFEBEE; color: #C62828; }
-.severity-tag.sev-medium { background: #FFF3E0; color: #E65100; }
+.severity-tag.sev-medium { background: #f3f7e6; color: #5f7008; }
 .severity-tag.sev-low { background: #E8F5E9; color: #2E7D32; }
 .conflict-topic {
   font-weight: 600;
@@ -2376,7 +2380,7 @@ onUnmounted(() => {
   background: #FFF;
   cursor: pointer;
 }
-.conflict-sel .sel-box.checked { background: #FF5722; border-color: #FF5722; position: relative; }
+.conflict-sel .sel-box.checked { background: #a1c50a; border-color: #a1c50a; position: relative; }
 .conflict-sel .sel-box.checked::after {
   content: '✓';
   position: absolute;
@@ -2554,7 +2558,7 @@ onUnmounted(() => {
 }
 .search-input:focus {
   outline: none;
-  border-color: #FF5722;
+  border-color: #a1c50a;
   background: #FFF;
 }
 .search-btn {
@@ -2728,7 +2732,7 @@ onUnmounted(() => {
 }
 .interview-input:focus {
   outline: none;
-  border-color: #FF5722;
+  border-color: #a1c50a;
 }
 .interview-answer {
   border-left: 3px solid #000;
@@ -2948,7 +2952,7 @@ onUnmounted(() => {
   opacity: 1;
 }
 .graph-node.selected {
-  stroke: #FF5722;
+  stroke: #a1c50a;
   stroke-width: 2.5;
 }
 .graph-node-label {
@@ -2971,7 +2975,7 @@ onUnmounted(() => {
 }
 .graph-node-info-type {
   font-size: 11px;
-  color: #FF5722;
+  color: #a1c50a;
   font-weight: 600;
   margin-bottom: 6px;
 }

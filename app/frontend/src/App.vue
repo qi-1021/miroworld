@@ -119,6 +119,13 @@ onUnmounted(() => {
 </script>
 
 <style>
+/* ============================================================
+   MiroFish 全站视觉重做（frontend-dev）
+   设计语言：LGGC 纯 CSS 液态玻璃 + 柔和渐变光底 + 柑橘强调色
+   - glass 由 LGGC（.lggc / 其 CSS 变量）驱动，纯 CSS，无 WebGL
+   - 强调色保留柑橘色 #a1c50a（用户指定）
+   ============================================================ */
+
 /* 全局样式重置 */
 * {
   margin: 0;
@@ -126,117 +133,162 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 
+html, body {
+  overflow-x: hidden;
+}
+
+:root {
+  /* ---- 设计 tokens ---- */
+  --mf-canvas: #f5f7fb;            /* 页面基底（带蓝调的浅色） */
+  --mf-ink: #10203a;               /* 主文字（深海军蓝，与 LGGC 一致） */
+  --mf-ink-muted: #536078;
+  --mf-ink-subtle: #7b879e;
+  --mf-accent: #a1c50a;            /* 柑橘色（用户指定，保留） */
+  --mf-accent-hover: #8fae09;
+  --mf-accent-soft: #f3f7e6;
+  --mf-hairline: rgba(16, 32, 58, 0.12);
+  --mf-radius: 18px;
+  --mf-card-shadow: 0 10px 30px rgba(16, 32, 58, 0.08);
+}
+
 #app {
-  font-family: 'JetBrains Mono', 'Space Grotesk', 'Noto Sans SC', monospace;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'PingFang SC',
+    'Noto Sans SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color: #000000;
-  background-color: #ffffff;
+  color: var(--mf-ink);
+  /* 柔和渐变光底：为液态玻璃的 backdrop-filter 提供可模糊的彩色内容 */
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(165, 200, 246, 0.55), transparent 55%),
+    radial-gradient(130% 100% at 100% 0%, rgba(242, 246, 226, 0.7), transparent 55%),
+    radial-gradient(140% 120% at 50% 100%, rgba(253, 206, 206, 0.55), transparent 60%),
+    linear-gradient(135deg, #eef4fb 0%, #f6f8ec 48%, #fff1ee 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
 }
 
 /* 滚动条样式 */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #f1f1f1;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #000000;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #333333;
-}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(16, 32, 58, 0.25); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(16, 32, 58, 0.4); }
 
 /* 全局按钮样式 */
-button {
-  font-family: inherit;
-}
+button { font-family: inherit; }
 
-/* Apple Liquid Glass 通用卡片类：
-   更透明玻璃 —— 背景透明度低至 rgba(255,255,255,0.20)，边框更亮
-   rgba(255,255,255,0.65)，backdrop-filter blur 10px + saturate 170%，
-   让背景彩色光晕透出来。启用 @ybouane/liquidglass 的真实 WebGL 液态玻璃后，
-   此处作为不支持 WebGL 时的 CSS 降级兜底。 */
+/* ============================================================
+   LGGC 液态玻璃通用卡片：
+   全站 .liquid-glass 卡片改用 LGGC（纯 CSS）效果。
+   通过 LGGC 变量微调圆角/底色/模糊，让既有 class 自动升级为液态玻璃。
+   ============================================================ */
 .liquid-glass {
-  background: rgba(255,255,255,0.20);
-  border: 1px solid rgba(255,255,255,0.65);
-  border-radius: 20px;
-  box-shadow:
-    0 8px 32px rgba(0,0,0,0.06),
-    inset 0 1px 0 rgba(255,255,255,0.85),
-    inset 0 -1px 0 rgba(255,255,255,0.2);
-  backdrop-filter: saturate(170%) blur(10px);
-  -webkit-backdrop-filter: saturate(170%) blur(10px);
-  /* 玻璃高光：一条沿顶部的细亮线模拟反射 */
+  --lggc-radius: 22px;
+  --lggc-padding: 1.5rem 1.75rem;
+  --lggc-bg: rgba(255, 255, 255, 0.35);
+  --lggc-border: rgba(255, 255, 255, 0.5);
+  --lggc-blur: 10px;
+  --lggc-highlight: rgba(255, 255, 255, 0.9);
   position: relative;
-  transition: backdrop-filter 0.2s ease;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: var(--lggc-radius);
+  background: var(--lggc-bg);
+  color: var(--mf-ink);
+  backdrop-filter: blur(calc(var(--lggc-blur) * 0.35)) saturate(170%);
+  -webkit-backdrop-filter: blur(calc(var(--lggc-blur) * 0.35)) saturate(170%);
+  box-shadow:
+    inset 1.5px -1.5px 1px -1px rgba(255, 255, 255, 0.8),
+    inset -1.5px 1.5px 1px -1px rgba(255, 255, 255, 0.8),
+    0 16px 36px rgba(16, 32, 58, 0.10);
+  transition: box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
 }
 .liquid-glass::before {
   content: '';
   position: absolute;
-  top: 0;
-  left: 5%;
-  right: 5%;
+  top: 0; left: 8%; right: 8%;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.95), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.95), transparent);
   pointer-events: none;
+  border-radius: inherit;
+  z-index: 1;
 }
+.liquid-glass:hover {
+  box-shadow:
+    inset 1.5px -1.5px 1px -1px rgba(255, 255, 255, 0.9),
+    inset -1.5px 1.5px 1px -1px rgba(255, 255, 255, 0.9),
+    0 22px 44px rgba(16, 32, 58, 0.14);
+  transform: translateY(-2px);
+}
+
+/* LGGC 彩色光晕（放在玻璃卡父容器，为 backdrop-filter 提供可模糊内容） */
+.lg-bg { position: relative; overflow: hidden; }
+.lg-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 0;
+}
+.lg-glow.g1 { background: radial-gradient(circle, #ffb76b, rgba(255,183,107,0)); }
+.lg-glow.g2 { background: radial-gradient(circle, #9ea7ff, rgba(158,167,255,0)); }
+.lg-glow.g3 { background: radial-gradient(circle, #6bf0c6, rgba(107,240,198,0)); }
+.lg-glow.g4 { background: radial-gradient(circle, #ff8fd0, rgba(208,143,255,0)); }
+
+/* ============================================================
+   通用控件玻璃化（按钮 / 输入框 / 下拉 / 文本域）：
+   与 LGGC 液态玻璃卡片保持同一通透质感，文字高对比保证可读。
+   ============================================================ */
+.btn, button.btn, .field-input, textarea, input[type="text"],
+input[type="email"], input[type="search"] {
+  font-family: inherit;
+}
+
 
 /* ------- 控件玻璃化（按钮 / 输入框 / 下拉 / 文本域） -------
    给主要控件加半透明背景 + 细亮边框 + 轻 backdrop-filter，
-   与液态玻璃卡片保持同一质感。文字保持深色高对比以保证可读性。
-   选择器尽量通用：玻璃卡内的按钮与字段、各页面的专用控件。 */
+   与 LGGC 液态玻璃卡片保持同一通透质感。文字保持深色高对比以保证可读。 */
 .liquid-glass button,
 .liquid-glass input,
 .liquid-glass select,
 .liquid-glass textarea,
 .liquid-glass .field-input,
-.liquid-glass .upload-zone {
-  backdrop-filter: saturate(150%) blur(8px);
-  -webkit-backdrop-filter: saturate(150%) blur(8px);
+.liquid-glass .upload-zone,
+.liquid-glass .mode-tab,
+.liquid-glass .media-toggle {
+  backdrop-filter: saturate(160%) blur(8px);
+  -webkit-backdrop-filter: saturate(160%) blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.55);
 }
 .liquid-glass .btn,
-.liquid-glass .upload-zone {
-  background: rgba(255,255,255,0.28);
-  border: 1px solid rgba(255,255,255,0.55);
+.liquid-glass .upload-zone,
+.liquid-glass .field-input,
+.liquid-glass input[type="text"],
+.liquid-glass textarea {
+  background: rgba(255, 255, 255, 0.30);
+  border: 1px solid rgba(255, 255, 255, 0.55);
 }
-.liquid-glass .field-input {
-  background: rgba(255,255,255,0.28);
-  border: 1px solid rgba(255,255,255,0.5);
-}
-/* 首页控制台内专用控件 */
-.console-card .btn,
-.console-card .btn-primary,
-.console-card .mode-tab,
-.console-card .media-toggle {
-  backdrop-filter: saturate(150%) blur(8px);
-  -webkit-backdrop-filter: saturate(150%) blur(8px);
-  border: 1px solid rgba(255,255,255,0.6);
-}
-.console-card .btn {
-  background: rgba(255,255,255,0.30);
-}
-/* 主 CTA 按钮：半透明玻璃但不失柑橘主色认同，文字高对比保证可读 */
-.console-card .btn-primary {
-  background: rgba(161,197,10,0.72);
+.liquid-glass .btn-primary {
+  background: rgba(161, 197, 10, 0.78);
   color: #fff;
-  border: 1px solid rgba(255,255,255,0.55);
+  border: 1px solid rgba(255, 255, 255, 0.55);
 }
-.console-card .btn-primary:hover:not(:disabled) {
-  background: rgba(143,174,9,0.82);
+.liquid-glass .btn-primary:hover:not(:disabled) {
+  background: rgba(143, 174, 9, 0.88);
 }
-/* 世界设定页 step-card / sim 控件 */
+
+/* 世界设定页 step-card / sim 控件、时间线控件的玻璃降级 */
 .step-card button,
 .step-card input,
 .step-card select,
-.step-card textarea {
-  backdrop-filter: saturate(150%) blur(8px);
-  -webkit-backdrop-filter: saturate(150%) blur(8px);
+.step-card textarea,
+.tl-btn,
+.tl-play-btn,
+.branch-chip,
+.type-chip,
+.future-input,
+.tl-edit-input {
+  backdrop-filter: saturate(160%) blur(8px);
+  -webkit-backdrop-filter: saturate(160%) blur(8px);
 }
 .step-card .sim-input,
 .step-card .sim-goal-input,
@@ -244,52 +296,24 @@ button {
 .step-card .search-input,
 .step-card .justify-input,
 .step-card .assistant-input {
-  background: rgba(255,255,255,0.30);
-  border: 1px solid rgba(255,255,255,0.5);
+  background: rgba(255, 255, 255, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.55);
 }
-/* 时间线 tl-btn / 输入条 */
-.tl-btn,
-.tl-play-btn,
-.branch-chip,
-.type-chip,
-.future-input,
-.tl-edit-input {
-  backdrop-filter: saturate(150%) blur(8px);
-  -webkit-backdrop-filter: saturate(150%) blur(8px);
-}
-
-/* 彩色背景光晕（用在玻璃卡片所在的容器上，为 backdrop-filter 提供可模糊内容）。
-   用法：在玻璃卡片的父容器加 class="lg-bg"，内部放若干 .lg-glow 定位光斑。 */
-.lg-bg {
-  position: relative;
-  overflow: hidden;
-}
-.lg-glow {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(60px);
-  opacity: 0.55;
-  pointer-events: none;
-  z-index: 0;
-}
-.lg-glow.g1 { background: radial-gradient(circle, #ffb76b, rgba(255,183,107,0)); }
-.lg-glow.g2 { background: radial-gradient(circle, #9ea7ff, rgba(158,167,255,0)); }
-.lg-glow.g3 { background: radial-gradient(circle, #6bf0c6, rgba(107,240,198,0)); }
-.lg-glow.g4 { background: radial-gradient(circle, #ff8fd0, rgba(255,143,208,0)); }
 
 /* ================= 手机端响应式（全局，覆盖所有页面） ================= */
-html, body {
-  overflow-x: hidden;
-}
 
-/* ---- ≤768px（平板竖屏 / 大手机） ---- */
+/* ---- ≤768px（平板竖屏 / 大手机）：窄屏收紧内边距，避免拥挤 ---- */
 @media (max-width: 768px) {
-  /* App 根背景白，防止浏览器橡皮筋露黑边 */
-  #app { background-color: #ffffff; }
+  #app { background-attachment: scroll; }
+  .liquid-glass {
+    --lggc-radius: 18px;
+    --lggc-padding: 1.25rem 1.25rem;
+  }
 }
 
 /* ---- ≤480px（手机）：
-     通用控件玻璃化的模糊可收窄以省 GPU，避免小屏卡顿 ---- */
+     通用控件玻璃化的模糊可收窄以省 GPU，避免小屏卡顿。
+     光晕/装饰收敛，避免小屏横向滚动。 ---- */
 @media (max-width: 480px) {
   .liquid-glass,
   .liquid-glass button,
@@ -302,10 +326,17 @@ html, body {
   .step-card textarea,
   .tl-btn,
   .tl-play-btn {
-    backdrop-filter: saturate(150%) blur(6px);
-    -webkit-backdrop-filter: saturate(150%) blur(6px);
+    backdrop-filter: saturate(150%) blur(5px);
+    -webkit-backdrop-filter: saturate(150%) blur(5px);
   }
-  #app { background-color: #ffffff; }
+  .lg-glow { opacity: 0.35; filter: blur(40px); }
+  #app {
+    background:
+      radial-gradient(150% 70% at 20% 0%, rgba(165, 200, 246, 0.5), transparent 60%),
+      linear-gradient(140deg, #eef4fb 0%, #f6f8ec 50%, #fff1ee 100%);
+    background-attachment: scroll;
+  }
 }
+
 
 </style>

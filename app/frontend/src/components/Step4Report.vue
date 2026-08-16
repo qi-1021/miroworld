@@ -2249,8 +2249,11 @@ watch(() => props.reportId, (newId) => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #F8F9FA;
-  font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+  background: rgba(248, 249, 250, 0.55);
+  backdrop-filter: saturate(160%) blur(10px);
+  -webkit-backdrop-filter: saturate(160%) blur(10px);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'PingFang SC',
+    'Noto Sans SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
   overflow: hidden;
 }
 
@@ -3225,7 +3228,7 @@ watch(() => props.reportId, (newId) => {
 
 /* Tool Colors - Orange (Quick Search) */
 .tool-badge.tool-orange {
-  background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);
+  background: linear-gradient(135deg, #f3f7e6 0%, #FFEDD5 100%);
   border-color: #FDBA74;
   color: #C2410C;
 }
@@ -3487,7 +3490,7 @@ watch(() => props.reportId, (newId) => {
   margin: 12px 18px;
   padding: 10px 12px;
   border-left: 3px solid #EF5350;
-  background: #FFF0EF;
+  background: #f3f7e6;
   color: #8C211C;
   font-size: 12px;
   line-height: 1.5;
@@ -4900,7 +4903,7 @@ watch(() => props.reportId, (newId) => {
 
 :deep(.quicksearch-header) {
   padding: 12px 16px;
-  background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);
+  background: linear-gradient(135deg, #f3f7e6 0%, #FFEDD5 100%);
   border-radius: 8px 8px 0 0;
   border: 1px solid #FDBA74;
   border-bottom: none;
