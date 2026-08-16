@@ -422,7 +422,7 @@
       </div>
 
       <!-- 世界模拟（独立模式） -->
-      <div v-if="stats" class="step-card">
+      <div v-if="stats" ref="simSection" class="step-card">
         <div class="card-header">
           <div class="step-info">
             <span class="step-num">03</span>
@@ -897,6 +897,7 @@ const simMsg = ref('')
 const simMsgError = ref(false)
 const simEvents = ref([])
 const simHistory = ref([])
+const simSection = ref(null)
 let simPollTimer = null
 let simPollingId = ''
 let whatIfPollTimer = null
@@ -1970,6 +1971,13 @@ onMounted(() => {
   loadAll()
   loadSimHistory()
   loadSimTimelineEvents()
+
+  // 从推演回放 Step2 进入时，自动滚动到世界模拟模块
+  if (route.query.replay) {
+    setTimeout(() => {
+      simSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 600)
+  }
 })
 
 onUnmounted(() => {
