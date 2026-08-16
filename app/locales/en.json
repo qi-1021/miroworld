@@ -988,6 +988,8 @@
     "reportHistoryTitle": "Simulation History",
     "worldTreeTitle": "World Tree",
     "eventGraphTitle": "Event Causal Graph",
+    "allCharacters": "All Characters",
+    "exportGraph": "Export Graph",
     "eventCount": "{count} events",
     "whatifFlag": "What-if",
     "whatifBtn": "What-if",

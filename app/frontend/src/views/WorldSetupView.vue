@@ -563,27 +563,39 @@
 
         <!-- 事件因果图 -->
         <div v-if="eventGraphData.nodes.length" class="sim-graph">
-          <div class="sim-graph-title">{{ $t('world.eventGraphTitle') }}</div>
-          <svg :viewBox="`0 0 ${eventGraphData.width} ${eventGraphData.height}`" class="sim-graph-svg">
-            <line
-              v-for="(ed, i) in eventGraphData.edges"
-              :key="'e' + i"
-              :x1="graphPosMap[ed.source]?.x"
-              :y1="graphPosMap[ed.source]?.y"
-              :x2="graphPosMap[ed.target]?.x"
-              :y2="graphPosMap[ed.target]?.y"
-              class="sim-graph-edge"
-            />
-            <g
-              v-for="(n, i) in eventGraphData.nodes"
-              :key="'n' + i"
-              :transform="`translate(${n.x},${n.y})`"
-              @click="selectedGraphEvent = n.id"
-            >
-              <circle r="6" class="sim-graph-node" :class="{ active: selectedGraphEvent === n.id }" />
-              <text y="-10" text-anchor="middle" class="sim-graph-label">{{ n.label }}</text>
-            </g>
-          </svg>
+          <div class="sim-graph-title">
+            <span>{{ $t('world.eventGraphTitle') }}</span>
+            <select v-model="graphFilterChar" class="sim-graph-filter">
+              <option value="">{{ $t('world.allCharacters') }}</option>
+              <option v-for="c in graphCharacters" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <button class="mini-btn ghost" @click="graphZoom = Math.max(0.5, graphZoom - 0.2)">−</button>
+            <span class="sim-graph-zoom">{{ Math.round(graphZoom * 100) }}%</span>
+            <button class="mini-btn ghost" @click="graphZoom = Math.min(2, graphZoom + 0.2)">+</button>
+            <button class="mini-btn ghost" @click="exportGraph">{{ $t('world.exportGraph') }}</button>
+          </div>
+          <div class="sim-graph-zoom-wrap" :style="{ transform: 'scale(' + graphZoom + ')', transformOrigin: 'top left' }">
+            <svg :viewBox="`0 0 ${eventGraphData.width} ${eventGraphData.height}`" class="sim-graph-svg">
+              <line
+                v-for="(ed, i) in eventGraphData.edges"
+                :key="'e' + i"
+                :x1="graphPosMap[ed.source]?.x"
+                :y1="graphPosMap[ed.source]?.y"
+                :x2="graphPosMap[ed.target]?.x"
+                :y2="graphPosMap[ed.target]?.y"
+                class="sim-graph-edge"
+              />
+              <g
+                v-for="(n, i) in eventGraphData.nodes"
+                :key="'n' + i"
+                :transform="`translate(${n.x},${n.y})`"
+                @click="selectedGraphEvent = n.id"
+              >
+                <circle r="6" class="sim-graph-node" :class="{ active: selectedGraphEvent === n.id }" />
+                <text y="-10" text-anchor="middle" class="sim-graph-label">{{ n.label }}</text>
+              </g>
+            </svg>
+          </div>
           <div v-if="selectedGraphEvent" class="sim-graph-detail">
             <template v-for="(n, i) in eventGraphData.nodes" :key="i">
               <div v-if="n.id === selectedGraphEvent" class="sim-graph-detail-inner">
@@ -1138,7 +1150,9 @@ const stepSummaries = computed(() => {
 
 // 事件因果图：根据事件 links 生成节点/边，按 step 分层布局
 const eventGraphData = computed(() => {
-  const events = simEvents.value || []
+  const events = (simEvents.value || []).filter(
+    e => !graphFilterChar.value || e.character_name === graphFilterChar.value
+  )
   if (!events.length) return { nodes: [], edges: [], width: 600, height: 300 }
   const nodes = []
   const byId = new Map()
@@ -1185,6 +1199,13 @@ const graphPosMap = computed(() => {
   return m
 })
 const selectedGraphEvent = ref('')
+const graphFilterChar = ref('')
+const graphZoom = ref(1)
+const graphCharacters = computed(() => {
+  const set = new Set()
+  ;(simEvents.value || []).forEach(e => { if (e.character_name) set.add(e.character_name) })
+  return Array.from(set)
+})
 
 // 事件回放/时间轴播放器
 const playbackIndex = ref(0)
@@ -2205,6 +2226,23 @@ async function continueSimulation(sim) {
   } finally {
     simStarting.value = false
   }
+}
+
+function exportGraph() {
+  const data = {
+    nodes: eventGraphData.value.nodes.map(n => ({ id: n.id, label: n.label, step: n.step, character: n.event?.character_name })),
+    edges: eventGraphData.value.edges,
+  }
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `event-graph-${Date.now()}.json`
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 async function batchWhatIf(sim) {
@@ -3231,10 +3269,30 @@ onUnmounted(() => {
   overflow-x: auto;
 }
 .sim-graph-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   font-size: 12px;
   font-weight: 700;
   color: #10203a;
   margin-bottom: 8px;
+}
+.sim-graph-filter {
+  border: 1px solid #E0E0E0;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 11px;
+}
+.sim-graph-zoom {
+  font-size: 11px;
+  color: #666;
+  font-family: 'JetBrains Mono', monospace;
+  min-width: 40px;
+  text-align: center;
+}
+.sim-graph-zoom-wrap {
+  transition: transform 0.2s ease;
 }
 .sim-graph-svg {
   width: 100%;
