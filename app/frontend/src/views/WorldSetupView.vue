@@ -701,6 +701,7 @@
           <div class="world-tree-title">🌳 {{ $t('world.worldTreeTitle') }}</div>
           <div v-for="root in worldTree" :key="root.simulation_id" class="tree-node root">
             <div class="tree-node-row">
+              <button class="mini-btn ghost" @click="toggleRoot(root.simulation_id)">{{ collapsedRoots.has(root.simulation_id) ? '▶' : '▼' }}</button>
               <span class="tree-node-name">{{ formatTime(root.created_at) }}</span>
               <span class="badge" :class="root.status">{{ statusLabel(root.status) }}</span>
               <span class="tree-node-count">{{ $t('world.eventCount', { count: (root.result || {}).event_count || 0 }) }}</span>
@@ -710,7 +711,8 @@
               <button v-if="root.status === 'completed' && !((root.result || {}).meta || {}).whatif_question" class="mini-btn" @click="startWhatIf(root)">{{ $t('world.whatifBtn') }}</button>
               <button v-if="root.status === 'completed' && !((root.result || {}).meta || {}).whatif_question" class="mini-btn ghost" @click="batchWhatIf(root)">{{ $t('world.batchWhatif') }}</button>
             </div>
-            <div v-for="child in root.children" :key="child.simulation_id" class="tree-node child">
+            <div v-if="!collapsedRoots.has(root.simulation_id)">
+              <div v-for="child in root.children" :key="child.simulation_id" class="tree-node child">
               <div class="tree-node-row">
                 <span class="tree-branch">└─</span>
                 <span class="tree-node-name">{{ child.result?.meta?.whatif_question || formatTime(child.created_at) }}</span>
@@ -719,6 +721,7 @@
                 <button class="mini-btn ghost" @click="loadSimulation(child)">{{ $t('world.loadSimulation') }}</button>
                 <button class="mini-btn" :disabled="simStarting" @click="continueSimulation(child)">{{ $t('world.continueSimulation') }}</button>
                 <button class="mini-btn ghost" @click="exportSimulation(child)">{{ $t('world.exportSimulation') }}</button>
+              </div>
               </div>
             </div>
           </div>
@@ -1242,6 +1245,12 @@ const graphPosMap = computed(() => {
   return m
 })
 const selectedGraphEvent = ref('')
+const collapsedRoots = ref(new Set())
+function toggleRoot(id) {
+  const next = new Set(collapsedRoots.value)
+  if (next.has(id)) next.delete(id); else next.add(id)
+  collapsedRoots.value = next
+}
 const graphFilterChar = ref('')
 const graphZoom = ref(1)
 const graphCharacters = computed(() => {
