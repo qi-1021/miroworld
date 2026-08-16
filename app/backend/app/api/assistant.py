@@ -8,6 +8,7 @@
 """
 
 import json
+import os
 
 from flask import jsonify, request
 
@@ -386,6 +387,18 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
             "target_step": target_step,
         }
 
+    if action == "export_all_worldlines":
+        from ..services.world_simulation import WorldSimulationService
+        sims = WorldSimulationService.list_simulations(project_id, limit=1000)
+        for s in sims:
+            ev_path = s.get("events_path") or ""
+            if ev_path and os.path.exists(ev_path):
+                with open(ev_path, "r", encoding="utf-8") as f:
+                    s["events"] = json.load(f)
+            else:
+                s["events"] = []
+        return {"simulations": sims}
+
     if action == "merge_worldlines":
         from ..services.world_simulation import WorldSimulationService
         base_id = str(params.get("base_simulation_id") or params.get("simulation_id") or "").strip()
@@ -499,6 +512,7 @@ _SYSTEM_PROMPT = (
     "rollback_worldline(simulation_id, target_step, additional_steps, goal)、"
     "update_worldline_meta(simulation_id, name, note, tags)、"
     "merge_worldlines(base_simulation_id, branch_simulation_id, label)、"
+    "export_all_worldlines()、"
     "get_worldline_summary(simulation_id)、"
     "get_project_status()。"
     "否则输出普通中文回答，简洁、分点，不超过 400 字。"

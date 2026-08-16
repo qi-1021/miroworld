@@ -732,6 +732,7 @@
         <div v-if="simHistory.length" class="sim-history">
           <div class="sim-history-title">
             <span>{{ $t('world.reportHistoryTitle') }}</span>
+            <button class="mini-btn ghost" @click="exportAllWorldlines">{{ $t('world.exportAllWorldlines') }}</button>
             <button v-if="simHistory.length >= 2" class="mini-btn ghost" @click="toggleCompareMode">
               {{ compareMode ? $t('world.cancel') : $t('world.compareWorldlines') }}
             </button>
@@ -2441,6 +2442,24 @@ function exportCompareReport() {
   a.style.display = 'none'
   document.body.appendChild(a); a.click(); a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+async function exportAllWorldlines() {
+  try {
+    const res = await runAssistantAction(projectId, 'export_all_worldlines')
+    const sims = res?.data?.action_result?.simulations || []
+    const blob = new Blob([JSON.stringify(sims, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `worldlines-${projectId}.json`
+    a.style.display = 'none'
+    document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (e) {
+    simMsg.value = e?.message || t('world.msgUnknownError')
+    simMsgError.value = true
+  }
 }
 
 function extractCharacters(events) {
