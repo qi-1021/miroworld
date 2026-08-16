@@ -2,8 +2,12 @@ import axios from 'axios'
 import i18n from '../i18n'
 
 // 创建axios实例
+// baseURL 默认留空（相对路径）：
+// - 开发模式：Vite 代理 /api → localhost:5001（见 vite.config.js）
+// - 生产模式：Flask 同源托管前端 dist，/api 直接命中
+// - 手机隧道：浏览器访问的是公网域名，绝不能写死 localhost（否则手机访问会 network error）
 const service = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '',
   timeout: 300000, // 5分钟超时（本体生成可能需要较长时间）
   // 注意：不要在此默认设置 Content-Type：
   // - 普通 JSON body 由 axios 自动加 application/json
