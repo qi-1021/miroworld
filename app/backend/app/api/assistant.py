@@ -219,6 +219,7 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
                         round_id=f"{c.conflict_id}_m{len(c.defense_rounds) + 1}",
                         role="user", content=note[:2000], created_at=now,
                     ))
+            c.follow_up_effect = c.derive_follow_up_effect() or c.follow_up_effect
             break
         if updated is None:
             raise ValueError("冲突不存在")

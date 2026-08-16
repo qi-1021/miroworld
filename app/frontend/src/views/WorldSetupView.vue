@@ -260,6 +260,14 @@
 
             <div class="conflict-actions">
               <button
+                class="mini-btn primary refute-btn"
+                :class="{ active: c.status === 'justified' }"
+                :disabled="justifyingId === c.conflict_id"
+                @click="toggleJustify(c)"
+              >
+                ⚔️ {{ c.justifyOpen ? $t('world.justifyCancel') : $t('world.refuteConflict') }}
+              </button>
+              <button
                 v-for="s in ['accepted', 'dismissed']"
                 :key="s"
                 class="mini-btn"
@@ -270,12 +278,11 @@
                 {{ s === 'accepted' ? $t('world.acceptBg') : $t('world.dismissConflict') }}
               </button>
               <button
+                v-if="c.defense_rounds && c.defense_rounds.length"
                 class="mini-btn"
-                :class="{ active: c.status === 'justified' }"
-                :disabled="justifyingId === c.conflict_id"
-                @click="toggleJustify(c)"
+                @click="toggleConflictHistory(c)"
               >
-                {{ c.justifyOpen ? $t('world.justifyCancel') : $t('world.justifyConflict') }}
+                {{ c.historyOpen ? $t('world.defenseHistoryHide') : $t('world.defenseHistoryShow') }}
               </button>
             </div>
             <div v-if="c.justifyOpen" class="conflict-justify">
@@ -297,7 +304,11 @@
               <span class="crn-label">{{ $t('world.justifyNoteLabel') }}</span>
               <span class="crn-text">{{ c.resolution_note }}</span>
             </div>
-            <div v-if="c.defense_rounds && c.defense_rounds.length" class="conflict-defense-history">
+            <div v-if="c.follow_up_effect" class="conflict-followup">
+              <span class="cfu-label">{{ $t('world.followUpEffectLabel') }}</span>
+              <span class="cfu-text">{{ c.follow_up_effect }}</span>
+            </div>
+            <div v-if="c.defense_rounds && c.defense_rounds.length && (c.historyOpen || !c.defense_rounds.some(r => r.role === 'assistant'))" class="conflict-defense-history">
               <div class="cdh-title">{{ $t('world.defenseHistory') }}</div>
               <div
                 v-for="(r, ri) in c.defense_rounds"
@@ -305,9 +316,15 @@
                 class="defense-round"
                 :class="{ user: r.role === 'user', assistant: r.role === 'assistant' }"
               >
-                <span class="defense-role">{{ r.role === 'user' ? $t('world.defenseUser') : $t('world.defenseAssistant') }}</span>
-                <span v-if="r.verdict" class="defense-verdict">{{ defenseVerdictLabel(r.verdict) }}</span>
+                <div class="defense-round-head">
+                  <span class="defense-role">{{ r.role === 'user' ? $t('world.defenseUser') : $t('world.defenseAssistant') }}</span>
+                  <span v-if="r.verdict" class="defense-verdict">{{ defenseVerdictLabel(r.verdict) }}</span>
+                </div>
                 <p class="defense-content">{{ r.content }}</p>
+                <div v-if="r.effect" class="defense-effect">
+                  <span class="de-label">{{ $t('world.effectLabel') }}</span>
+                  <span class="de-text">{{ r.effect }}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -710,6 +727,7 @@ import {
   getWorldSettings,
   detectWorldConflicts,
   getWorldConflicts,
+  getConflictHistory,
   updateConflictStatus,
   searchWorld,
   startWorldSimulation,
@@ -1338,8 +1356,40 @@ async function setConflictStatus(conflict, status) {
   try {
     await updateConflictStatus(projectId, conflict.conflict_id, status, conflict.resolution_note || '')
     conflict.status = status
+    await refreshConflictDetail(conflict)
   } catch (e) {
     console.error('更新冲突状态失败', e)
+  }
+}
+
+// ---------------- 多轮辩解：完整历史加载（含每轮 effect 与 follow_up_effect） ----
+
+/**
+ * 从后端拉取单条冲突的完整多轮辩解历史，并把 effect / follow_up_effect 合并回
+ * 本地 conflict 对象，供卡片展示。不会失败时不影响主流程。
+ */
+async function refreshConflictDetail(conflict) {
+  try {
+    const res = await getConflictHistory(projectId, conflict.conflict_id)
+    const detail = res.conflict
+    if (!detail) return
+    conflict.defense_rounds = detail.defense_rounds || conflict.defense_rounds || []
+    conflict.follow_up_effect = detail.follow_up_effect || conflict.follow_up_effect || ''
+    // 逐轮补齐 effect（assistant 轮）
+    for (const r of conflict.defense_rounds) {
+      if (r && r.role === 'assistant' && r.effect && !r._effectShown) {
+        r._effectShown = true
+      }
+    }
+  } catch (e) {
+    console.error('加载辩解历史失败', e)
+  }
+}
+
+async function toggleConflictHistory(conflict) {
+  conflict.historyOpen = !conflict.historyOpen
+  if (conflict.historyOpen) {
+    await refreshConflictDetail(conflict)
   }
 }
 
@@ -1396,9 +1446,10 @@ async function submitJustify(conflict) {
   justifyingId.value = conflict.conflict_id
   try {
     await updateConflictStatus(projectId, conflict.conflict_id, 'justified', note)
-    conflict.status = 'justified'
     conflict.resolution_note = note
     conflict.justifyOpen = false
+    conflict.historyOpen = true  // 自动展开历史，立即看到本轮裁定与效果
+    await refreshConflictDetail(conflict)
   } catch (e) {
     console.error('提交自定义辩解失败', e)
   } finally {
@@ -2539,6 +2590,112 @@ onUnmounted(() => {
 }
 .crn-text {
   color: #4A044E;
+}
+
+/* ---- 辩驳：明显按钮 ---- */
+.refute-btn {
+  background: #a1c50a;
+  border-color: #a1c50a;
+  color: #fff;
+  font-weight: 700;
+}
+.refute-btn:hover:not(:disabled):not(.active) {
+  background: #8fae09;
+  border-color: #8fae09;
+}
+.refute-btn.active {
+  background: #6f8a06;
+  border-color: #6f8a06;
+}
+
+/* ---- 辩驳：后续影响（follow_up_effect）---- */
+.conflict-followup {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #E8F5E9;
+  border: 1px solid #C8E6C9;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.cfu-label {
+  font-weight: 700;
+  color: #1B5E20;
+  margin-right: 6px;
+}
+.cfu-text {
+  color: #224B0E;
+}
+
+/* ---- 辩驳：历史时间线 ---- */
+.conflict-defense-history {
+  margin-top: 12px;
+  border-top: 1px dashed #E0E0E0;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cdh-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 2px;
+}
+.defense-round {
+  border: 1px solid #E3E3E3;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  background: #FAFAFA;
+}
+.defense-round.user {
+  border-left: 3px solid #333;
+  background: #F5F5F5;
+}
+.defense-round.assistant {
+  border-left: 3px solid #a1c50a;
+  background: #FCFDF5;
+}
+.defense-round-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.defense-role {
+  font-weight: 700;
+  color: #333;
+  font-size: 11px;
+}
+.defense-verdict {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: #EEEEEE;
+  color: #555;
+}
+.defense-content {
+  margin: 0;
+  color: #333;
+}
+.defense-effect {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: #FFF3E0;
+  border: 1px solid #FFE0B2;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.de-label {
+  font-weight: 700;
+  color: #E65100;
+  margin-right: 6px;
+}
+.de-text {
+  color: #BF360C;
 }
 
 /* 检索 */

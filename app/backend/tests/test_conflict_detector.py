@@ -8,6 +8,7 @@ from app.services.conflict_detector import (
     ConflictDetector,
     ConflictItem,
     ConflictReport,
+    DefenseRound,
     FactItem,
     save_conflict_report,
     load_conflict_report,
@@ -17,7 +18,7 @@ from app.services.conflict_detector import (
 class FakeLLM:
     """模拟 LLM：按提示词内容返回预设的 JSON 响应"""
 
-    def __init__(self, extract_facts=None, compare_conflicts=None):
+    def __init__(self, extract_facts=None, compare_conflicts=None, defense=None):
         self.extract_facts = extract_facts or {
             "facts": [
                 {"subject": "龙裔王国", "predicate": "建于", "object": "三百年前",
@@ -41,6 +42,13 @@ class FakeLLM:
                 }
             ]
         }
+        # defense: 一个可迭代/单条返回给 evaluate_defense 的裁定 JSON
+        self._defense = defense or {
+            "verdict": "defense_accepted",
+            "reasoning": "创作者解释成立",
+            "suggestion": "维持正文现状，冲突标记为已解决并抑制后续报告",
+            "reply": "辩解成立，感谢说明。",
+        }
         self.calls = []
 
     def chat_json(self, messages, temperature=0.3, max_tokens=8192, **kwargs):
@@ -50,6 +58,11 @@ class FakeLLM:
             return self.compare_conflicts
         if "抽取**明确的设定事实**" in content or "抽取明确的设定事实" in content:
             return self.extract_facts
+        if "创作者最新辩解" in content and "此前的辩解记录" in content:
+            d = self._defense
+            if isinstance(d, list) and d:
+                d = d.pop(0)
+            return d
         return {"facts": []}
 
 
@@ -216,3 +229,114 @@ def test_detect_with_progress_reports_phases():
     assert any("背景" in m for m, _ in phases)
     assert any("正文" in m for m, _ in phases)
     assert phases[-1][1] == 100
+
+
+def _make_conflict(**kw):
+    kwargs = dict(
+        conflict_id="c1", topic="龙裔王国的建国时间", conflict_type="time_conflict",
+        background_fact="建于三百年前", story_fact="建于五百年前",
+        severity="high", suggestion="以背景为准修改为三百年前",
+    )
+    kwargs.update(kw)
+    return ConflictItem(**kwargs)
+
+
+# ---------------------------------------------------------------- 多轮辩反驳
+
+def test_evaluate_defense_stores_verdict_and_effect():
+    llm = FakeLLM(defense={
+        "verdict": "defense_accepted",
+        "reasoning": "因为是寓言层设定，不构成真矛盾",
+        "suggestion": "维持正文现状，标记已解决并抑制后续报告",
+        "reply": "辩解成立，谢谢说明。",
+    })
+    detector = ConflictDetector(llm_client=llm)
+    c = _make_conflict()
+    r = detector.evaluate_defense(c, "正文是寓言层，时间线不同维度")
+    assert r.role == "assistant"
+    assert r.verdict == "defense_accepted"
+    assert r.effect == "维持正文现状，标记已解决并抑制后续报告"
+    assert r.content == "辩解成立，谢谢说明。"
+    assert r.created_at
+
+
+def test_evaluate_defense_normalizes_unknown_verdict():
+    llm = FakeLLM(defense={"verdict": "weird", "reply": "裁定如下", "suggestion": ""})
+    detector = ConflictDetector(llm_client=llm)
+    r = detector.evaluate_defense(_make_conflict(), "某辩解")
+    assert r.verdict == "defense_partial"
+
+
+def test_multi_round_refutation_history_timeline():
+    """连续多轮 user→assistant 辩解，逐轮产生历史记录；后续轮能看到此前轮。"""
+    llm = FakeLLM(defense=[
+        {"verdict": "defense_rejected",
+         "reasoning": "第一轮理由不成立",
+         "suggestion": "仍以背景为准，需改正文",
+         "reply": "第一轮裁定：不成立。"},
+        {"verdict": "defense_partial",
+         "reasoning": "部分成立",
+         "suggestion": "仍有时差需修正",
+         "reply": "第二轮裁定：部分成立。"},
+        {"verdict": "defense_accepted",
+         "reasoning": "新增证据补充到位",
+         "suggestion": "矛盾已解释，宣告解决",
+         "reply": "第三轮裁定：成立。"},
+    ])
+    detector = ConflictDetector(llm_client=llm)
+
+    # 手工模拟 world.py PATCH 流程：每一轮 = user note + evaluate_defense 追加
+    c = _make_conflict()
+    for note in ("理由一：视为寓言层", "理由二：纪元不同", "理由三：编辑部纪要已统一"):
+        c.defense_rounds.append(DefenseRound(
+            round_id=f"{c.conflict_id}_u{len(c.defense_rounds) + 1}",
+            role="user", content=note, created_at="t",
+        ))
+        c.defense_rounds.append(detector.evaluate_defense(c, note))
+
+    # 共 3 user + 3 assistant = 6 轮
+    roles = [r.role for r in c.defense_rounds]
+    assert roles == ["user", "assistant", "user", "assistant", "user", "assistant"]
+    verdicts = [r.verdict for r in c.defense_rounds if r.role == "assistant"]
+    assert verdicts == ["defense_rejected", "defense_partial", "defense_accepted"]
+    # 每轮 assistant 都带 effect
+    effects = [r.effect for r in c.defense_rounds if r.role == "assistant"]
+    assert effects == ["仍以背景为准，需改正文", "仍有时差需修正", "矛盾已解释，宣告解决"]
+    # last_verdict 反映最近一轮
+    assert c.last_verdict == "defense_accepted"
+    assert c.last_effect == "矛盾已解释，宣告解决"
+
+
+def test_derive_follow_up_effect_prefers_last_effect_then_status():
+    # 无 assistant 轮时，依据 status 兜底
+    eff = ConflictItem(
+        conflict_id="x", topic="t", conflict_type="other",
+        background_fact="b", story_fact="s", status="justified",
+        resolution_note="正文为寓言层，不与背景同维",
+    )
+    assert eff.follow_up_effect == ""
+    assert eff.derive_follow_up_effect() == "正文为寓言层，不与背景同维"
+
+    # 最近 assistant 轮自带 effect → follow_up_effect 取其 effect
+    c2 = _make_conflict(status="open")
+    c2.defense_rounds.append(DefenseRound(
+        round_id="r_u1", role="user", content="理由", created_at="t"))
+    c2.defense_rounds.append(DefenseRound(
+        round_id="r_a1", role="assistant", content="裁定", verdict="defense_rejected",
+        effect="以背景为准修改为三百年前", created_at="t"))
+    assert c2.derive_follow_up_effect() == "以背景为准修改为三百年前"
+
+
+def test_follow_up_effect_round_trips_in_json():
+    c = _make_conflict(status="justified", follow_up_effect="维持正文现状",
+                       resolution_note="正文为寓言层")
+    c.defense_rounds.append(DefenseRound(
+        round_id="r_a1", role="assistant", content="裁定", verdict="defense_accepted",
+        effect="冲突已解决", created_at="t"))
+    data = c.to_dict()
+    restored = ConflictItem.from_dict(json.loads(json.dumps(data)))
+    assert restored.follow_up_effect == "维持正文现状"
+    assert restored.defense_rounds[0].effect == "冲突已解决"
+    assert restored.defense_rounds[0].verdict == "defense_accepted"
+    # 往返完整一致
+    assert ConflictItem.from_dict(json.loads(json.dumps(restored.to_dict()))).to_dict() == data

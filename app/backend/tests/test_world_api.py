@@ -160,6 +160,73 @@ def test_conflicts_none_when_no_report(client):
     assert rv.get_json()["report"] is None
 
 
+def test_conflict_history_endpoint(client):
+    """GET /conflicts/<id>/history 返回单条冲突的完整多轮辩解历史与影响。"""
+    from app.services.conflict_detector import (
+        ConflictItem, ConflictReport, DefenseRound, save_conflict_report,
+    )
+    report = ConflictReport(
+        project_id="p1",
+        conflicts=[ConflictItem(
+            conflict_id="c1", topic="建国时间", conflict_type="time_conflict",
+            background_fact="三百年前", story_fact="五百年前",
+            status="justified", effective=True, follow_up_effect="维持正文现状",
+            defense_rounds=[
+                DefenseRound(round_id="r_u1", role="user", content="视为寓言层", created_at="t1"),
+                DefenseRound(round_id="r_a1", role="assistant", content="裁定成立",
+                             verdict="defense_accepted", effect="矛盾已解决",
+                             created_at="t2"),
+            ],
+        )],
+    )
+    save_conflict_report("p1", report)
+
+    # 命中
+    rv = client.get("/api/world/p1/conflicts/c1/history")
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body["success"] is True
+    c = body["conflict"]
+    assert c["conflict_id"] == "c1"
+    assert c["status"] == "justified"
+    assert c["effective"] is True
+    assert c["follow_up_effect"] == "维持正文现状"
+    rounds = c["defense_rounds"]
+    assert len(rounds) == 2
+    assert rounds[0]["role"] == "user"
+    assert rounds[1]["verdict"] == "defense_accepted"
+    assert rounds[1]["effect"] == "矛盾已解决"
+
+    # 不存在的冲突 → 404
+    rv = client.get("/api/world/p1/conflicts/nope/history")
+    assert rv.status_code == 404
+
+    # 无报告项目 → 404
+    rv = client.get("/api/world/p2/conflicts/c1/history")
+    assert rv.status_code == 404
+
+
+def test_conflict_history_falls_back_to_derived_effect(client):
+    """老数据无显式 follow_up_effect 时，history 接口按状态兜底推导。"""
+    from app.services.conflict_detector import (
+        ConflictItem, ConflictReport, save_conflict_report,
+    )
+    report = ConflictReport(
+        project_id="p1",
+        conflicts=[ConflictItem(
+            conflict_id="c1", topic="建国时间", conflict_type="time_conflict",
+            background_fact="三百年前", story_fact="五百年前",
+            status="justified", effective=True,
+            resolution_note="正文为寓言层，不与背景同维",
+        )],
+    )
+    save_conflict_report("p1", report)
+    rv = client.get("/api/world/p1/conflicts/c1/history")
+    body = rv.get_json()
+    assert body["success"] is True
+    assert body["conflict"]["follow_up_effect"] == "正文为寓言层，不与背景同维"
+
+
 def test_delete_world_data(client):
     client.post("/api/world/p1/input", json={"background": BG})
     rv = client.delete("/api/world/p1")

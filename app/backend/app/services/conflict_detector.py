@@ -143,11 +143,15 @@ class DefenseRound:
 
     role: 'user'（创作者论点）| 'assistant'（LLM 裁定）
     verdict: ''（user 轮）| defense_accepted | defense_rejected | defense_partial
+    effect: 本轮裁定的实际影响说明（assistant 轮存 LLM 的 suggestion：
+            该裁定对故事/设定的具体影响，如“应按背景将正文改为三百年前”）。
+            供前端在历史时间线上展示本轮辩解“产生了什么效果”。
     """
     round_id: str
     role: str  # 'user' | 'assistant'
     content: str
     verdict: str = ""
+    effect: str = ""
     created_at: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
@@ -175,6 +179,31 @@ class ConflictItem:
     resolution_note: str = ""  # 用户自定义辩解/裁定说明（justified 时必填）
     defense_rounds: List[DefenseRound] = field(default_factory=list)  # 多轮辩解记录
     effective: bool = False  # 裁定已生效：后续检测不再重复报告该冲突
+    follow_up_effect: str = ""  # 聚合后的“后续影响”：最近一轮裁定生效后，故事/正文还需做什么
+
+    @property
+    def last_effect(self) -> str:
+        """最近一条助手裁定的 effect（无则空串）"""
+        for r in reversed(self.defense_rounds):
+            if r.role == "assistant" and r.effect:
+                return r.effect
+        return ""
+
+    def derive_follow_up_effect(self) -> str:
+        """依据最近裁定与状态，推导一条面向创作者的“后续影响”说明。
+
+        优先级：最近助手裁定自带 effect > 根据 status 的兜底文案。
+        """
+        effect = self.last_effect
+        if effect:
+            return effect
+        if self.status == "justified":
+            return (self.resolution_note or "" )[:400] or "辩解已成立，后续检测不再重复报告该冲突。"
+        if self.status in ("accepted", "dismissed"):
+            return "此项冲突已被采纳处理，后续检测不再重复报告。"
+        if self.last_verdict and self.last_verdict == "defense_rejected":
+            return "辩解不成立：应以背景设定为准，按要求修改正文。"
+        return ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -514,11 +543,15 @@ class ConflictDetector:
         reply = str(
             result.get("reply") or result.get("reasoning") or "已收到辩解并给出裁定。"
         ).strip()
+        effect = str(
+            result.get("suggestion") or result.get("reasoning") or ""
+        ).strip()
         return DefenseRound(
             round_id=uuid.uuid4().hex[:12],
             role="assistant",
             content=reply[:2000],
             verdict=verdict,
+            effect=effect[:600],
             created_at=datetime.now().isoformat(timespec="seconds"),
         )
 
@@ -580,6 +613,17 @@ def load_conflict_report(project_id: str) -> Optional[ConflictReport]:
     except Exception as e:
         logger.error(f"读取冲突报告失败: project={project_id}, err={e}")
         return None
+
+
+def load_conflict(project_id: str, conflict_id: str) -> Optional[ConflictItem]:
+    """读取某条冲突（含完整多轮辩解历史），不存在则返回 None。"""
+    report = load_conflict_report(project_id)
+    if report is None:
+        return None
+    for c in report.conflicts:
+        if c.conflict_id == conflict_id:
+            return c
+    return None
 
 
 def load_effective_resolutions(project_id: str) -> List[Dict[str, Any]]:

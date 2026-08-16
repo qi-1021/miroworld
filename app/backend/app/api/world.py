@@ -29,6 +29,7 @@ from ..services.conflict_detector import (
     DefenseRound,
     save_conflict_report,
     load_conflict_report,
+    load_conflict,
 )
 from ..utils.llm_client import LLMClient
 
@@ -722,6 +723,39 @@ def get_conflicts(project_id: str):
     return jsonify({"success": True, "report": report.to_dict()})
 
 
+@world_bp.route('/<project_id>/conflicts/<conflict_id>/history', methods=['GET'])
+def get_conflict_history(project_id: str, conflict_id: str):
+    """获取单条冲突的完整多轮辩解历史（含每轮 effect 与聚合后的 follow_up_effect）。
+
+    返回结构：
+    {
+      success: true,
+      conflict: {
+        conflict_id, topic, status, effective, follow_up_effect,
+        defense_rounds: [ { round_id, role, content, verdict, effect, created_at }, ... ]
+      }
+    }
+    """
+    conflict = load_conflict(project_id, conflict_id)
+    if conflict is None:
+        return jsonify({"success": False, "error": "冲突不存在"}), 404
+
+    data = conflict.to_dict()
+    if data.get("defense_rounds"):
+        for r in data["defense_rounds"]:
+            if isinstance(r, dict) and set(r) - {"round_id", "role", "content",
+                                               "verdict", "effect", "created_at"}:
+                data["defense_rounds"] = [
+                    {k: r[k] for k in ("round_id", "role", "content",
+                                       "verdict", "effect", "created_at") if k in r}
+                    for r in data["defense_rounds"]
+                ]
+                break
+    # 兜底：若尚未显式存储 follow_up_effect，按状态推导一份
+    data["follow_up_effect"] = data.get("follow_up_effect") or conflict.derive_follow_up_effect()
+    return jsonify({"success": True, "conflict": data})
+
+
 @world_bp.route('/<project_id>/conflicts/<conflict_id>', methods=['PATCH'])
 def update_conflict_status(project_id: str, conflict_id: str):
     """更新冲突处理状态（open/accepted/dismissed/justified），可附自定义辩解说明。
@@ -796,6 +830,8 @@ def update_conflict_status(project_id: str, conflict_id: str):
                     c.status = "open"
                     c.effective = False
                     c.resolution_note = note or c.resolution_note or ""
+                # 依据最近一轮裁定与状态，聚合/更新“后续影响”（供前端展示）
+                c.follow_up_effect = c.derive_follow_up_effect() or c.follow_up_effect
                 updated = True
                 break
         if not updated:

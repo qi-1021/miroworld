@@ -86,6 +86,18 @@ export function getWorldConflicts(projectId) {
 }
 
 /**
+ * 获取单条冲突的完整多轮辩解历史（含每轮 effect 与聚合后的 follow_up_effect）
+ * @param {String} projectId
+ * @param {String} conflictId
+ */
+export function getConflictHistory(projectId, conflictId) {
+  return service({
+    url: `/api/world/${projectId}/conflicts/${conflictId}/history`,
+    method: 'get'
+  })
+}
+
+/**
  * 更新冲突处理状态
  * @param {String} projectId
  * @param {String} conflictId
