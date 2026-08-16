@@ -36,6 +36,7 @@
         {{ extracting ? extractingLabel() : $t('timeline.extract') }}
       </button>
       <button v-if="!extracting && !loading" class="tl-btn ghost" :title="$t('timeline.forceExtractHint')" @click="runExtract('force')">{{ $t('timeline.forceExtract') }}</button>
+      <button v-if="!loading" class="tl-btn ghost" :title="$t('timeline.export')" @click="openExport">{{ $t('timeline.export') }} 📤</button>
       <div class="tl-type-select" :class="{ open: displayPickerOpen }">
         <button class="tl-btn ghost type-trigger" @click="displayPickerOpen = !displayPickerOpen" :title="$t('timeline.displayMode')">
           <span class="type-trigger-label">{{ $t('timeline.displayMode') }}：{{ displayModeLabel }}</span>
@@ -168,6 +169,48 @@
           :class="{ active: activeThread === th.key }"
           @click="activeThread = th.key"
         >{{ th.label }}</button>
+      </div>
+
+      <!-- 导出弹窗 -->
+      <div v-if="exportOpen" class="tl-modal-mask" @click.self="exportOpen = false">
+        <div class="tl-modal tl-export-modal">
+          <div class="tl-modal-head">
+            <span class="tl-modal-type">{{ $t('timeline.export') }}</span>
+            <button class="tl-modal-close" @click="exportOpen = false">×</button>
+          </div>
+          <div class="tl-modal-body">
+            <div class="tl-export-row">
+              <label class="f-k">{{ $t('timeline.exportSource') }}</label>
+              <select v-model="exportSource" class="tl-edit-med">
+                <option value="story">{{ $t('timeline.sourceStory') }}</option>
+                <option value="bg">{{ $t('timeline.sourceBg') }}</option>
+              </select>
+              <label class="f-k">{{ $t('timeline.exportFormat') }}</label>
+              <select v-model="exportFormat" class="tl-edit-med">
+                <option value="md">Markdown</option>
+                <option value="json">JSON</option>
+                <option value="csv">CSV</option>
+              </select>
+            </div>
+            <div class="tl-export-row tl-export-actions">
+              <button class="tl-btn ghost" @click="exportSelectAll(true)">{{ $t('timeline.exportAll') }}</button>
+              <button class="tl-btn ghost" @click="exportSelectAll(false)">{{ $t('timeline.exportNone') }}</button>
+              <button class="tl-btn ghost" @click="exportSelectFiltered()">{{ $t('timeline.exportOnlyFiltered') }}</button>
+            </div>
+            <div class="tl-export-threads">
+              <div class="tl-export-count">{{ $t('timeline.selectedCount', { n: exportSelectedCount }) }}</div>
+              <label v-for="th in presentThreads" :key="th.key" class="tl-export-item">
+                <input type="checkbox" :value="th.key" v-model="exportSelArr" />
+                <span>{{ th.label }}</span>
+              </label>
+              <div v-if="!presentThreads.length" class="tl-export-empty">{{ $t('timeline.exportEmpty') }}</div>
+            </div>
+          </div>
+          <div class="tl-modal-foot">
+            <button class="tl-btn primary" :disabled="exportLoading || !exportSelectedCount" @click="doExport">{{ exportLoading ? $t('timeline.exporting') : $t('timeline.export') }}</button>
+            <button class="tl-btn ghost" @click="exportOpen = false">{{ $t('timeline.cancel') }}</button>
+          </div>
+        </div>
       </div>
 
       <!-- 线性模式：时间条 + 事件卡列表 -->
@@ -686,7 +729,8 @@ import {
   deleteTimelineEvent,
   mergeTimelineEvents,
   generateTimelineCharacters,
-  batchTimelineEvents
+  batchTimelineEvents,
+  exportTimeline
 } from '../api/timeline'
 
 const props = defineProps({ projectId: { type: String, required: true } })
@@ -703,6 +747,77 @@ const structureOpen = ref(false)
 const cardRefs = {}
 const editDraft = ref({ summary: '', age: null, sort_lower: null, location_name: '', structure_type: 'linear', parent_event_id: '', linked_event_ids: [] })
 const structureTypes = ['linear', 'parallel', 'tree', 'network', 'meta']
+// 导出状态
+const exportOpen = ref(false)
+const exportLoading = ref(false)
+const exportFormat = ref('md')
+const exportSource = ref('story')
+const exportSelMap = ref({})       // thread_key -> true
+// 双向绑定数组（导出弹窗复选框）
+const exportSelArr = computed({
+  get: () => presentThreads.value.map(x => x.key).filter(k => exportSelMap.value[k]),
+  set: (arr) => {
+    const next = {}
+    presentThreads.value.forEach(x => { if (arr.includes(x.key)) next[x.key] = true })
+    exportSelMap.value = next
+  }
+})
+const exportSelectedCount = computed(() => presentThreads.value.filter(x => exportSelMap.value[x.key]).length)
+const exportActiveThreads = computed(() => presentThreads.value.filter(x => !activeThread.value || x.key === activeThread.value))
+
+function openExport() {
+  // 默认全选 presentThreads
+  const m = {}
+  presentThreads.value.forEach(x => { m[x.key] = true })
+  exportSelMap.value = m
+  exportFormat.value = 'md'
+  exportSource.value = source.value || 'story'
+  exportOpen.value = true
+}
+function exportSelectAll(val) {
+  const m = {}
+  if (val) presentThreads.value.forEach(x => { m[x.key] = true })
+  exportSelMap.value = m
+}
+function exportSelectFiltered() {
+  const m = {}
+  const pool = activeThread.value ? exportActiveThreads.value : presentThreads.value
+  pool.forEach(x => { m[x.key] = true })
+  exportSelMap.value = m
+}
+async function doExport() {
+  if (!exportSelectedCount.value) return
+  exportLoading.value = true
+  try {
+    const keys = presentThreads.value.map(x => x.key).filter(k => exportSelMap.value[k])
+    const res = await exportTimeline(props.projectId, {
+      source: exportSource.value,
+      thread_keys: keys,
+      include_all_threads: keys.length === presentThreads.value.length,
+      format: exportFormat.value,
+      include_meta: true,
+    })
+    const data = res?.data || res || {}
+    if (!data.content) throw new Error(t('timeline.exportFailed'))
+    // Blob 下载
+    const mime = exportFormat.value === 'json'
+      ? 'application/json;charset=utf-8'
+      : exportFormat.value === 'csv' ? 'text/csv;charset=utf-8' : 'text/markdown;charset=utf-8'
+    const blob = new Blob([data.content], { type: mime })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = data.filename || `timeline-export.${exportFormat.value}`
+    document.body.appendChild(a); a.click(); a.remove()
+    URL.revokeObjectURL(url)
+    exportOpen.value = false
+  } catch (e) {
+    console.error('export failed', e)
+    // 展示后端错误（前端用 alert/status）
+  } finally {
+    exportLoading.value = false
+  }
+}
 // 时间线类型选择（抽取前）：linear/parallel/tree/network/meta 或 auto（自动判断）
 const timelineType = ref('auto')
 const typePickerOpen = ref(false)
@@ -2328,6 +2443,23 @@ onUnmounted(() => {
 .tl-modal-field { display: flex; gap: 8px; font-size: 12px; margin-bottom: 6px; }
 .tl-modal-field.block { flex-direction: column; gap: 2px; margin-bottom: 10px; }
 .f-k { color: #999; min-width: 72px; flex-shrink: 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+
+/* 时间线导出弹窗 */
+.tl-export-modal { width: 560px; max-width: 92vw; }
+.tl-export-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.tl-export-row label { font-size: 12px; }
+.tl-export-threads { max-height: 42vh; overflow-y: auto; border: 1px solid #F3F4F6; border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; }
+.tl-export-item { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 5px 0; cursor: pointer; }
+.tl-export-item input { width: 16px; height: 16px; }
+.tl-export-count { font-size: 11px; color: #616161; margin-bottom: 4px; }
+.tl-export-empty { font-size: 12px; color: #999; padding: 10px 0; text-align: center; }
+.tl-export-actions { gap: 6px; }
+.tl-modal-foot { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #F3F4F6; padding-top: 12px; margin-top: 4px; }
+@media (max-width: 768px) {
+  .tl-export-threads { max-height: 48vh; }
+  .tl-export-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .tl-export-row .tl-btn, .tl-modal-foot .tl-btn { min-height: 44px; }
+}
 .f-v { color: #333; }
 .tl-modal-summary { font-size: 13px; line-height: 1.7; color: #111; margin-top: 6px; }
 /* 异议列表 */

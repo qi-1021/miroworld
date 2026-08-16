@@ -185,6 +185,28 @@ def cmd_timeline(args) -> dict:
                 "event_count": len(events), "events": events}
     if args.action == "final-report":
         return _cmd_timeline_final_report(args.project_id, args.final_report_action)
+    if args.action == "export":
+        keys = []
+        if getattr(args, "thread_keys", ""):
+            keys = [s for s in args.thread_keys.replace("，", ",").split(",") if s.strip()]
+        result = timeline_service.export_timeline(
+            args.project_id,
+            source=getattr(args, "source", None) or None,
+            thread_keys=keys or None,
+            include_all_threads=not bool(keys),
+            format=getattr(args, "format", "md") or "md",
+            include_meta=True,
+        )
+        output = getattr(args, "output", "") or ""
+        if output:
+            Path(output).write_text(result["content"], encoding="utf-8")
+        return {
+            "filename": result["filename"],
+            "format": result["format"],
+            "total_events": result["total_events"],
+            "selected_threads": result["selected_threads"],
+            "written_to": output or None,
+        }
     raise ValueError(f"未知 timeline 动作: {args.action}")
 
 
@@ -681,6 +703,12 @@ def _parser() -> argparse.ArgumentParser:
     tfr.add_argument("--action", dest="final_report_action",
                      choices=["generate", "get", "download"], default="get",
                      help="generate=重新生成并读取；get=读取已生成；download=返回 Markdown")
+    texp = _add_json(ta.add_parser("export"))
+    texp.add_argument("--project-id", required=True)
+    texp.add_argument("--source", choices=["story", "bg"], default=None)
+    texp.add_argument("--format", choices=["md", "json", "csv"], default="md")
+    texp.add_argument("--output", default="", help="写出文件路径（默认仅打印 summary）")
+    texp.add_argument("--thread-keys", default="", help="逗号分隔线程 key；空=全部线程")
 
     c = sub.add_parser("conflict")
     ca = c.add_subparsers(dest="action", required=True)

@@ -1173,6 +1173,225 @@ def load_threads(project_id: str) -> List[Dict[str, Any]]:
         return []
 
 
+def _event_thread_key(e: Dict[str, Any]) -> str:
+    """事件的线程 key：优先 thread_id，其次 thread_name、dimension，默认 main。"""
+    return str(e.get("thread_id") or e.get("thread_name") or "").strip() or "main"
+
+
+def _event_thread_label(e: Dict[str, Any]) -> str:
+    """事件的线程显示名。"""
+    return str(e.get("thread_name") or e.get("thread_id") or "").strip() or "main"
+
+
+def _event_sort_key(e: Dict[str, Any]) -> tuple:
+    """组内事件按时间排序键：sort_lower → sort_upper → extract_seq。"""
+    return (float(e.get("sort_lower") or 0.0),
+            float(e.get("sort_upper") or (e.get("sort_lower") or 0.0)),
+            int(e.get("extract_seq") or 0))
+
+
+def _resolve_export_source(project_id: str, source: Optional[str] = None) -> str:
+    """解析导出用 source：显式指定优先；否则取“有数据”的 story 或 bg。"""
+    if source in ("story", "bg"):
+        return source
+    for candidate in ("story", "bg"):
+        events = load_timeline(project_id, candidate).get("events", [])
+        if events:
+            return candidate
+    return "story"  # 均无数据时给 story（调用方再判空并报错）
+
+
+# ---------------------------------------------------------------------------
+# 时间线导出（研究用途）：可选单/多/全部线程，按时间顺序导出 md/json/csv
+# ---------------------------------------------------------------------------
+EXPORT_FORMATS = ("md", "json", "csv")
+_CSV_HEADERS = ["id", "thread", "time", "type", "summary",
+                "characters", "confidence", "location", "parent", "links"]
+
+
+def _build_thread_groups(events: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """把事件按线程分组，组内按时间排序键升序。返回 {thread_key: [事件按序]}。"""
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for e in events:
+        key = _event_thread_key(e)
+        groups.setdefault(key, []).append(e)
+    for key in groups:
+        groups[key].sort(key=_event_sort_key)
+    return groups
+
+
+def export_timeline(project_id: str,
+                    source: Optional[str] = None,
+                    thread_keys: Optional[List[str]] = None,
+                    include_all_threads: bool = True,
+                    format: str = "md",
+                    include_meta: bool = True) -> Dict[str, Any]:
+    """按线程选择 + 时间顺序导出项目时间线。
+
+    Args:
+        project_id   : 项目 id。
+        source       : 'story'|'bg'；None 时自动选有数据者。
+        thread_keys  : 要导出的线程 key 列表；None 或空列表且 include_all_threads=True = 全部。
+        include_all_threads: True 时（且线程空选）导出全部线程。
+        format       : 'md'|'json'|'csv'。
+        include_meta : 是否在 md/json 里附带 structure/threads（csv 无 meta）。
+
+    Returns:
+        {"filename","format","content","selected_threads":[{key,label,count}],
+         "total_events","structure","source"}。
+        无事件时抛 ValueError（调用方转 404/400）。
+    """
+    src = _resolve_export_source(project_id, source)
+    fmt = format if format in EXPORT_FORMATS else "md"
+    data = load_timeline(project_id, src)
+    events = data.get("events", [])
+    if not events:
+        raise ValueError(f"项目 {project_id} 没有时间线事件（source={src}），无可导出")
+
+    threads = load_threads(project_id)
+    structure = load_structure(project_id)
+
+    groups = _build_thread_groups(events)
+    group_keys = sorted(groups.keys())  # 线程展示顺序按 key 稳定排序
+
+    # 线程 key 规范化：匹配既可用 thread_id(key) 也可用 thread_name(label)
+    def _label_for(key):
+        evs = groups.get(key, [])
+        return _event_thread_label(evs[0]) if evs else key
+
+    # 选择线程
+    requested = [k for k in (thread_keys or []) if str(k).strip()]
+    if requested:
+        norm_req = {str(k).strip() for k in requested}
+        selected_keys = [
+            k for k in group_keys
+            if k in norm_req or _label_for(k) in norm_req
+            or _event_thread_key({"thread_id": k, "thread_name": k}) in norm_req
+        ]
+        # 没有一个 key 命中则报错（避免"选了但导出空"）
+        if not selected_keys:
+            raise ValueError("所选线程不存在，请检查 thread_keys")
+    else:
+        selected_keys = group_keys if include_all_threads else []
+    if not selected_keys:
+        raise ValueError("未选择任何线程")
+
+    filename = f"timeline-{src}.{fmt}"
+    selected: List[Dict[str, Any]] = []
+    for key in selected_keys:
+        evs = groups.get(key, [])
+        label = _label_for(key)
+        selected.append({"key": key, "label": label, "count": len(evs)})
+
+    payload = {
+        "source": src,
+        "thread_keys": selected_keys,
+        "include_all_threads": include_all_threads,
+        "format": fmt,
+    }
+    content = _render_export(fmt, selected_keys, groups, threads, structure,
+                             include_meta, src)
+    total = sum(s["count"] for s in selected)
+    out = {
+        "filename": filename,
+        "format": fmt,
+        "content": content,
+        "selected_threads": selected,
+        "total_events": total,
+        "structure": structure if include_meta else None,
+        "source": src,
+    }
+    return out
+
+
+def _render_export(fmt: str, selected_keys: List[str], groups: Dict[str, List[Dict[str, Any]]],
+                   threads: List[Dict[str, Any]], structure: Optional[Dict[str, Any]],
+                   include_meta: bool, source: str) -> str:
+    if fmt == "json":
+        return _render_json(selected_keys, groups, threads, structure, include_meta, source)
+    if fmt == "csv":
+        return _render_csv(selected_keys, groups)
+    return _render_md(selected_keys, groups, threads, structure, include_meta, source)
+
+
+def _fmt_time(e: Dict[str, Any]) -> str:
+    t = str(e.get("time_text") or "").strip()
+    if t:
+        return t
+    if e.get("time_kind") and e.get("time_kind") != "unspecified":
+        return str(e.get("time_kind"))
+    return "?" if e.get("time_kind") != "unspecified" else "?"
+
+
+def _render_md(selected_keys, groups, threads, structure, include_meta, source) -> str:
+    lines = [f"# {source} 时间线导出", ""]
+    if include_meta and structure:
+        lines.append(f"结构：{str(structure.get('type') or '')}（置信度 {structure.get('confidence') or '?'}）")
+        lines.append("")
+    for key in selected_keys:
+        evs = groups.get(key, [])
+        label = _event_thread_label(evs[0]) if evs else key
+        lines.append(f"## {label}（{len(evs)}）")
+        lines.append("")
+        for e in evs:
+            time_s = _fmt_time(e)
+            ev_type = e.get("ev_type") or "其他"
+            conf = e.get("confidence") or 0
+            chars = "、".join(e.get("characters") or []) or "—"
+            summary = str(e.get("summary") or "").strip()
+            lines.append(f"- [{time_s}] {ev_type} | {conf} | {chars} | {summary}")
+        lines.append("")
+    return "\n".join(lines).strip() + "\n"
+
+
+def _render_json(selected_keys, groups, threads, structure, include_meta, source) -> str:
+    payload = {
+        "source": source,
+        "threads": [],
+        "events": [],
+    }
+    if include_meta:
+        payload["structure"] = structure
+        payload["thread_meta"] = threads
+    for key in selected_keys:
+        evs = groups.get(key, [])
+        label = _event_thread_label(evs[0]) if evs else key
+        payload["threads"].append({"key": key, "label": label, "count": len(evs)})
+        for e in evs:
+            payload["events"].append(_export_event_dict(e, key))
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _export_event_dict(e: Dict[str, Any], thread_key: str) -> Dict[str, Any]:
+    """JSON 导出的事件字段（完整但裁剪掉内部 raw）。"""
+    out = {k: v for k, v in e.items() if k not in ("raw_source",)}
+    out["thread_key"] = thread_key
+    return out
+
+
+def _render_csv(selected_keys, groups) -> str:
+    import io
+    import csv as _csv
+    buf = io.StringIO()
+    w = _csv.writer(buf)
+    w.writerow(_CSV_HEADERS)
+    for key in selected_keys:
+        for e in groups.get(key, []):
+            w.writerow([
+                e.get("id") or "",
+                _event_thread_label(e),
+                _fmt_time(e),
+                e.get("ev_type") or "",
+                str(e.get("summary") or ""),
+                "|".join(e.get("characters") or []),
+                e.get("confidence") or "",
+                e.get("location_name") or e.get("location_text") or "",
+                e.get("parent_event_id") or "",
+                "|".join(e.get("linked_event_ids") or []),
+            ])
+    return buf.getvalue()
+
+
 def _llm_extract_chunk(llm, chunk: str, thread_hint: str = "", structure_hint: str = "") -> List[Dict[str, Any]]:
     """调用一次 LLM 抽取该块，返回原始事件列表；失败抛异常。"""
     user_msg = f"请抽取下面文本段的时间线事件，输出 JSON 数组：\n<文本段>\n{chunk}\n"

@@ -11,7 +11,8 @@
 注意：/status、/extract、/future 等静态路由必须在动态路由 /<project_id> 之前注册，
 否则会被动态路由吞掉（历史教训：/api/simulation/history 曾被吞成 404）。
 """
-from flask import request, jsonify, send_file
+from flask import request, jsonify, send_file, make_response
+from typing import List, Optional
 
 from . import timeline_bp
 from ..services import timeline_service
@@ -226,6 +227,77 @@ def get_timeline(project_id):
     except Exception as e:
         logger.error(f"读取时间线失败: {e}")
         return jsonify({"success": False, "error": f"读取失败: {e}"}), 500
+
+
+# ---------------------------------------------------------------------------
+# 时间线导出：选择单/多/全部线程，按时间顺序导成 md/json/csv
+# ---------------------------------------------------------------------------
+def _parse_thread_keys(raw) -> Optional[List[str]]:
+    """把 thread_keys 规范化为非空字符串列表；空返回 None。"""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return [s for s in raw.replace("，", ",").split(",") if s.strip()]
+    if isinstance(raw, list):
+        return [str(s).strip() for s in raw if s and str(s).strip()]
+    return None
+
+
+@timeline_bp.route('/<project_id>/export', methods=['POST'])
+def export_timeline(project_id):
+    """按线程选择 + 时间顺序导出时间线（研究用途）。
+
+    请求：{ source?, thread_keys?: string[], include_all_threads?: bool,
+             format?: 'md'|'json'|'csv', include_meta?: bool }
+    返回：{ success, data: { filename, format, content, selected_threads, total_events, structure } }
+    前端用 Blob 下载；CLI 可写文件。无事件返回 404。
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        src = str(data.get('source') or '').strip() or None
+        thread_keys = _parse_thread_keys(data.get('thread_keys'))
+        include_all = bool(data.get('include_all_threads', True))
+        fmt = str(data.get('format') or 'md').strip().lower()
+        include_meta = bool(data.get('include_meta', True))
+        result = timeline_service.export_timeline(
+            project_id, source=src, thread_keys=thread_keys,
+            include_all_threads=include_all, format=fmt, include_meta=include_meta,
+        )
+        return jsonify({"success": True, "data": result})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 404
+    except Exception as e:
+        logger.error(f"导出时间线失败: {e}")
+        return jsonify({"success": False, "error": f"导出失败: {e}"}), 500
+
+
+@timeline_bp.route('/<project_id>/export/download', methods=['GET'])
+def download_timeline_export(project_id):
+    """直接下载时间线导出（URL 查询参数；thread_keys 逗号分隔，空=全部）。"""
+    try:
+        src = request.args.get('source') or None
+        fmt = (request.args.get('format') or 'md').strip().lower()
+        thread_keys = _parse_thread_keys(request.args.get('thread_keys'))
+        include_all = request.args.get('include_all_threads', 'true').lower() in ('1', 'true')
+        include_meta = request.args.get('include_meta', 'true').lower() in ('1', 'true')
+        result = timeline_service.export_timeline(
+            project_id, source=src, thread_keys=thread_keys,
+            include_all_threads=include_all, format=fmt, include_meta=include_meta,
+        )
+        resp = make_response(result["content"])
+        mime = {
+            "md": "text/markdown; charset=utf-8",
+            "json": "application/json; charset=utf-8",
+            "csv": "text/csv; charset=utf-8",
+        }.get(fmt, "application/octet-stream")
+        resp.headers["Content-Type"] = mime
+        resp.headers["Content-Disposition"] = f"attachment; filename={result['filename']}"
+        return resp
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 404
+    except Exception as e:
+        logger.error(f"导出时间线下载失败: {e}")
+        return jsonify({"success": False, "error": f"导出失败: {e}"}), 500
 
 
 @timeline_bp.route('/<project_id>/branch/continue', methods=['POST'])

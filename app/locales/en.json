@@ -1198,7 +1198,18 @@
     "metaTitle": "Meta Narration",
     "graphPlaceholder": "No relations available yet",
     "netHint": "Scroll / pinch to zoom · drag blank to pan · drag node to re-layout",
-    "structureHint": "Click to switch structure type · click a node to view event"
+    "structureHint": "Click to switch structure type · click a node to view event",
+    "export": "Export timeline",
+    "exportSource": "Source",
+    "exportFormat": "Format",
+    "exportAll": "Select all",
+    "exportNone": "Select none",
+    "exportOnlyFiltered": "Only filtered",
+    "selectedCount": "{n} thread(s) selected",
+    "exportEmpty": "No thread to export",
+    "exporting": "Exporting…",
+    "exportFailed": "Export failed",
+    "cancel": "Cancel"
   },
   "finalReport": {
     "title": "Final Timeline Report",

@@ -277,3 +277,32 @@ export function getFinalReport(projectId) {
 export function finalReportDownloadUrl(projectId) {
   return '/api/timeline/' + projectId + '/final-report/download'
 }
+
+/**
+ * 时间线导出（研究用途）：选择单/多/全部线程，按时间顺序导成 md/json/csv。
+ * @param {String} projectId
+ * @param {Object} data - { source?, thread_keys?: string[], include_all_threads?: bool, format?: 'md'|'json'|'csv', include_meta?: bool }
+ * @returns {Promise} { success, data: { filename, format, content, selected_threads, total_events, structure } }
+ */
+export function exportTimeline(projectId, data) {
+  return service({
+    url: '/api/timeline/' + projectId + '/export',
+    method: 'post',
+    data
+  })
+}
+
+/**
+ * 构造时间线导出直接下载 URL
+ * @param {String} projectId
+ * @param {Object} qs - { source?, format?, thread_keys? }
+ * @returns {String} 相对下载地址（供 <a download>）
+ */
+export function timelineExportDownloadUrl(projectId, qs = {}) {
+  const p = new URLSearchParams()
+  if (qs.source) p.set('source', qs.source)
+  if (qs.format) p.set('format', qs.format)
+  if (qs.thread_keys && qs.thread_keys.length) p.set('thread_keys', qs.thread_keys.join(','))
+  const qsStr = p.toString()
+  return '/api/timeline/' + projectId + '/export/download' + (qsStr ? '?' + qsStr : '')
+}

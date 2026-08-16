@@ -1198,7 +1198,18 @@
     "metaTitle": "元叙事视角",
     "graphPlaceholder": "暂无可用关联关系",
     "netHint": "滚轮/双指缩放 · 拖拽空白平移 · 拖拽节点调整布局",
-    "structureHint": "点击切换结构类型 · 点击节点查看事件详情"
+    "structureHint": "点击切换结构类型 · 点击节点查看事件详情",
+    "export": "导出时间线",
+    "exportSource": "来源",
+    "exportFormat": "格式",
+    "exportAll": "全选",
+    "exportNone": "全不选",
+    "exportOnlyFiltered": "仅当前过滤线程",
+    "selectedCount": "已选 {n} 条线程",
+    "exportEmpty": "无可导出线程",
+    "exporting": "导出中…",
+    "exportFailed": "导出失败",
+    "cancel": "取消"
   },
   "finalReport": {
     "title": "最终时间线报告",
