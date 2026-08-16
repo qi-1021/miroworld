@@ -251,21 +251,38 @@
                 <span class="btn-text">{{ $t('history.step1Button') }}</span>
               </button>
               <button
-                class="modal-btn btn-simulation"
-                @click="goToSimulation"
+                class="modal-btn btn-project"
+                @click="goToProject"
+                :disabled="!selectedProject.project_id"
               >
                 <span class="btn-step">Step2</span>
                 <span class="btn-icon">◈</span>
                 <span class="btn-text">{{ $t('history.step2Button') }}</span>
               </button>
               <button
+                class="modal-btn btn-simulation"
+                @click="goToSimulation"
+              >
+                <span class="btn-step">Step3</span>
+                <span class="btn-icon">▶</span>
+                <span class="btn-text">{{ $t('history.step3Button') }}</span>
+              </button>
+              <button
+                class="modal-btn btn-simulation"
+                @click="goToSimulation"
+              >
+                <span class="btn-step">Step4</span>
+                <span class="btn-icon">⑃</span>
+                <span class="btn-text">{{ $t('history.step4Button') }}</span>
+              </button>
+              <button
                 class="modal-btn btn-report"
                 @click="goToReport"
                 :disabled="!selectedProject.report_id"
               >
-                <span class="btn-step">Step4</span>
+                <span class="btn-step">Step5</span>
                 <span class="btn-icon">◆</span>
-                <span class="btn-text">{{ $t('history.step4Button') }}</span>
+                <span class="btn-text">{{ $t('history.step5Button') }}</span>
               </button>
             </div>
             <!-- 不可回放提示 -->
