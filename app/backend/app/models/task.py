@@ -7,12 +7,26 @@ import os
 import json
 import uuid
 import threading
+import contextvars
 from datetime import datetime
 from enum import Enum
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
 
 from ..utils.atomic_json import atomic_write_json
+
+# 当前线程 / 协程上下文的任务 ID 追踪
+_current_task_var = contextvars.ContextVar('current_task_id', default=None)
+
+
+def set_current_task_id(task_id: Optional[str]):
+    """设置当前上下文关联的任务 ID"""
+    _current_task_var.set(task_id)
+
+
+def get_current_task_id() -> Optional[str]:
+    """获取当前上下文关联的任务 ID"""
+    return _current_task_var.get()
 
 
 class TaskStatus(str, Enum):
@@ -38,6 +52,7 @@ class Task:
     metadata: Dict = field(default_factory=dict)  # 额外元数据
     progress_detail: Dict = field(default_factory=dict)  # 详细进度信息
     logs: list = field(default_factory=list)  # 实时阶段过程日志
+    llm_exchanges: list = field(default_factory=list)  # 实时大模型输入与输出明细
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -51,6 +66,7 @@ class Task:
             "message": self.message,
             "progress_detail": self.progress_detail,
             "logs": self.logs,
+            "llm_exchanges": self.llm_exchanges,
             "result": self.result,
             "error": self.error,
             "metadata": self.metadata,
@@ -73,6 +89,7 @@ class Task:
             metadata=data.get("metadata", {}),
             progress_detail=data.get("progress_detail", {}),
             logs=data.get("logs", []),
+            llm_exchanges=data.get("llm_exchanges", []),
         )
 
 
@@ -269,6 +286,18 @@ class TaskManager:
         """为任务追加单条实时日志"""
         self.update_task(task_id, log=log)
 
+    def add_llm_exchange(self, task_id: str, exchange: Dict[str, Any]):
+        """追加大模型输入输出交互明细"""
+        with self._task_lock:
+            task = self._tasks.get(task_id)
+            if task:
+                task.updated_at = datetime.now()
+                task.llm_exchanges.append(exchange)
+                if len(task.llm_exchanges) > 100:
+                    task.llm_exchanges = task.llm_exchanges[-100:]
+        self._persist_task(task_id)
+
+
     def complete_task(self, task_id: str, result: Dict):
         """标记任务完成"""
         self.update_task(
@@ -308,4 +337,26 @@ class TaskManager:
             ]
             for tid in old_ids:
                 del self._tasks[tid]
+
+
+def record_current_task_llm(stage: str, model: str, prompt: str, response: str, duration: float = 0.0):
+    """便捷辅助函数：记录当前上下文任务的 LLM 输入与输出"""
+    task_id = get_current_task_id()
+    if not task_id:
+        return
+    now_str = datetime.now().strftime("%H:%M:%S")
+    prompt_clean = str(prompt or "").strip()
+    resp_clean = str(response or "").strip()
+    exchange = {
+        "id": str(uuid.uuid4())[:8],
+        "timestamp": now_str,
+        "stage": stage,
+        "model": model,
+        "duration_sec": round(duration, 2),
+        "prompt_preview": (prompt_clean[:300] + "...") if len(prompt_clean) > 300 else prompt_clean,
+        "full_prompt": prompt_clean,
+        "response_preview": (resp_clean[:350] + "...") if len(resp_clean) > 350 else resp_clean,
+        "full_response": resp_clean,
+    }
+    TaskManager().add_llm_exchange(task_id, exchange)
 

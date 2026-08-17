@@ -920,19 +920,81 @@
             </div>
             <span class="graph-progress-text">{{ graphProgressMsg || $t('world.graphBuilding') }}</span>
           </div>
-          <!-- 实时过程控制台与详细步骤日志 -->
-          <div v-if="graphBuilding || (graphTaskLogs && graphTaskLogs.length)" class="graph-live-console">
-            <div class="console-header" @click="showGraphLogs = !showGraphLogs">
-              <span class="console-title">📜 实时构建执行过程 (Live Logs)</span>
-              <span class="console-toggle">{{ showGraphLogs ? '收起 ▲' : '展开 ▼' }} ({{ graphTaskLogs.length }} 步骤记录)</span>
+          <!-- 实时过程控制台与详细步骤日志 & LLM 对话明细 -->
+          <div v-if="graphBuilding || (graphTaskLogs && graphTaskLogs.length) || (graphTaskExchanges && graphTaskExchanges.length)" class="graph-live-console">
+            <div class="console-header">
+              <div class="console-tabs">
+                <button
+                  type="button"
+                  class="console-tab-btn"
+                  :class="{ active: consoleActiveTab === 'llm' }"
+                  @click="consoleActiveTab = 'llm'"
+                >
+                  🤖 大模型实时输入与输出 ({{ graphTaskExchanges.length }})
+                </button>
+                <button
+                  type="button"
+                  class="console-tab-btn"
+                  :class="{ active: consoleActiveTab === 'logs' }"
+                  @click="consoleActiveTab = 'logs'"
+                >
+                  📜 阶段步骤日志 ({{ graphTaskLogs.length }})
+                </button>
+              </div>
+              <span class="console-toggle" @click="showGraphLogs = !showGraphLogs">
+                {{ showGraphLogs ? '收起 ▲' : '展开 ▼' }}
+              </span>
             </div>
+
             <div v-if="showGraphLogs" ref="graphLogsContainer" class="console-body">
-              <div v-for="(log, idx) in graphTaskLogs" :key="idx" class="console-line">
-                {{ log }}
-              </div>
-              <div v-if="graphBuilding" class="console-line pending-pulse">
-                <span class="pulse-dot"></span> 正在实时分析当前语料块与图谱关联...
-              </div>
+              <!-- Tab 1: LLM 实时输入与输出卡片 -->
+              <template v-if="consoleActiveTab === 'llm'">
+                <div v-if="!graphTaskExchanges.length" class="console-empty-tip">
+                  暂无大模型交互记录（抽取任务触发后将在此实时展示每个提示词与回复）
+                </div>
+                <div v-for="item in graphTaskExchanges" :key="item.id" class="llm-exchange-card">
+                  <div class="exchange-head">
+                    <div class="exchange-head-left">
+                      <span class="exchange-time">[{{ item.timestamp }}]</span>
+                      <span class="exchange-stage">{{ item.stage }}</span>
+                      <span class="exchange-model">{{ item.model }}</span>
+                      <span class="exchange-duration">{{ item.duration_sec }}s</span>
+                    </div>
+                    <button
+                      type="button"
+                      class="exchange-toggle-btn"
+                      @click="toggleExchangeExpand(item.id)"
+                    >
+                      {{ isExchangeExpanded(item.id) ? '收起详情 ▲' : '查看完整提示与输出 ▼' }}
+                    </button>
+                  </div>
+
+                  <div class="exchange-content">
+                    <div class="exchange-section">
+                      <div class="section-tag prompt-tag">📥 模型输入 (Prompt)</div>
+                      <pre class="exchange-code">{{ isExchangeExpanded(item.id) ? item.full_prompt : item.prompt_preview }}</pre>
+                    </div>
+
+                    <div class="exchange-section">
+                      <div class="section-tag resp-tag">📤 模型输出 (Response)</div>
+                      <pre class="exchange-code resp-code">{{ isExchangeExpanded(item.id) ? item.full_response : item.response_preview }}</pre>
+                    </div>
+                  </div>
+                </div>
+                <div v-if="graphBuilding" class="console-line pending-pulse">
+                  <span class="pulse-dot"></span> 正在与大模型通信分析抽取中...
+                </div>
+              </template>
+
+              <!-- Tab 2: 文本步骤日志 -->
+              <template v-else>
+                <div v-for="(log, idx) in graphTaskLogs" :key="idx" class="console-line">
+                  {{ log }}
+                </div>
+                <div v-if="graphBuilding" class="console-line pending-pulse">
+                  <span class="pulse-dot"></span> 正在实时分析当前语料块与图谱关联...
+                </div>
+              </template>
             </div>
           </div>
         </div>
@@ -1526,6 +1588,19 @@ const graphBuilding = ref(false)
 const graphProgressMsg = ref('')
 const graphProgress = ref(0)
 const graphTaskLogs = ref([])
+const graphTaskExchanges = ref([])
+const consoleActiveTab = ref('llm')
+const expandedExchangeIds = ref(new Set())
+function toggleExchangeExpand(id) {
+  if (expandedExchangeIds.value.has(id)) {
+    expandedExchangeIds.value.delete(id)
+  } else {
+    expandedExchangeIds.value.add(id)
+  }
+}
+function isExchangeExpanded(id) {
+  return expandedExchangeIds.value.has(id)
+}
 const showGraphLogs = ref(true)
 const graphLogsContainer = ref(null)
 const refillEdgesRunning = ref(false)
@@ -1675,12 +1750,15 @@ function pollGraphTask(taskId) {
       const status = task.status
       if (task.logs && Array.isArray(task.logs)) {
         graphTaskLogs.value = task.logs
-        nextTick(() => {
-          if (graphLogsContainer.value) {
-            graphLogsContainer.value.scrollTop = graphLogsContainer.value.scrollHeight
-          }
-        })
       }
+      if (task.llm_exchanges && Array.isArray(task.llm_exchanges)) {
+        graphTaskExchanges.value = task.llm_exchanges
+      }
+      nextTick(() => {
+        if (graphLogsContainer.value) {
+          graphLogsContainer.value.scrollTop = graphLogsContainer.value.scrollHeight
+        }
+      })
       if (status === 'completed' || status === 'failed' || status === 'COMPLETED' || status === 'FAILED') {
         clearInterval(graphPollTimer)
         graphPollTimer = null
@@ -1714,6 +1792,7 @@ async function handleBuildGraph() {
   graphProgressMsg.value = ''
   graphProgress.value = 0
   graphTaskLogs.value = [`[${new Date().toTimeString().slice(0, 8)}] 正在启动世界图谱构建流程...`]
+  graphTaskExchanges.value = []
   showGraphLogs.value = true
   try {
     const res = await buildWorldGraph(projectId, {
@@ -1740,12 +1819,15 @@ function pollRefillEdgesTask(taskId) {
       const status = task.status
       if (task.logs && Array.isArray(task.logs)) {
         graphTaskLogs.value = task.logs
-        nextTick(() => {
-          if (graphLogsContainer.value) {
-            graphLogsContainer.value.scrollTop = graphLogsContainer.value.scrollHeight
-          }
-        })
       }
+      if (task.llm_exchanges && Array.isArray(task.llm_exchanges)) {
+        graphTaskExchanges.value = task.llm_exchanges
+      }
+      nextTick(() => {
+        if (graphLogsContainer.value) {
+          graphLogsContainer.value.scrollTop = graphLogsContainer.value.scrollHeight
+        }
+      })
       if (status === 'completed' || status === 'failed' || status === 'COMPLETED' || status === 'FAILED') {
         clearInterval(refillPollTimerId)
         refillPollTimerId = null
@@ -1774,6 +1856,7 @@ async function handleRefillEdges() {
   graphMsg.value = ''
   graphMsgError.value = false
   graphTaskLogs.value = [`[${new Date().toTimeString().slice(0, 8)}] 正在启动知识图谱关联边补充 (Refill Edges)...`]
+  graphTaskExchanges.value = []
   showGraphLogs.value = true
   try {
     // 补边是对已建图谱的重放，无需 goal 参数（与后端契约一致）
@@ -3949,31 +4032,58 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 14px;
+  padding: 6px 12px;
   background: #111217;
   border-bottom: 1px solid #282a36;
-  cursor: pointer;
-  user-select: none;
 }
-.console-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #a1c50a;
+.console-tabs {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  gap: 8px;
+}
+.console-tab-btn {
+  background: transparent;
+  border: none;
+  color: #8f92a3;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.console-tab-btn:hover {
+  color: #fff;
+  background: #232530;
+}
+.console-tab-btn.active {
+  color: #a1c50a;
+  background: #232a10;
+  box-shadow: inset 0 0 0 1px rgba(161, 197, 10, 0.4);
 }
 .console-toggle {
   font-size: 11px;
   color: #8f92a3;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+.console-toggle:hover {
+  color: #fff;
+  background: #232530;
 }
 .console-body {
-  max-height: 220px;
+  max-height: 280px;
   overflow-y: auto;
   padding: 10px 14px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
+}
+.console-empty-tip {
+  color: #717488;
+  font-size: 11.5px;
+  padding: 12px;
+  text-align: center;
 }
 .console-line {
   font-size: 11.5px;
@@ -3998,6 +4108,107 @@ onUnmounted(() => {
 @keyframes pulse {
   0%, 100% { opacity: 0.3; transform: scale(0.8); }
   50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* 大模型交互卡片 */
+.llm-exchange-card {
+  background: #14151b;
+  border: 1px solid #282a35;
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.exchange-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-bottom: 1px dashed #282a35;
+  padding-bottom: 5px;
+}
+.exchange-head-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.exchange-time {
+  color: #888899;
+  font-size: 11px;
+}
+.exchange-stage {
+  color: #38bdf8;
+  font-size: 11px;
+  font-weight: 600;
+  background: #082f49;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.exchange-model {
+  color: #fbbf24;
+  font-size: 11px;
+  background: #451a03;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.exchange-duration {
+  color: #a1c50a;
+  font-size: 11px;
+}
+.exchange-toggle-btn {
+  background: transparent;
+  border: 1px solid #333644;
+  color: #9ca3af;
+  font-size: 10.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.exchange-toggle-btn:hover {
+  color: #fff;
+  border-color: #4b5563;
+}
+.exchange-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.exchange-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.section-tag {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.prompt-tag {
+  color: #94a3b8;
+}
+.resp-tag {
+  color: #4ade80;
+}
+.exchange-code {
+  background: #0c0d11;
+  border: 1px solid #1f2029;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: #e2e8f0;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 0;
+}
+.exchange-code.resp-code {
+  border-left: 2px solid #22c55e;
 }
 .sim-graph-detail-inner {
   display: flex;

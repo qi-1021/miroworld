@@ -577,8 +577,30 @@ def _apply_response_normalization_patch() -> bool:
             logger.info(f'LLM 调用开始: model={_model}, messages={len(openai_messages)}, prompt_len={sum(len(m.get("content","")) for m in openai_messages)}')
             logger.info(f'LLM 调用 system 前80字: {openai_messages[0]["content"][:80] if openai_messages else "无"}')
             response = await _chat_create()
-            logger.info(f'LLM 调用完成: {_time.time()-_t0:.1f}s')
+            _duration = _time.time() - _t0
+            logger.info(f'LLM 调用完成: {_duration:.1f}s')
             result = response.choices[0].message.content or ''
+
+            # 实时记录大模型输入输出交互明细
+            try:
+                from ..models.task import record_current_task_llm
+                stage_name = (
+                    "关系挖掘 (Extract Edges)" if _is_edge_extraction(response_model)
+                    else "实体抽取 (Extract Entities)" if (response_model and "Entity" in str(response_model))
+                    else "实体消歧与对齐 (Entity Resolution)" if (response_model and "resolve" in str(response_model).lower())
+                    else "知识图谱语义分析 (Graph LLM)"
+                )
+                full_input = "\n\n".join(f"[{m.get('role', '')}]: {m.get('content', '')}" for m in openai_messages)
+                record_current_task_llm(
+                    stage=stage_name,
+                    model=_model,
+                    prompt=full_input,
+                    response=result,
+                    duration=_duration,
+                )
+            except Exception:
+                pass
+
             if not result.strip():
                 # 空响应：OpenCode 等网关在连续调用/长提示下会返回空内容。
                 # 只重试 1 次（短间隔），仍空则返回空 dict 让 graphiti 继续

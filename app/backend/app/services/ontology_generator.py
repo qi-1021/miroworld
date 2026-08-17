@@ -211,11 +211,25 @@ class OntologyGenerator:
         ]
 
         # 调用LLM
+        import time as _time
+        _t0 = _time.time()
         result = self.llm_client.chat_json(
             messages=messages,
             temperature=0.3,
             max_tokens=4096
         )
+        try:
+            from ..models.task import record_current_task_llm
+            full_prompt = f"[System Prompt]:\n{ONTOLOGY_SYSTEM_PROMPT}\n\n[User Prompt]:\n{user_message}"
+            record_current_task_llm(
+                stage="世界本体生成 (Ontology Generation)",
+                model=getattr(self.llm_client, "model", "default"),
+                prompt=full_prompt,
+                response=json.dumps(result, ensure_ascii=False, indent=2),
+                duration=_time.time() - _t0,
+            )
+        except Exception:
+            pass
 
         # 验证和后处理
         result = self._validate_and_process(result)

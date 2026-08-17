@@ -435,6 +435,8 @@ def build_world_graph(project_id: str):
     def _build_task():
         build_logger = logger
         try:
+            from ..models.task import set_current_task_id
+            set_current_task_id(task_id)
             task_manager.update_task(
                 task_id, status=TaskStatus.PROCESSING,
                 progress=3, message="准备世界设定文本..."
