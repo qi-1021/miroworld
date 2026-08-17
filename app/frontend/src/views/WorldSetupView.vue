@@ -971,8 +971,13 @@
           {{ $t('world.graphDesc') }}
         </p>
 
-        <div class="graph-actions">
-          <button class="action-btn" :disabled="graphBuilding" @click="handleBuildGraph">
+        <div class="graph-actions" style="position: relative; z-index: 10;">
+          <button
+            class="action-btn"
+            :disabled="graphBuilding"
+            style="cursor: pointer; pointer-events: auto;"
+            @click="handleBuildGraph"
+          >
             <span v-if="graphBuilding" class="spinner-sm"></span>
             {{ graphBuilding ? (graphProgressMsg || $t('world.graphBuilding')) : graphInfo ? $t('world.graphRebuild') : $t('world.graphBuild') }}
           </button>
@@ -986,13 +991,13 @@
             ⏹ 取消构建 (保留已完成批次)
           </button>
           <button
-            v-if="graphBuilding"
             type="button"
             class="mini-btn ghost"
-            title="如果页面意外卡死或状态未同步，点击立即重置按钮状态"
+            style="cursor: pointer; pointer-events: auto;"
+            title="随时点击强制重置图谱状态机并恢复所有按钮可操作性"
             @click="resetGraphBuildStatus"
           >
-            🔄 恢复可点击状态
+            🔄 强制重置状态
           </button>
           <button
             class="action-btn btn-ghost"
