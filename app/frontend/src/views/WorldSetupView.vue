@@ -12,12 +12,6 @@
       </div>
       <div class="header-right">
         <button class="back-btn ghost" @click="highContrast = !highContrast">{{ highContrast ? $t('world.contrastOff') : $t('world.contrastOn') }}</button>
-        <div class="project-switcher-wrap" :title="`Project ID: ${projectId}`">
-          <span class="switcher-label">📁 {{ $t('world.currentProject') }}:</span>
-          <select class="project-switcher" :value="projectId" @change="switchProject">
-            <option v-for="p in projects" :key="p.project_id" :value="p.project_id">{{ p.name || p.project_id }}</option>
-          </select>
-        </div>
         <button class="back-btn" :disabled="snapshotBusy" @click="exportSnapshot">{{ $t('world.exportSnapshot') }}</button>
         <button class="back-btn" :disabled="snapshotBusy" @click="importFileInput.click()">{{ $t('world.importSnapshot') }}</button>
         <input ref="importFileInput" type="file" accept=".json,.miroworld.json,application/json" style="display:none" @change="onImportSnapshot" />

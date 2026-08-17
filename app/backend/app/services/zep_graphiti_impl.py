@@ -210,8 +210,13 @@ class GraphitiClient(ZepClientAdapter):
         self._ontology_cache: Dict[str, Dict[str, Any]] = {}
 
     def _ensure_initialized(self):
-        """确保 Graphiti 已初始化"""
-        if self._initialized:
+        """确保 Graphiti 已初始化，并刷新最新的动态 LLM client"""
+        if self._initialized and self._graphiti:
+            if self._llm_client is None:
+                try:
+                    self._graphiti.llm_client = self._build_default_llm_client()
+                except Exception as e:
+                    logger.debug(f"动态刷新 Graphiti LLM 客户端失败: {e}")
             return
 
         try:
@@ -346,12 +351,15 @@ class GraphitiClient(ZepClientAdapter):
                 if m.get("verified") and "chat" in m.get("capabilities", [])
             ]
             if not chat_models:
+                chat_models = [
+                    m for m in models
+                    if "chat" in m.get("capabilities", []) or not m.get("capabilities")
+                ]
+            if not chat_models and models:
+                chat_models = models
+            if not chat_models:
                 return None
 
-            # 注意：GraphitiClient 是全局复用、不感知具体项目，因此**不能**遍历项目绑定
-            # 来决定默认模型——否则会随机采用某个项目的绑定（例如 opencode），
-            # 造成用户明明把项目绑到 SiliconFlow 却仍然走慢网关。
-            # 这里只允许全局预设 graphiti_llm，否则用第一个已验证 chat 模型。
             chosen = None
             # 预设中的 graphiti_llm
             for preset in state.get("presets", []):

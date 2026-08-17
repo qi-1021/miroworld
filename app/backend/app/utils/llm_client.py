@@ -96,16 +96,14 @@ class LLMClient:
             try:
                 response = self.client.chat.completions.create(**kwargs)
                 break
-            except BadRequestError:
-                if not extra_body:
-                    raise
-                # 网关不支持"关闭思考"参数（如 thinking 被拒），降级为不带该参数重试一次
-                extra_body = None
-                kwargs.pop("extra_body", None)
-                response = self.client.chat.completions.create(**kwargs)
-                break
-            except (APIConnectionError, APITimeoutError) as exc:
-                if conn_attempt < self.connection_retries:
+            except Exception as exc:
+                if extra_body and ("thinking" in str(exc) or "extra_body" in str(exc) or "400" in str(exc) or "422" in str(exc) or isinstance(exc, BadRequestError)):
+                    # 网关不支持"关闭思考"参数，降级为不带该参数重试
+                    extra_body = None
+                    kwargs.pop("extra_body", None)
+                    response = self.client.chat.completions.create(**kwargs)
+                    break
+                if isinstance(exc, (APIConnectionError, APITimeoutError)) and conn_attempt < self.connection_retries:
                     wait = 1.5 * (conn_attempt + 1)
                     logger.warning(
                         "LLM 连接错误（第 %s 次），%.1fs 后重试: model=%s err=%s",
@@ -188,9 +186,13 @@ class LLMClient:
         """解析 LLM JSON 输出，兼容 Markdown 围栏和前后说明文本。"""
         if not response or not response.strip():
             raise ValueError("LLM 返回了空响应，无法解析 JSON")
-        candidates = [response.strip()]
-        if "```" in response:
-            parts = response.split("```")
+        import re
+        raw = re.sub(r'<think>[\s\S]*?</think>', '', response).strip()
+        if not raw:
+            raise ValueError("LLM 返回了空内容（或全部为思考标签）")
+        candidates = [raw]
+        if "```" in raw:
+            parts = raw.split("```")
             for part in parts[1::2]:
                 cleaned = part.strip()
                 if cleaned.startswith("json"):
@@ -202,11 +204,11 @@ class LLMClient:
                 return json.loads(candidate)
             except json.JSONDecodeError:
                 continue
-        start = response.find("{")
-        end = response.rfind("}")
+        start = raw.find("{")
+        end = raw.rfind("}")
         if start >= 0 and end > start:
             try:
-                return json.loads(response[start:end + 1])
+                return json.loads(raw[start:end + 1])
             except json.JSONDecodeError:
                 pass
         raise ValueError(
