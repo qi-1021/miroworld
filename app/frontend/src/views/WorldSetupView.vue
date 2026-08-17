@@ -651,9 +651,12 @@
           </div>
         </div>
 
-        <!-- 运行中控制（IPC） -->
+        <!-- 运行中控制（IPC）与创作者上帝干预 -->
         <div v-if="simStatus === 'running' || simStatus === 'paused'" class="sim-ctl">
-          <div class="sim-ctl-title">{{ $t('world.runControl') }}</div>
+          <div class="sim-ctl-head">
+            <div class="sim-ctl-title">🎮 {{ $t('world.runControl') }} & 上帝干预</div>
+            <span class="sim-ctl-badge" :class="simStatus">{{ simStatus === 'paused' ? '⏸ 暂停中（适合注入变数）' : '⚡ 实时演算中' }}</span>
+          </div>
           <div class="sim-ctl-btns">
             <button
               class="mini-btn"
@@ -666,7 +669,69 @@
               @click="handleControl('resume')"
             >{{ $t('world.resume') }}</button>
             <button class="mini-btn danger" @click="handleControl('stop')">{{ $t('world.stop') }}</button>
+            <button
+              type="button"
+              class="mini-btn god-mode-btn"
+              :class="{ active: showGodModePanel }"
+              @click="showGodModePanel = !showGodModePanel"
+            >
+              👑 注入世界变数 / 动机篡改
+            </button>
           </div>
+
+          <!-- 上帝干预交互面板 -->
+          <div v-if="showGodModePanel" class="god-mode-panel">
+            <div class="god-panel-title">
+              <span>👑 创作者上帝干预 (Author Interventions)</span>
+              <span class="god-panel-sub">在此施加突发变数，将立即强制改写下一轮各角色的决策环境与世界格局</span>
+            </div>
+
+            <!-- 快捷预设变数模板 -->
+            <div class="god-templates">
+              <span class="gt-label">快捷变数：</span>
+              <button type="button" class="gt-btn" @click="applyGodTemplate('catastrophe')">🌪️ 秘境禁制提前破碎</button>
+              <button type="button" class="gt-btn" @click="applyGodTemplate('third_party')">⚔️ 第三方隐世宗门突然介入</button>
+              <button type="button" class="gt-btn" @click="applyGodTemplate('leak')">📜 核心机密与底牌当众泄露</button>
+              <button type="button" class="gt-btn" @click="applyGodTemplate('poison')">☠️ 核心首领突遭暗算剧毒</button>
+            </div>
+
+            <div class="god-input-row">
+              <div class="god-target-select">
+                <label class="god-label">干预范围：</label>
+                <select v-model="godTargetMode" class="sim-input">
+                  <option value="world">全域世界天灾 / 突发异变</option>
+                  <option value="character">特定角色心境与动机篡改</option>
+                </select>
+              </div>
+              <div v-if="godTargetMode === 'character'" class="god-target-select">
+                <label class="god-label">目标角色：</label>
+                <select v-model="godTargetCharacter" class="sim-input">
+                  <option v-for="c in characters" :key="c" :value="c">{{ c }}</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="god-prompt-row">
+              <textarea
+                v-model="godPrompt"
+                class="god-textarea"
+                rows="2"
+                :placeholder="godTargetMode === 'world' ? '输入突发变数（如：雷劫突然降临，整座城池护山大阵瞬间瓦解…）' : '输入新的动机或心境（如：陷入绝境狂化，决心不惜一切代价同归于尽…）'"
+              ></textarea>
+              <button
+                type="button"
+                class="god-submit-btn"
+                :disabled="godInjecting || !godPrompt.trim()"
+                @click="submitGodIntervention"
+              >
+                <span v-if="godInjecting" class="spinner-xs"></span>
+                {{ godInjecting ? '注入中...' : '⚡ 施加干预' }}
+              </button>
+            </div>
+
+            <div v-if="godMsg" class="msg-line" :class="{ error: godMsgError }">{{ godMsg }}</div>
+          </div>
+
           <div v-if="simCtlMsg" class="msg-line" :class="{ error: simCtlMsgError }">{{ simCtlMsg }}</div>
         </div>
 
@@ -2555,7 +2620,7 @@ function openInterviewWithNode(node) {
   })
 }
 
-// IPC 控制
+// IPC 控制与上帝干预
 const simCtlMsg = ref('')
 const simCtlMsgError = ref(false)
 const characters = ref([])
@@ -2563,6 +2628,63 @@ const interviewCharacter = ref('')
 const interviewPrompt = ref('')
 const interviewing = ref(false)
 const interviewAnswer = ref('')
+
+// 上帝干预 (God Mode Interventions)
+const showGodModePanel = ref(false)
+const godTargetMode = ref('world') // 'world' | 'character'
+const godTargetCharacter = ref('')
+const godPrompt = ref('')
+const godInjecting = ref(false)
+const godMsg = ref('')
+const godMsgError = ref(false)
+
+function applyGodTemplate(type) {
+  if (type === 'catastrophe') {
+    godTargetMode.value = 'world'
+    godPrompt.value = '远古秘境封印大阵突然发生剧烈异变，狂暴的灵气风暴席卷整个区域，所有人的感知与法力受到严重压制！'
+  } else if (type === 'third_party') {
+    godTargetMode.value = 'world'
+    godPrompt.value = '第三方隐世庞大势力突然高调宣布介入争端，并在要道设伏，对所有涉事人员进行无差别盘查！'
+  } else if (type === 'leak') {
+    godTargetMode.value = 'world'
+    godPrompt.value = '最核心的秘密与隐藏底牌被匿名公布于天下，所有原本暗流涌动的博弈彻底摆上台面！'
+  } else if (type === 'poison') {
+    godTargetMode.value = 'character'
+    if (characters.value.length) {
+      godTargetCharacter.value = characters.value[0]
+    }
+    godPrompt.value = '突遭神秘诡异的奇毒暗算，实力大跌且生命危在旦夕，必须在短时间内做出决绝的破局抉择！'
+  }
+}
+
+async function submitGodIntervention() {
+  if (!godPrompt.value.trim()) return
+  if (!simPollingId) {
+    godMsg.value = '当前没有正在运行或暂停的模拟推演实例'
+    godMsgError.value = true
+    return
+  }
+  godInjecting.value = true
+  godMsg.value = ''
+  godMsgError.value = false
+  try {
+    const isChar = godTargetMode.value === 'character'
+    const res = await controlWorldSimulation(projectId, simPollingId, {
+      action: isChar ? 'alter_character' : 'inject_variable',
+      character_name: isChar ? (godTargetCharacter.value || characters.value[0] || '') : 'anomaly',
+      prompt: godPrompt.value.trim()
+    })
+    godMsg.value = isChar
+      ? `👑 上帝干预成功：已重塑【${godTargetCharacter.value}】的心境与动机！`
+      : '👑 上帝干预成功：已将世界突发变数广播至沙盘，下一轮推演将剧烈演化！'
+    godPrompt.value = ''
+  } catch (e) {
+    godMsg.value = e.message || '注入变数失败'
+    godMsgError.value = true
+  } finally {
+    godInjecting.value = false
+  }
+}
 const interviewMsg = ref('')
 const interviewMsgError = ref(false)
 
@@ -5827,18 +5949,153 @@ onUnmounted(() => {
   padding: 10px 12px;
   background: #FAFAFA;
 }
-.sim-ctl-title {
-  font-size: 10.5px;
-  font-weight: 600;
-  color: #999;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.sim-ctl-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 8px;
+}
+.sim-ctl-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #334155;
+  letter-spacing: 0.3px;
+}
+.sim-ctl-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.sim-ctl-badge.paused {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+.sim-ctl-badge.running {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
 }
 .sim-ctl-btns {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
+}
+.god-mode-btn {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+  border: none !important;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.35);
+}
+.god-mode-btn:hover {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%) !important;
+  transform: translateY(-1px);
+}
+.god-mode-panel {
+  margin-top: 10px;
+  padding: 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.god-panel-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.god-panel-title span:first-child {
+  font-size: 12px;
+  font-weight: 700;
+  color: #92400e;
+}
+.god-panel-sub {
+  font-size: 11px;
+  color: #b45309;
+}
+.god-templates {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
+.gt-label {
+  font-size: 10.5px;
+  color: #92400e;
+  font-weight: 600;
+}
+.gt-btn {
+  font-size: 10.5px;
+  padding: 2px 8px;
+  background: #fff;
+  border: 1px solid #fcd34d;
+  border-radius: 4px;
+  color: #78350f;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.gt-btn:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+}
+.god-input-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.god-target-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.god-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #78350f;
+  white-space: nowrap;
+}
+.god-prompt-row {
+  display: flex;
+  gap: 8px;
+}
+.god-textarea {
+  flex: 1;
+  border: 1px solid #fcd34d;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  resize: vertical;
+}
+.god-textarea:focus {
+  outline: none;
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+}
+.god-submit-btn {
+  padding: 0 16px;
+  background: #d97706;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.god-submit-btn:hover:not(:disabled) {
+  background: #b45309;
+}
+.god-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 角色采访 */

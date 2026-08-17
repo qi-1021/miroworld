@@ -59,6 +59,8 @@ CMD_PAUSE = "pause"          # 暂停模拟
 CMD_RESUME = "resume"        # 恢复模拟
 CMD_STOP = "stop"            # 停止模拟
 CMD_INTERVIEW = "interview"  # 采访指定角色
+CMD_INJECT_VARIABLE = "inject_variable"  # 上帝干预：向世界注入突发变数/天灾/情报
+CMD_ALTER_CHARACTER = "alter_character"  # 上帝干预：篡改特定角色心境/动机/状态
 
 # IPC 目录名（纯文件系统，供 .venv-simulation 无 Flask 环境使用）
 IPC_COMMANDS_DIR = "ipc_commands"
@@ -228,8 +230,9 @@ class WorldEnv:
         self.events: List[WorldEvent] = []
         self.history: List[str] = []
         self.story_summary: List[str] = []  # 每步一句剧情脉络（长程记忆）
+        self.active_variables: List[Dict[str, Any]] = []  # 上帝干预：当前世界生效中的突发变数/异变/外力
 
-        # IPC 控制（暂停/停止/采访），无则默认为 None
+        # IPC 控制（暂停/停止/采访/上帝干预），无则默认为 None
         self.ipc: Optional["WorldIPCHandler"] = None
 
         # 最近一次感知中被过滤（隐藏）的信息列表，供 run 循环写入事件 detail.filtered
@@ -290,9 +293,103 @@ class WorldEnv:
             await self._handle_interview(command_id, args, llm_call)
             return False
 
+        if ctype == CMD_INJECT_VARIABLE:
+            await self._handle_inject_variable(command_id, args)
+            return False
+
+        if ctype == CMD_ALTER_CHARACTER:
+            await self._handle_alter_character(command_id, args)
+            return False
+
         # 未知命令：响应错误但不中断
         self.ipc.send_response(command_id, "failed", error=f"未知命令类型: {ctype}")
         return False
+
+    async def _handle_inject_variable(self, command_id: str, args: Dict[str, Any]):
+        """上帝干预：向世界沙盘注入突发变数（天灾/异变/外力入局/情报泄露）"""
+        var_text = str(args.get("variable") or args.get("content") or args.get("prompt") or "").strip()
+        var_kind = str(args.get("kind") or "anomaly").strip()
+        if not var_text:
+            self.ipc.send_response(command_id, "failed", error="变数内容不能为空")
+            return
+
+        var_entry = {
+            "id": f"var_{len(self.active_variables) + 1}",
+            "kind": var_kind,
+            "text": var_text,
+            "step": self.current_step,
+            "time": self.time_str(),
+        }
+        self.active_variables.append(var_entry)
+
+        # 记录为显式的上帝干预全局事件
+        god_event = WorldEvent(
+            step=self.current_step,
+            time=self.time_str(),
+            character_id="god_author",
+            character_name="👑 创作者干预",
+            action_type="god_variable",
+            action_desc=f"【上帝变数注入】{var_text}",
+            result="世界法则与局势发生剧烈震荡，所有角色均受到强烈冲击",
+            id=f"ev_{self.current_step}_god_{len(self.events)}",
+            location="全域世界",
+            approved=True,
+            detail={"variable": var_entry},
+        )
+        self.events.append(god_event)
+        self.history.append(god_event.to_text())
+        print(f"  👑 [上帝干预] 注入突发变数: {var_text}")
+
+        self.ipc.send_response(command_id, "completed", result={
+            "variable": var_entry,
+            "active_variables_count": len(self.active_variables),
+        })
+
+    async def _handle_alter_character(self, command_id: str, args: Dict[str, Any]):
+        """上帝干预：篡改特定角色的心境/即时动机/目标/状态"""
+        character_name = str(args.get("character_name", "")).strip()
+        new_goal = str(args.get("goal") or "").strip()
+        new_persona_delta = str(args.get("persona_delta") or args.get("mindset") or "").strip()
+
+        char = None
+        if character_name:
+            char = self.characters.get(character_name)
+            if char is None:
+                char = next((c for c in self.characters.values() if c.name == character_name), None)
+
+        if char is None:
+            self.ipc.send_response(command_id, "failed", error=f"未找到角色: {character_name}")
+            return
+
+        if new_goal:
+            char.goal = new_goal
+        if new_persona_delta:
+            char.persona = f"{char.persona} 【心境突变：{new_persona_delta}】"
+
+        # 记录为角色心境突变事件
+        shift_desc = f"【心境动机重塑】{char.name} 的目标被重塑为：{new_goal or '未变'}，心境转为：{new_persona_delta or '狂化/决绝'}"
+        god_event = WorldEvent(
+            step=self.current_step,
+            time=self.time_str(),
+            character_id="god_author",
+            character_name="👑 创作者干预",
+            action_type="mindset_shift",
+            action_desc=shift_desc,
+            result=f"{char.name} 的行为模式与抉择倾向已彻底改变",
+            id=f"ev_{self.current_step}_mind_{char.id}_{len(self.events)}",
+            location=self.locations.get(char.location, WorldLocation("?", "?")).name,
+            approved=True,
+            detail={"character_id": char.id, "new_goal": new_goal, "persona_delta": new_persona_delta},
+        )
+        self.events.append(god_event)
+        self.history.append(god_event.to_text())
+        print(f"  🧠 [心境重塑] {char.name}: {shift_desc}")
+
+        self.ipc.send_response(command_id, "completed", result={
+            "character_id": char.id,
+            "character_name": char.name,
+            "current_goal": char.goal,
+        })
 
     async def _handle_interview(self, command_id: str, args: Dict[str, Any], llm_call):
         """采访指定角色：用 LLM 以该角色的身份和当前感知回答采访问题"""
@@ -652,19 +749,27 @@ class WorldEnv:
                 _goal = (char.goal or "").strip() or "按人设自然行动"
                 _recent = self._recent_context(char)
                 _global = self._global_context()
-                _story = self._story_context()
                 _world_mem = self._world_memory()
+                _vars_block = ""
+                if self.active_variables:
+                    _vars_lines = ["【🚨 世界突发重大变数 / 上帝干预已降临】："]
+                    for v in self.active_variables[-3:]:
+                        _vars_lines.append(f"· {v.get('text')}")
+                    _vars_lines.append("【重要警告】：以上突发异变/天灾/外力直接影响整个世界格局，你必须在接下来的行动中对该变数做出最直接的应急反应、抉择或应对！")
+                    _vars_block = "\n".join(_vars_lines) + "\n\n"
+
                 prompt = (
                     f"你是{char.name}。{char.persona}\n"
                     f"当前目标：{_goal}\n"
                     f"你的身份知识：{'、'.join(char.knowledge) if char.knowledge else '无'}\n"
+                    f"{_vars_block}"
                     f"你亲身经历/目睹的最近事（角色记忆）：\n{_recent or '（暂无）'}\n\n"
                     f"故事脉络（最近几步）：\n{_story or '（暂无）'}\n\n"
                     f"世界最新动态（你可能听说或需要留意）：\n{_global or '（暂无）'}\n\n"
                     f"世界记忆（作者设定与规则）：\n{_world_mem or '（暂无）'}\n\n"
                     f"{observation}\n"
                     f"请严格以{char.name}的身份与性格行动：语气、价值观、口癖都符合人物设定（persona），"
-                    f"动作要尽量衔接上面提到的最近事件和世界动态，推动剧情连贯发展，"
+                    f"动作要尽量衔接上面提到的最近事件、突发变数和世界动态，推动剧情连贯发展，"
                     f"不要说出超出其身份与见闻的内容。"
                 )
                 prepared.append((char, observation, prompt, filtered))

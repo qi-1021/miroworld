@@ -38,6 +38,8 @@ IPC_CMD_PAUSE = "pause"
 IPC_CMD_RESUME = "resume"
 IPC_CMD_STOP = "stop"
 IPC_CMD_INTERVIEW = "interview"
+IPC_CMD_INJECT_VARIABLE = "inject_variable"
+IPC_CMD_ALTER_CHARACTER = "alter_character"
 
 # IPC 目录名（纯文件系统）
 IPC_COMMANDS_DIR = "ipc_commands"
@@ -459,7 +461,10 @@ class WorldSimulationService:
         Returns:
             Dict，含 command_id / action，interview 额外含响应的 result
         """
-        if action not in (IPC_CMD_PAUSE, IPC_CMD_RESUME, IPC_CMD_STOP, IPC_CMD_INTERVIEW):
+        if action not in (
+            IPC_CMD_PAUSE, IPC_CMD_RESUME, IPC_CMD_STOP, IPC_CMD_INTERVIEW,
+            IPC_CMD_INJECT_VARIABLE, IPC_CMD_ALTER_CHARACTER
+        ):
             raise ValueError(f"不支持的控制动作: {action}")
 
         state = cls.get_state(simulation_id)
@@ -473,9 +478,23 @@ class WorldSimulationService:
             if not character_name:
                 raise ValueError("采访模式必须提供 character_name（角色名/id）")
 
+        # inject_variable 需要变数内容
+        if action == IPC_CMD_INJECT_VARIABLE:
+            if not prompt:
+                raise ValueError("注入变数必须提供 prompt/variable（变数内容）")
+
+        # alter_character 需要角色名与新动机
+        if action == IPC_CMD_ALTER_CHARACTER:
+            if not character_name:
+                raise ValueError("动机篡改必须提供 character_name（角色名/id）")
+
         args = {}
         if action == IPC_CMD_INTERVIEW:
             args = {"character_name": character_name, "prompt": prompt}
+        elif action == IPC_CMD_INJECT_VARIABLE:
+            args = {"variable": prompt, "kind": character_name or "anomaly"}
+        elif action == IPC_CMD_ALTER_CHARACTER:
+            args = {"character_name": character_name, "goal": prompt, "persona_delta": prompt}
 
         command_id = cls._send_world_command(project_id, simulation_id, action, args)
 
