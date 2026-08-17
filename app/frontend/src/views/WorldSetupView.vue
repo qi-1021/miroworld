@@ -1373,15 +1373,19 @@
                 </div>
               </div>
 
-              <!-- 与选定人物进行对话的直达入口 -->
+              <!-- 与选定实体交互（仅针对角色/人物提供深度访谈对话，非人物提供设定档案定位） -->
               <div class="panel-chat-action">
                 <button
+                  v-if="isCharacterNode(selectedGraphNode)"
                   type="button"
                   class="panel-chat-btn"
                   @click="openInterviewWithNode(selectedGraphNode)"
                 >
-                  💬 与 {{ selectedGraphNode.name }} 开启对话
+                  💬 与 {{ selectedGraphNode.name }} 开启角色访谈对话
                 </button>
+                <div v-else class="non-char-tip">
+                  <span>🏛️ 此实体为【{{ graphNodeType(selectedGraphNode) }}】设定要素，已自动收录进世界法则数据库</span>
+                </div>
               </div>
             </div>
           </div>
@@ -2056,6 +2060,33 @@ const GRAPH_COLORS = [
 function graphNodeType(n) {
   const labels = (n.labels || []).filter(l => l !== 'Entity')
   return labels.join(' / ') || t('world.graphNodeEntity')
+}
+
+// 智能判定该实体是否具备独立意志/人格（适合进行角色深度访谈与对话）
+function isCharacterNode(n) {
+  if (!n) return false
+  const labels = (n.labels || []).map(l => String(l).toLowerCase())
+  const typeStr = graphNodeType(n).toLowerCase()
+  const nameStr = (n.name || '').toLowerCase()
+  
+  // 1. 显式人物/角色标签判定
+  const charKeywords = ['人物', '角色', '干员', '领袖', '主角', '配角', '神祇', '英雄', '生物', 'person', 'character', 'agent', 'npc', 'individual']
+  if (labels.some(l => charKeywords.some(k => l.includes(k)))) return true
+  if (charKeywords.some(k => typeStr.includes(k))) return true
+  
+  // 2. 预设角色列表命中判定
+  const charArr = characters.value || []
+  if (charArr.some(c => {
+    const cName = typeof c === 'string' ? c : (c?.name || '')
+    return cName && n.name && cName.trim() === n.name.trim()
+  })) return true
+
+  // 3. 排除明显非人物的实体类型（地点、国家、物品、法宝、事件、法则、概念、疾病）
+  const nonCharKeywords = ['国家', '地点', '城市', '物品', '器物', '法宝', '道具', '事件', '概念', '法则', '境界', '疾病', '星门', 'location', 'place', 'item', 'event', 'concept']
+  if (labels.some(l => nonCharKeywords.some(k => l.includes(k)))) return false
+  if (nonCharKeywords.some(k => typeStr.includes(k))) return false
+
+  return false
 }
 
 function graphNodeColor(n) {

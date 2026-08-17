@@ -261,13 +261,18 @@ def start_edge_refill(
 
     def _refill_task():
         import traceback
-        from ..models.task import TaskStatus
+        from ..models.task import TaskStatus, set_current_task_id
+        set_current_task_id(task_id)
         try:
             task_manager.update_task(task_id, status=TaskStatus.PROCESSING, progress=1,
                                      message="开始补边（重放 episode，提取边）...")
             result = run_edge_refill(project_id, graph_id, task_manager, task_id)
-            task_manager.complete_task(
+            msg = f"补边完成！共处理 {result['total']} 块，成功提取并关联关系边"
+            task_manager.update_task(
                 task_id,
+                status=TaskStatus.COMPLETED,
+                progress=100,
+                message=msg,
                 result={
                     "total": result["total"],
                     "refilled": result["refilled"],
