@@ -800,11 +800,13 @@ class GraphitiClient(ZepClientAdapter):
             ep = episodes[i]
             ep_type = ep.get("type", "text")
             data = ep.get("data", "")
+            logger.info(f"[图谱构建批次] 正在处理第 {i+1}/{total} 块 (长度 {len(data)} 字)...")
             try:
                 uuid = self.add_episode(
                     graph_id=graph_id, data=data, episode_type=ep_type,
                 )
                 if uuid:
+                    logger.info(f"[图谱构建批次] 第 {i+1}/{total} 块处理成功: uuid={uuid}")
                     return uuid
                 logger.warning(f"episode {i} 返回空 uuid（可能是空内容），跳过")
             except Exception as e:

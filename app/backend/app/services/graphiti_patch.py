@@ -553,18 +553,30 @@ def _apply_response_normalization_patch() -> bool:
             from graphiti_core.llm_client.openai_generic_client import DEFAULT_MODEL
         except ImportError:
             DEFAULT_MODEL = 'gpt-4.1-mini'
+        async def _chat_create(**kw):
+            kwargs = {
+                "model": self.model or DEFAULT_MODEL,
+                "messages": openai_messages,
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "extra_body": {"thinking": {"type": "disabled"}},
+                **kw,
+            }
+            try:
+                return await self.client.chat.completions.create(**kwargs)
+            except Exception as exc:
+                if "extra_body" in str(exc) or "thinking" in str(exc) or "400" in str(exc) or "422" in str(exc):
+                    kwargs.pop("extra_body", None)
+                    return await self.client.chat.completions.create(**kwargs)
+                raise
+
         try:
             import time as _time
             _t0 = _time.time()
             _model = self.model or DEFAULT_MODEL
             logger.info(f'LLM 调用开始: model={_model}, messages={len(openai_messages)}, prompt_len={sum(len(m.get("content","")) for m in openai_messages)}')
             logger.info(f'LLM 调用 system 前80字: {openai_messages[0]["content"][:80] if openai_messages else "无"}')
-            response = await self.client.chat.completions.create(
-                model=self.model or DEFAULT_MODEL,
-                messages=openai_messages,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-            )
+            response = await _chat_create()
             logger.info(f'LLM 调用完成: {_time.time()-_t0:.1f}s')
             result = response.choices[0].message.content or ''
             if not result.strip():
@@ -574,12 +586,7 @@ def _apply_response_normalization_patch() -> bool:
                 import time as _time
                 try:
                     _time.sleep(0.5)
-                    response = await self.client.chat.completions.create(
-                        model=self.model or DEFAULT_MODEL,
-                        messages=openai_messages,
-                        temperature=self.temperature,
-                        max_tokens=self.max_tokens,
-                    )
+                    response = await _chat_create()
                     result = response.choices[0].message.content or ''
                     if result.strip():
                         logger.info('LLM 空响应重试成功')
@@ -607,12 +614,7 @@ def _apply_response_normalization_patch() -> bool:
                 return {}
 
             async def _llm_call_once():
-                resp = await self.client.chat.completions.create(
-                    model=self.model or DEFAULT_MODEL,
-                    messages=openai_messages,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                )
+                resp = await _chat_create()
                 return resp.choices[0].message.content or ''
 
             report_llm_success(_model)
@@ -631,12 +633,7 @@ def _apply_response_normalization_patch() -> bool:
             for attempt in range(max_retry):
                 _time.sleep(0.5 * (attempt + 1))  # 0.5s, 1s 退避（网关恢复快）
                 try:
-                    response = await self.client.chat.completions.create(
-                        model=self.model or DEFAULT_MODEL,
-                        messages=openai_messages,
-                        temperature=self.temperature,
-                        max_tokens=self.max_tokens,
-                    )
+                    response = await _chat_create()
                     result = response.choices[0].message.content or ''
                     if not result.strip():
                         logger.warning(f'LLM 重试 {attempt+1} 次仍返回空响应')
@@ -652,12 +649,7 @@ def _apply_response_normalization_patch() -> bool:
                     report_llm_success(_model)
 
                     async def _llm_call_once():
-                        resp = await self.client.chat.completions.create(
-                            model=self.model or DEFAULT_MODEL,
-                            messages=openai_messages,
-                            temperature=self.temperature,
-                            max_tokens=self.max_tokens,
-                        )
+                        resp = await _chat_create()
                         return resp.choices[0].message.content or ''
 
                     return await _normalize_and_validate(
