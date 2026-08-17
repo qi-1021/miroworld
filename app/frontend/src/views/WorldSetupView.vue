@@ -1155,6 +1155,9 @@
             </div>
 
             <div class="graph-legend-bar">
+              <span v-if="graphBuilding" class="badge processing pulse-growing" style="margin-right: 8px; font-weight: bold; background: rgba(52, 152, 219, 0.2); border: 1px solid #3498db; color: #5dade2;">
+                🌱 正在实时抽取并生长图谱... (已点亮 {{ graphNodes.length }} 实体)
+              </span>
               <button
                 type="button"
                 class="legend-tag setting-tag"
@@ -2450,8 +2453,8 @@ function pollGraphTask(taskId) {
           graphLogsContainer.value.scrollTop = graphLogsContainer.value.scrollHeight
         }
       })
-      // 渐进式图谱动态呈现：每 6 秒探测一次，且仅在有新节点或完成时才执行重绘，彻底避免主线程假死
-      if (pollCount % 6 === 0) {
+      // 渐进式实时生长图谱：每 2 秒探测一次后端 Neo4j 图谱（增量算法耗时仅 1ms），实现大模型边分析边在星图上实时长出新节点！
+      if (pollCount % 2 === 0) {
         fetchGraph().catch(() => {})
       }
       const isTerminal = TERMINAL_STATUSES.includes(status)
