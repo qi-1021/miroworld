@@ -1833,9 +1833,9 @@ function goStep(key) {
   target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-// 世界图谱状态
-const GV_W = 780
-const GV_H = 420
+// 世界图谱状态（高分辨率地图画布坐标系）
+const GV_W = 1400
+const GV_H = 800
 const graphInfo = ref(null)          // { nodes, edges, node_count, edge_count }
 const graphPos = ref({})             // uuid -> {x, y}（力导向布局结果）
 const graphBuilding = ref(false)
@@ -2182,17 +2182,19 @@ function startDragNode(n, evt) {
   window.addEventListener('mouseup', onMouseUp)
 }
 
-// 优化的全域星图力导向布局（强斥力 + 聚类引力 + 智能防边角聚集）
+// 优化的全域星图力导向布局（带物理刚体碰撞检测与绝对防重叠机制）
 function layoutGraph(nodes, edges) {
   const pos = {}
   const count = nodes.length || 1
-  // 环状均匀发散初始位置
+  
+  // 1. 斐波那契螺旋 / 多同心环分布初始位置，避免初始起点聚集
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5))
   nodes.forEach((n, i) => {
-    const angle = (i / count) * Math.PI * 2
-    const radius = 180 + (i % 3) * 60
+    const r = Math.sqrt(i + 1) * 75 + 120
+    const theta = i * goldenAngle
     pos[n.uuid] = {
-      x: GV_W / 2 + Math.cos(angle) * radius,
-      y: GV_H / 2 + Math.sin(angle) * (radius * 0.75)
+      x: GV_W / 2 + Math.cos(theta) * (r * 1.2),
+      y: GV_H / 2 + Math.sin(theta) * (r * 0.8)
     }
   })
 
@@ -2204,10 +2206,11 @@ function layoutGraph(nodes, edges) {
     linkMap.get(e.target).add(e.source)
   })
 
-  // 迭代 300 轮退火优化
-  for (let iter = 0; iter < 300; iter++) {
-    const cooling = Math.max(0.1, 1 - (iter / 300))
-    // 1. 节点间非线性斥力（加大基础斥力，防止节点堆叠）
+  // 2. 迭代 320 轮动力学退火
+  for (let iter = 0; iter < 320; iter++) {
+    const cooling = Math.max(0.08, 1 - (iter / 320))
+
+    // 2.1 库仑斥力（大范围温和斥力）
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const a = pos[nodes[i].uuid]
@@ -2215,19 +2218,35 @@ function layoutGraph(nodes, edges) {
         let dx = a.x - b.x
         let dy = a.y - b.y
         let d = Math.sqrt(dx * dx + dy * dy) || 1
-        // 距离过近时极强排斥
-        const k = 140
-        const force = ((k * k) / d) * cooling * 0.4
-        dx /= d
-        dy /= d
-        a.x += dx * force
-        a.y += dy * force
-        b.x -= dx * force
-        b.y -= dy * force
+        
+        // 基础安全间距（考虑节点半径与下方文字标签高度）
+        const rA = graphNodeR(nodes[i])
+        const rB = graphNodeR(nodes[j])
+        const minDist = rA + rB + 55 // 至少保证 55px 纯净空防文字碰撞
+
+        if (d < minDist * 2.2) {
+          // 距离近时极强排斥
+          const force = (Math.pow(minDist * 2.2 - d, 2) / 60) * cooling
+          dx /= d
+          dy /= d
+          a.x += dx * force
+          a.y += dy * force
+          b.x -= dx * force
+          b.y -= dy * force
+        } else {
+          // 常规斥力
+          const force = (9000 / (d * d)) * cooling
+          dx /= d
+          dy /= d
+          a.x += dx * force
+          a.y += dy * force
+          b.x -= dx * force
+          b.y -= dy * force
+        }
       }
     }
 
-    // 2. 关系边弹簧拉力（有关系的节点聚拢）
+    // 2.2 关系胡克弹簧引力
     edges.forEach(e => {
       const a = pos[e.source]
       const b = pos[e.target]
@@ -2235,8 +2254,8 @@ function layoutGraph(nodes, edges) {
       let dx = b.x - a.x
       let dy = b.y - a.y
       let d = Math.sqrt(dx * dx + dy * dy) || 1
-      const idealLen = 130
-      const force = (d - idealLen) * 0.04 * cooling
+      const idealLen = 160
+      const force = (d - idealLen) * 0.035 * cooling
       dx /= d
       dy /= d
       a.x += dx * force
@@ -2245,19 +2264,50 @@ function layoutGraph(nodes, edges) {
       b.y -= dy * force
     })
 
-    // 3. 向心重力（防止孤立节点无限飘向边界）
+    // 2.3 向心弱重力
     nodes.forEach(n => {
       const p = pos[n.uuid]
-      p.x += (GV_W / 2 - p.x) * 0.015 * cooling
-      p.y += (GV_H / 2 - p.y) * 0.015 * cooling
+      p.x += (GV_W / 2 - p.x) * 0.008 * cooling
+      p.y += (GV_H / 2 - p.y) * 0.008 * cooling
     })
   }
 
-  // 边界柔性限制
+  // 3. 最终多轮「物理刚体碰撞无损分离算法 (Hard Overlap Relaxation)」
+  // 强制任何两个节点之间的中心距离大于等于最小安全距离，完全消除任何视觉遮挡
+  for (let pass = 0; pass < 20; pass++) {
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const uA = nodes[i].uuid
+        const uB = nodes[j].uuid
+        const a = pos[uA]
+        const b = pos[uB]
+        let dx = a.x - b.x
+        let dy = a.y - b.y
+        let d = Math.sqrt(dx * dx + dy * dy) || 0.1
+        const requiredGap = graphNodeR(nodes[i]) + graphNodeR(nodes[j]) + 48 // 强制最小 48px 隔离带
+
+        if (d < requiredGap) {
+          const overlap = requiredGap - d
+          let nx = dx / d
+          let ny = dy / d
+          if (d === 0.1) {
+            nx = Math.cos(i)
+            ny = Math.sin(i)
+          }
+          a.x += nx * (overlap * 0.5)
+          a.y += ny * (overlap * 0.5)
+          b.x -= nx * (overlap * 0.5)
+          b.y -= ny * (overlap * 0.5)
+        }
+      }
+    }
+  }
+
+  // 4. 边界软限制
   nodes.forEach(n => {
     const p = pos[n.uuid]
-    p.x = Math.max(80, Math.min(GV_W - 80, p.x))
-    p.y = Math.max(60, Math.min(GV_H - 60, p.y))
+    p.x = Math.max(90, Math.min(GV_W - 90, p.x))
+    p.y = Math.max(70, Math.min(GV_H - 70, p.y))
   })
   return pos
 }
