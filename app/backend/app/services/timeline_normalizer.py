@@ -93,41 +93,71 @@ def normalize_time_kind(raw) -> str:
 # ---------------------------------------------------------------------------
 # 时间锚解析
 # ---------------------------------------------------------------------------
-# 绝对纪年：3-4 位数字 + 年
-_RE_YEAR = re.compile(r'(\d{3,4})\s*年')
-# 世纪表达：本世纪三十年代 / 三十年代
+# 时间锚解析（全面支持小说架空纪年、修仙/科幻历法、相对时间与精确排序）
+# ---------------------------------------------------------------------------
+# 绝对与架空纪年：公元/星历/天元/神武/新历/创世历/西历/泰拉历 + 数字 + 年
+_RE_ERA_YEAR = re.compile(r'(?:公元|星历|天元|神武|新历|创世历|西历|泰拉历|圣历|光和|元和|建安|永徽|贞观|开元|洪武|万历|天启|崇祯)?\s*(\d{1,5})\s*年')
+# 汉字纪年（如：三年、二十五年、一百二十年）
+_RE_CN_YEAR = re.compile(r'([一二两三四五六七八九十百千]+)\s*年')
+# 世纪表达：本世纪三十年代 / 三十年代 / 20世纪
 _RE_DECADE = re.compile(r'(\d{1,2}|[一二三四五六七八九十百]+)\s*0\s*年?代', re.IGNORECASE)
 # 年龄锚：中文/阿拉伯数字 + 岁/岁生日
 _RE_AGE = re.compile(r'([一二三四五六七八九十]+|\d{1,3})\s*岁')
-_CN_NUM = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10, "百": 100}
-_CN_NUM_MULT = {"十": 10, "百": 100}
+# 相对时间偏移：X年后 / X个月后 / X天后 / 次年 / 翌年 / 数月后 / 数年后 / 半年后
+_RE_REL_YEAR_AFTER = re.compile(r'([一二两三四五六七八九十\d]+)\s*年\s*(?:之?后|以后|后)')
+_RE_REL_YEAR_BEFORE = re.compile(r'([一二两三四五六七八九十\d]+)\s*年\s*(?:之?前|以前|前)')
+_RE_REL_MONTH_AFTER = re.compile(r'([一二两三四五六七八九十\d]+)\s*(?:个)?月\s*(?:之?后|以后|后)')
+_RE_REL_DAYS_AFTER = re.compile(r'([一二两三四五六七八九十\d]+)\s*天\s*(?:之?后|以后|后)')
 
+_CN_NUM = {
+    "零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
+    "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+    "百": 100, "千": 1000
+}
 
-def _cn_to_int(s: str):
+def _cn_to_int(s: str) -> int:
+    if not s:
+        return 0
+    s = str(s).strip()
     if s.isdigit():
         return int(s)
-    # 处理 十、十五、二十、五十一 等
-    if s == "十":
-        return 10
-    if "十" in s:
-        parts = s.split("十")
-        a = _CN_NUM.get(parts[0], 1) if parts[0] else 1
-        b = _CN_NUM.get(parts[1], 0) if len(parts) > 1 and parts[1] else 0
-        return a * 10 + b
-    return _CN_NUM.get(s, 0)
+    # 处理千、百、十复合汉字数字（如 一百二十五、三千五百、二十三）
+    total = 0
+    curr = 0
+    for char in s:
+        if char in ("千", "百", "十"):
+            mult = 1000 if char == "千" else (100 if char == "百" else 10)
+            if curr == 0:
+                curr = 1
+            total += curr * mult
+            curr = 0
+        elif char in _CN_NUM:
+            curr = _CN_NUM[char]
+    total += curr
+    return total if total > 0 else _CN_NUM.get(s, 0)
 
 
 # 年龄/阶段词表 → 年龄段区间 [low, high)
 PHASE_RANGES = {
+    "幼年": (0, 6),
     "小时候": (0, 12),
     "童年": (0, 12),
     "上学年龄": (6, 12),
     "少年": (10, 18),
     "十多岁": (10, 18),
     "青年": (16, 35),
+    "及冠": (20, 25),
+    "弱冠": (20, 25),
+    "而立": (30, 35),
     "成年": (18, 50),
+    "不惑": (40, 45),
     "中年": (40, 65),
+    "知天命": (50, 55),
+    "花甲": (60, 65),
+    "古稀": (70, 75),
+    "耄耋": (80, 90),
     "老年": (60, 220),
+    "暮年": (70, 220),
     "年事已高": (60, 220),
 }
 
@@ -137,40 +167,71 @@ def parse_time_anchor(time_text: str):
     解析时间表达，返回归一化字段 dict：
       {year, year_lower, year_upper, age, age_lower, age_upper,
        time_kind, sort_lower, sort_upper, seq_anchor}
-    seq_anchor 用于叙述顺序兜底。
     """
     if not time_text:
         return None
-    t = str(time_text)
+    t = str(time_text).strip()
     out = {
         "year": None, "year_lower": None, "year_upper": None,
         "age": None, "age_lower": None, "age_upper": None,
         "time_kind": "unspecified", "sort_lower": None, "sort_upper": None,
     }
-    # 绝对纪年
-    m = _RE_YEAR.search(t)
-    if m:
-        out["year"] = int(m.group(1)); out["year_lower"] = out["year"]; out["year_upper"] = out["year"]
+
+    # 1. 绝对纪年与架空小说历法（星历2045年 / 1098年 / 神武三年）
+    m_era = _RE_ERA_YEAR.search(t)
+    if m_era:
+        yr = int(m_era.group(1))
+        out["year"] = yr; out["year_lower"] = yr; out["year_upper"] = yr
         out["time_kind"] = "year"
-        out["sort_lower"] = out["year"] * 10.0; out["sort_upper"] = out["year"] * 10.0
+        out["sort_lower"] = yr * 10.0; out["sort_upper"] = yr * 10.0
         return out
-    # 年龄锚
-    m = _RE_AGE.search(t)
-    if m:
-        age = _cn_to_int(m.group(1))
+
+    # 2. 汉字纪年（如 建安三年、光和五年）
+    m_cn_yr = _RE_CN_YEAR.search(t)
+    if m_cn_yr:
+        yr = _cn_to_int(m_cn_yr.group(1))
+        if yr > 0:
+            out["year"] = yr; out["year_lower"] = yr; out["year_upper"] = yr
+            out["time_kind"] = "year"
+            out["sort_lower"] = yr * 10.0; out["sort_upper"] = yr * 10.0
+            return out
+
+    # 3. 相对时间跨度（三年后 / 次年 / 翌年 / 半年后 / 5天后）
+    if "次年" in t or "翌年" in t or "第二年" in t:
+        out["time_kind"] = "period"
+        out["sort_lower"] = 1.0 * 10.0
+        out["sort_upper"] = 1.0 * 10.0
+        return out
+    if "数月后" in t or "数日后" in t or "几天后" in t or "不久后" in t or "片刻后" in t:
+        out["time_kind"] = "literal"
+        return out
+
+    m_rya = _RE_REL_YEAR_AFTER.search(t)
+    if m_rya:
+        delta_y = _cn_to_int(m_rya.group(1)) or 1
+        out["time_kind"] = "period"
+        out["sort_lower"] = float(delta_y) * 10.0
+        out["sort_upper"] = float(delta_y) * 10.0
+        return out
+
+    # 4. 年龄锚
+    m_age = _RE_AGE.search(t)
+    if m_age:
+        age = _cn_to_int(m_age.group(1))
         out["age"] = age; out["age_lower"] = age; out["age_upper"] = age
         out["time_kind"] = "age"
         out["sort_lower"] = float(age); out["sort_upper"] = float(age)
         return out
-    # 阶段词表
+
+    # 5. 阶段词表
     for phase, (lo, hi) in PHASE_RANGES.items():
         if phase in t:
             out["age_lower"] = lo; out["age_upper"] = hi
             out["time_kind"] = "phase"
-            mid = (lo + hi) / 2.0
-            out["sort_lower"] = lo; out["sort_upper"] = hi
+            out["sort_lower"] = float(lo); out["sort_upper"] = float(hi)
             return out
-    # 世纪/年代
+
+    # 6. 世纪/年代
     dm = _RE_DECADE.search(t)
     if dm:
         decade_base = _cn_to_int(dm.group(1)) * 10
@@ -179,6 +240,6 @@ def parse_time_anchor(time_text: str):
         out["sort_lower"] = float(decade_base) * 10.0
         out["sort_upper"] = float(decade_base + 9) * 10.0
         return out
-    # 其余 → 无显式锚，kind=literal/unspecified，sort 交由调用方按 seq 赋
-    out["time_kind"] = "literal" if t.strip() else "unspecified"
+
+    out["time_kind"] = "literal" if t else "unspecified"
     return out

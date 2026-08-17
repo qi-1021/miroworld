@@ -124,8 +124,11 @@
         <div v-for="(s, si) in extractSteps" :key="si" class="tl-progress-step">{{ s }}</div>
       </div>
       <div v-if="extractError" class="tl-progress-error">{{ extractError }}</div>
-      <div v-if="extractInterrupted || extractError" class="tl-edit-btns">
-        <button class="tl-btn primary" @click="runExtract">{{ $t('timeline.retryLaunch') }}</button>
+      <div class="tl-edit-btns">
+        <button v-if="extracting" type="button" class="tl-btn ghost danger-text" @click="cancelExtract">
+          ⏹ {{ $t('timeline.cancelExtract') || '取消抽取 (保留已提取事件)' }}
+        </button>
+        <button v-if="extractInterrupted || extractError" class="tl-btn primary" @click="runExtract">{{ $t('timeline.retryLaunch') }}</button>
       </div>
     </div>
 
@@ -1824,6 +1827,10 @@ function pollExtract() {
       if (st.stage) extractStage.value = st.stage;
       if (Array.isArray(st.steps)) extractSteps.value = st.steps.slice(-6);
       const s = String(st.status || 'running');
+      // 增量实时展示：每 6 次轮询（约 3 秒）静默拉取一次已落盘事件，做到提取多少展示多少
+      if (extractTries % 6 === 0) {
+        loadEvents(false).catch(() => {})
+      }
       if (s === 'completed') { stopExtractPoll(); await loadEvents(true); statusMessage.value = t('timeline.extractDone', { n: events.value.length }); }
       else if (s === 'partial_failed') { stopExtractPoll(); await loadEvents(true); statusMessage.value = t('timeline.extractPartial', { n: events.value.length }); extractResumable.value = true; }
       else if (s === 'failed') { stopExtractPoll(); extractError.value = st.error || st.message || ''; statusMessage.value = st.message || t('timeline.extractFailed'); statusError.value = true; extractResumable.value = true; }
@@ -1852,6 +1859,14 @@ function pollExtract() {
   }, 500);
 }
 function stopExtractPoll() { clearInterval(extractTimer); extractTimer = null; extractTask.value = ''; extracting.value = false; }
+
+async function cancelExtract() {
+  stopExtractPoll();
+  extractInterrupted.value = true;
+  extractResumable.value = true;
+  statusMessage.value = '已取消当前抽取任务，前序已提取的事件已全部保存';
+  await loadEvents(true);
+}
 
 async function runFuture() {
   const goal = futureGoal.value.trim();

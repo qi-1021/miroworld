@@ -555,6 +555,15 @@
             <span v-if="simStarting" class="spinner-sm"></span>
             {{ simStarting ? $t('world.simStarting') : simStatus === 'running' ? $t('world.simRunning') : $t('world.simStartBtn') }}
           </button>
+          <button
+            v-if="simStatus === 'running' || simStarting"
+            type="button"
+            class="action-btn btn-danger-ghost"
+            title="随时终止推演任务（已生成的轮次事件和世界线均会完整保留）"
+            @click="handleControl('stop')"
+          >
+            ⏹ 终止推演 (保留当前进展)
+          </button>
         </div>
 
         <div v-if="simMsg" class="msg-line" :class="{ error: simMsgError }">{{ simMsg }}</div>
@@ -931,8 +940,17 @@
             {{ graphBuilding ? (graphProgressMsg || $t('world.graphBuilding')) : graphInfo ? $t('world.graphRebuild') : $t('world.graphBuild') }}
           </button>
           <button
+            v-if="graphBuilding"
+            type="button"
+            class="action-btn btn-danger-ghost"
+            title="随时取消当前构建（已提取的批次数据与断点均会完好保留）"
+            @click="cancelGraphBuild"
+          >
+            ⏹ 取消构建 (保留已完成批次)
+          </button>
+          <button
             class="action-btn btn-ghost"
-            :disabled="refillEdgesRunning || !graphInfo || !graphInfo.node_count"
+            :disabled="refillEdgesRunning || !graphInfo || !graphInfo.node_count || graphBuilding"
             @click="handleRefillEdges"
           >
             <span v-if="refillEdgesRunning" class="spinner-sm"></span>
@@ -1294,6 +1312,17 @@
                   <span class="attr-k">{{ row[0] }}:</span>
                   <span class="attr-v">{{ row[1] }}</span>
                 </div>
+              </div>
+
+              <!-- 与选定人物进行对话的直达入口 -->
+              <div class="panel-chat-action">
+                <button
+                  type="button"
+                  class="panel-chat-btn"
+                  @click="openInterviewWithNode(selectedGraphNode)"
+                >
+                  💬 与 {{ selectedGraphNode.name }} 开启对话
+                </button>
               </div>
             </div>
           </div>
@@ -2494,6 +2523,36 @@ async function handleRefillEdges() {
     graphMsg.value = e.message || t('world.msgRefillEdgesStartFailed')
     graphMsgError.value = true
   }
+}
+
+async function cancelGraphBuild() {
+  if (graphPollTimer) {
+    clearInterval(graphPollTimer)
+    graphPollTimer = null
+  }
+  graphBuilding.value = false
+  graphProgressMsg.value = ''
+  graphMsg.value = '已停止图谱构建任务。已处理的前序批次与断点均已完好保存，下次可断点续建。'
+  graphMsgError.value = false
+  await fetchGraph().catch(() => {})
+}
+
+function openInterviewWithNode(node) {
+  if (!node || !node.name) return
+  interviewCharacter.value = node.name
+  if (!characters.value.includes(node.name)) {
+    characters.value.unshift(node.name)
+  }
+  interviewAnswer.value = ''
+  interviewPrompt.value = `请介绍一下你在当前世界的立场、核心动机以及你所掌握的情报与秘密。`
+  interviewMsg.value = ''
+  interviewMsgError.value = false
+  // 平滑滚动到角色访谈对话区
+  nextTick(() => {
+    if (interactionSection.value) {
+      interactionSection.value.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  })
 }
 
 // IPC 控制
@@ -6521,6 +6580,36 @@ onUnmounted(() => {
 .panel-attr-row .attr-v {
   color: #e2e8f0;
   word-break: break-all;
+}
+.panel-chat-action {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.15);
+}
+.panel-chat-btn {
+  width: 100%;
+  padding: 7px 12px;
+  background: linear-gradient(135deg, #a1c50a 0%, #84a206 100%);
+  color: #0f172a;
+  font-weight: 700;
+  font-size: 11.5px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s;
+  box-shadow: 0 4px 12px rgba(161, 197, 10, 0.3);
+}
+.panel-chat-btn:hover {
+  background: linear-gradient(135deg, #b8df13 0%, #9cb80a 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(161, 197, 10, 0.5);
+}
+.panel-chat-btn:active {
+  transform: translateY(0);
 }
 
 /* 内置项目助手 */
