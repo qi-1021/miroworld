@@ -558,15 +558,16 @@ def _apply_response_normalization_patch() -> bool:
                 "messages": openai_messages,
                 "temperature": self.temperature,
                 "max_tokens": self.max_tokens,
+                "timeout": 60.0,
                 "extra_body": {"thinking": {"type": "disabled"}},
                 **kw,
             }
             try:
-                return await self.client.chat.completions.create(**kwargs)
+                return await asyncio.wait_for(self.client.chat.completions.create(**kwargs), timeout=65.0)
             except Exception as exc:
                 if "extra_body" in str(exc) or "thinking" in str(exc) or "400" in str(exc) or "422" in str(exc):
                     kwargs.pop("extra_body", None)
-                    return await self.client.chat.completions.create(**kwargs)
+                    return await asyncio.wait_for(self.client.chat.completions.create(**kwargs), timeout=65.0)
                 raise
 
         try:
