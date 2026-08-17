@@ -287,14 +287,14 @@ class TaskManager:
         self.update_task(task_id, log=log)
 
     def add_llm_exchange(self, task_id: str, exchange: Dict[str, Any]):
-        """追加大模型输入输出交互明细"""
+        """追加大模型输入输出交互明细（保持内存轻量，杜绝轮询网络传输暴增）"""
         with self._task_lock:
             task = self._tasks.get(task_id)
             if task:
                 task.updated_at = datetime.now()
                 task.llm_exchanges.append(exchange)
-                if len(task.llm_exchanges) > 1000:
-                    task.llm_exchanges = task.llm_exchanges[-1000:]
+                if len(task.llm_exchanges) > 60:
+                    task.llm_exchanges = task.llm_exchanges[-60:]
         self._persist_task(task_id)
 
 

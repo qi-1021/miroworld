@@ -1063,12 +1063,16 @@
               <button v-if="!isScrolledToBottom" type="button" class="btn-scroll-bottom" @click="scrollToConsoleBottom">
                 ⬇ 回到最新底部
               </button>
-              <!-- Tab 1: LLM 实时输入与输出卡片 -->
+              <!-- Tab 1: LLM 实时输入与输出卡片（虚拟轻量渲染最近 40 条，防 DOM 爆炸） -->
               <template v-if="consoleActiveTab === 'llm'">
                 <div v-if="!graphTaskExchanges.length" class="console-empty-tip">
                   暂无大模型交互记录（抽取任务触发后将在此实时展示每个提示词与回复）
                 </div>
-                <div v-for="item in graphTaskExchanges" :key="item.id" class="llm-exchange-card">
+                <div
+                  v-for="item in visibleGraphTaskExchanges"
+                  :key="item.id"
+                  class="llm-exchange-card"
+                >
                   <div class="exchange-head">
                     <div class="exchange-head-left">
                       <span class="exchange-time">[{{ item.timestamp }}]</span>
@@ -1961,6 +1965,12 @@ const graphProgressMsg = ref('')
 const graphProgress = ref(0)
 const graphTaskLogs = ref([])
 const graphTaskExchanges = ref([])
+// 虚拟化安全截断：最多保留最新的 35 条 LLM 交互卡片在 DOM 中，彻底防止 40+ 条交互时浏览器渲染崩溃
+const visibleGraphTaskExchanges = computed(() => {
+  if (!graphTaskExchanges.value || !graphTaskExchanges.value.length) return []
+  if (graphTaskExchanges.value.length <= 35) return graphTaskExchanges.value
+  return graphTaskExchanges.value.slice(-35)
+})
 const consoleActiveTab = ref('llm')
 const expandedExchangeIds = ref(new Set())
 function toggleExchangeExpand(id) {
