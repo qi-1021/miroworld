@@ -598,6 +598,14 @@
               <span class="sim-event-where">{{ e.location }}</span>
               <span class="sim-event-what">{{ e.action_desc }}</span>
               <span class="sim-event-result">{{ e.result }}</span>
+              <button
+                type="button"
+                class="mini-btn causal-btn"
+                title="查看该事件的前因后果连锁链"
+                @click.stop="openCausalChain(e)"
+              >
+                🔗 因果链
+              </button>
             </div>
           </div>
           <button v-if="simGroupLimit < groupedSimEvents.length" class="mini-btn sim-load-more" @click="simGroupLimit += 50">
@@ -671,6 +679,14 @@
             <button class="mini-btn danger" @click="handleControl('stop')">⏹ {{ $t('world.stop') || '停止' }}</button>
             <button
               type="button"
+              class="mini-btn"
+              style="background: #2c3e50; border-color: #34495e; color: #fff;"
+              @click="showDirectorModal = true"
+            >
+              🎬 导演时间线规划
+            </button>
+            <button
+              type="button"
               class="mini-btn god-mode-btn"
               :class="{ active: showGodModePanel }"
               @click="showGodModePanel = !showGodModePanel"
@@ -679,49 +695,14 @@
             </button>
           </div>
 
-          <!-- 上帝干预交互面板 -->
-          <div v-if="showGodModePanel" class="god-mode-panel">
-            <div class="god-panel-title">
-              <span>👑 创作者上帝干预 (Author Interventions)</span>
-              <span class="god-panel-sub">在此施加突发变数，将立即强制改写下一轮各角色的决策环境与世界格局</span>
-            </div>
-
-            <div class="god-input-row">
-              <div class="god-target-select">
-                <label class="god-label">干预范围：</label>
-                <select v-model="godTargetMode" class="sim-input">
-                  <option value="world">全域世界天灾 / 突发异变</option>
-                  <option value="character">特定角色心境与动机篡改</option>
-                </select>
-              </div>
-              <div v-if="godTargetMode === 'character'" class="god-target-select">
-                <label class="god-label">目标角色：</label>
-                <select v-model="godTargetCharacter" class="sim-input">
-                  <option v-for="c in characters" :key="c" :value="c">{{ c }}</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="god-prompt-row">
-              <textarea
-                v-model="godPrompt"
-                class="god-textarea"
-                rows="2"
-                :placeholder="godTargetMode === 'world' ? '输入突发变数（如：雷劫突然降临，整座城池护山大阵瞬间瓦解…）' : '输入新的动机或心境（如：陷入绝境狂化，决心不惜一切代价同归于尽…）'"
-              ></textarea>
-              <button
-                type="button"
-                class="god-submit-btn"
-                :disabled="godInjecting || !godPrompt.trim()"
-                @click="submitGodIntervention"
-              >
-                <span v-if="godInjecting" class="spinner-xs"></span>
-                {{ godInjecting ? '注入中...' : '⚡ 施加干预' }}
-              </button>
-            </div>
-
-            <div v-if="godMsg" class="msg-line" :class="{ error: godMsgError }">{{ godMsg }}</div>
-          </div>
+          <!-- 抽离出的独立上帝干预控制面板 -->
+          <GodModePanel
+            v-if="showGodModePanel"
+            :characters="characters"
+            :submitting="godInjecting"
+            :success-msg="godMsg"
+            @submit="handleGodInterventionSubmit"
+          />
 
           <div v-if="simCtlMsg" class="msg-line" :class="{ error: simCtlMsgError }">{{ simCtlMsg }}</div>
         </div>
@@ -1529,6 +1510,23 @@
           </div>
         </div>
       </div>
+
+      <!-- 🎬 导演时间线规划弹窗 -->
+      <DirectorScheduleModal
+        :visible="showDirectorModal"
+        :characters="characters"
+        v-model="directorSchedules"
+        @close="showDirectorModal = false"
+      />
+
+      <!-- 🔗 双向因果追溯链抽屉 -->
+      <CausalChainDrawer
+        :visible="showCausalDrawer"
+        :event="selectedCausalEvent"
+        :all-events="simEvents"
+        @close="showCausalDrawer = false"
+        @select-event="openCausalChain"
+      />
     </div>
   </div>
 </template>
@@ -1569,6 +1567,26 @@ import { askAssistant, runAssistantAction, listAgentTasks, listAgentTools } from
 import { getTimeline, generateTimelineCharacters } from '../api/timeline'
 import { getModelRegistry } from '../api/models'
 import TimelineView from '../components/TimelineView.vue'
+import GodModePanel from '../components/world-setup/GodModePanel.vue'
+import DirectorScheduleModal from '../components/world-setup/DirectorScheduleModal.vue'
+import CausalChainDrawer from '../components/world-setup/CausalChainDrawer.vue'
+
+const showDirectorModal = ref(false)
+const directorSchedules = ref([])
+const showCausalDrawer = ref(false)
+const selectedCausalEvent = ref(null)
+
+const openCausalChain = (ev) => {
+  selectedCausalEvent.value = ev
+  showCausalDrawer.value = true
+}
+
+const handleGodInterventionSubmit = (payload) => {
+  godTargetMode.value = payload.mode
+  if (payload.target) godTargetCharacter.value = payload.target
+  godPrompt.value = payload.text
+  submitGodIntervention()
+}
 
 const route = useRoute()
 const router = useRouter()
