@@ -686,15 +686,6 @@
               <span class="god-panel-sub">在此施加突发变数，将立即强制改写下一轮各角色的决策环境与世界格局</span>
             </div>
 
-            <!-- 快捷预设变数模板 -->
-            <div class="god-templates">
-              <span class="gt-label">快捷变数：</span>
-              <button type="button" class="gt-btn" @click="applyGodTemplate('catastrophe')">🌪️ 秘境禁制提前破碎</button>
-              <button type="button" class="gt-btn" @click="applyGodTemplate('third_party')">⚔️ 第三方隐世宗门突然介入</button>
-              <button type="button" class="gt-btn" @click="applyGodTemplate('leak')">📜 核心机密与底牌当众泄露</button>
-              <button type="button" class="gt-btn" @click="applyGodTemplate('poison')">☠️ 核心首领突遭暗算剧毒</button>
-            </div>
-
             <div class="god-input-row">
               <div class="god-target-select">
                 <label class="god-label">干预范围：</label>
@@ -2637,25 +2628,6 @@ const godPrompt = ref('')
 const godInjecting = ref(false)
 const godMsg = ref('')
 const godMsgError = ref(false)
-
-function applyGodTemplate(type) {
-  if (type === 'catastrophe') {
-    godTargetMode.value = 'world'
-    godPrompt.value = '远古秘境封印大阵突然发生剧烈异变，狂暴的灵气风暴席卷整个区域，所有人的感知与法力受到严重压制！'
-  } else if (type === 'third_party') {
-    godTargetMode.value = 'world'
-    godPrompt.value = '第三方隐世庞大势力突然高调宣布介入争端，并在要道设伏，对所有涉事人员进行无差别盘查！'
-  } else if (type === 'leak') {
-    godTargetMode.value = 'world'
-    godPrompt.value = '最核心的秘密与隐藏底牌被匿名公布于天下，所有原本暗流涌动的博弈彻底摆上台面！'
-  } else if (type === 'poison') {
-    godTargetMode.value = 'character'
-    if (characters.value.length) {
-      godTargetCharacter.value = characters.value[0]
-    }
-    godPrompt.value = '突遭神秘诡异的奇毒暗算，实力大跌且生命危在旦夕，必须在短时间内做出决绝的破局抉择！'
-  }
-}
 
 async function submitGodIntervention() {
   if (!godPrompt.value.trim()) return
@@ -6017,32 +5989,6 @@ onUnmounted(() => {
 .god-panel-sub {
   font-size: 11px;
   color: #b45309;
-}
-.god-templates {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding: 4px 0;
-}
-.gt-label {
-  font-size: 10.5px;
-  color: #92400e;
-  font-weight: 600;
-}
-.gt-btn {
-  font-size: 10.5px;
-  padding: 2px 8px;
-  background: #fff;
-  border: 1px solid #fcd34d;
-  border-radius: 4px;
-  color: #78350f;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.gt-btn:hover {
-  background: #fef3c7;
-  border-color: #f59e0b;
 }
 .god-input-row {
   display: flex;
