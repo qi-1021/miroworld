@@ -493,9 +493,8 @@ async def _normalize_and_validate(
         logger.warning(
             f'LLM 响应未通过 {model_name} 校验（{str(exc)[:100]}），重试一次'
         )
-        import time as _time
         try:
-            _time.sleep(0.5)
+            await asyncio.sleep(0.5)
             retry_result = await call_llm_once()
             retry_parsed = (
                 _extract_json_from_markdown(retry_result) if retry_result else None
@@ -598,6 +597,15 @@ def _apply_response_normalization_patch() -> bool:
                     response=result,
                     duration=_duration,
                 )
+            except Exception as e:
+                logger.error(f"记录任务大模型交互失败: {e}", exc_info=True)
+
+            # 同时将 LLM 阶段性进展写入任务控制台真实日志，保证每秒都有真实产出
+            try:
+                from ..models.task import get_current_task_id, TaskManager
+                tid = get_current_task_id()
+                if tid:
+                    TaskManager().add_log(tid, f"LLM 成功完成 [{stage_name}] 抽取，耗时 {_duration:.1f} 秒，提取模型: {_model}")
             except Exception:
                 pass
 
@@ -605,9 +613,8 @@ def _apply_response_normalization_patch() -> bool:
                 # 空响应：OpenCode 等网关在连续调用/长提示下会返回空内容。
                 # 只重试 1 次（短间隔），仍空则返回空 dict 让 graphiti 继续
                 # （宁可丢失该次提取，也不让重试拖垮整个构建）。
-                import time as _time
                 try:
-                    _time.sleep(0.5)
+                    await asyncio.sleep(0.5)
                     response = await _chat_create()
                     result = response.choices[0].message.content or ''
                     if result.strip():
@@ -653,7 +660,7 @@ def _apply_response_normalization_patch() -> bool:
             # 其他调用重试 2 次。
             max_retry = 1 if _is_edge_extraction(response_model) else 2
             for attempt in range(max_retry):
-                _time.sleep(0.5 * (attempt + 1))  # 0.5s, 1s 退避（网关恢复快）
+                await asyncio.sleep(0.5 * (attempt + 1))  # 0.5s, 1s 退避（网关恢复快）
                 try:
                     response = await _chat_create()
                     result = response.choices[0].message.content or ''
@@ -831,7 +838,7 @@ def _apply_edge_skip_patch() -> bool:
                 driver = getattr(clients, 'driver', None)
                 if driver is not None:
                     records, _, _ = await driver.execute_query(
-                        "MATCH (n:Entity) WHERE n.group_id = $group_id "
+                        "MATCH (n) WHERE (n:Entity OR n:EntityNode) AND n.group_id = $group_id "
                         "RETURN count(n) AS cnt",
                         group_id=group_id,
                     )
@@ -900,7 +907,8 @@ def _apply_compact_extraction_prompt_patch() -> bool:
         entity_types = context.get('entity_types', '') or ''
         content = context.get('episode_content', '') or ''
         custom = (context.get('custom_extraction_instructions') or '').strip()
-        msgs[0].content = ('你是实体抽取器。从文本中抽取所有重要实体（人物/组织/地点/物品/概念等），'
+        msgs[0].content = ('你是世界知识图谱实体抽取器。从小说/故事/世界设定文本中抽取所有重要实体，'
+                           '包括人物角色、势力组织、地理场所、器物法宝、功法境界等，'
                            '并严格按实体类型列表分类。')
         user = '实体类型列表：' + chr(10) + str(entity_types)
         user += chr(10) + chr(10) + '文本：' + chr(10) + str(content)

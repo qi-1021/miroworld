@@ -1015,13 +1015,23 @@ function treeLayout(list) {
   }
   roots.forEach(r => assignDepth(r, 0))
   const maxDepth = list.length ? Math.max(...list.map(e => depthMap[e.event_id] || 0)) : 0
-  // leaf 游标分配 x（-1 未分）
+  // leaf 游标分配 x（-1 未分），父节点取子节点 xPos 均值
   const xPos = {}
   let cursor = 0
+  const visited = new Set()
   const place = (ev) => {
+    if (visited.has(ev.event_id)) return // 环检测，防爆栈
+    visited.add(ev.event_id)
     const kids = children.get(ev.event_id) || []
-    if (!kids.length) { xPos[ev.event_id] = cursor++ }
-    else { kids.forEach(k => place(k)) }
+    if (!kids.length) {
+      xPos[ev.event_id] = cursor++
+    } else {
+      kids.forEach(k => place(k))
+      const kidsX = kids.map(k => xPos[k.event_id]).filter(x => x !== undefined)
+      xPos[ev.event_id] = kidsX.length
+        ? kidsX.reduce((a, b) => a + b, 0) / kidsX.length
+        : cursor++
+    }
   }
   roots.forEach(r => place(r))
   const levelH = (strucH - 80) / Math.max(1, maxDepth + 1)
@@ -1062,7 +1072,7 @@ function radialLayout(list) {
   const ringCount = 4
   const maxDeg = Math.max(1, degree.get(center ? center.event_id : null) || 0)
   // 若全无关联，按序均分到各环，避免堆叠
-  const hasLinks = maxDeg > 0
+  const hasLinks = (degree.get(center?.event_id) || 0) > 0
   rest.forEach((ev, i) => {
     const deg = degree.get(ev.event_id) || 0
     let ring
@@ -1820,7 +1830,7 @@ function pollExtract() {
       }
     }
     if (extractTries > 300) { stopExtractPoll(); extractInterrupted.value = true; extractResumable.value = true; statusMessage.value = t('timeline.taskLost'); statusError.value = true; }
-  }, 2000);
+  }, 500);
 }
 function stopExtractPoll() { clearInterval(extractTimer); extractTimer = null; extractTask.value = ''; extracting.value = false; }
 
@@ -1921,7 +1931,7 @@ function pollFork(taskId) {
         return;
       }
     }
-    if (forkTries < 300) forkPollTimerId = setTimeout(poll, 2000);
+    if (forkTries < 720) forkPollTimerId = setTimeout(poll, 500);
     else { forkRunning.value = false; if (forkElapsedTimer) clearInterval(forkElapsedTimer); forkElapsedTimer = null; forkMsg.value = t('fork.forkTimeout'); forkMsgError.value = true; }
   };
   poll();
@@ -2243,8 +2253,8 @@ function pollCharGen() {
         return;
       }
     }
-    if (charGenTries > 300) { stopCharGen(); charGenMsg.value = t('characters.genTimeout'); charGenMsgError.value = true; }
-  }, 2000);
+    if (charGenTries > 720) { stopCharGen(); charGenMsg.value = t('characters.genTimeout'); charGenMsgError.value = true; }
+  }, 500);
 }
 function stopCharGen() {
   clearInterval(charGenTimer); charGenTimer = null; charGenTaskId = ''; charGenerating.value = false;
@@ -2258,6 +2268,8 @@ onUnmounted(() => {
   stopPlay();
   if (forkElapsedTimer) clearInterval(forkElapsedTimer);
   if (forkPollTimerId) clearTimeout(forkPollTimerId);
+  // 停止 d3 力导向仿真器，防止组件卸载后继续后台计算
+  if (netSimulation) { netSimulation.stop(); netSimulation = null; }
 });
 </script>
 

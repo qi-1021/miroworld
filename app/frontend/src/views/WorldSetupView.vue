@@ -546,7 +546,7 @@
             <label class="sim-label">🤖 {{ $t('world.agentModelLabel') }}</label>
             <select v-model="selectedAgentModel" class="sim-input">
               <option value="">{{ $t('world.useDefaultModel') }}</option>
-              <option v-for="m in availableModels" :key="m.id" :value="m.model_id">
+              <option v-for="m in availableModels" :key="m.model_id || m.id" :value="m.model_id">
                 {{ m.display_name || m.model_id }} ({{ m.provider_type }})
               </option>
             </select>
@@ -941,11 +941,20 @@
                   📜 阶段步骤日志 ({{ graphTaskLogs.length }})
                 </button>
               </div>
-              <span class="console-toggle" @click="showGraphLogs = !showGraphLogs">
-                {{ showGraphLogs ? '收起 ▲' : '展开 ▼' }}
-              </span>
+              <div class="console-header-right">
+                <button
+                  v-if="consoleActiveTab === 'llm' && graphTaskExchanges.length > 0"
+                  type="button"
+                  class="console-action-btn"
+                  @click="expandAllExchanges"
+                >
+                  {{ expandedExchangeIds.size === graphTaskExchanges.length ? '全部折叠' : '全部展开' }}
+                </button>
+                <span class="console-toggle" @click="showGraphLogs = !showGraphLogs">
+                  {{ showGraphLogs ? '收起控制台 ▲' : '展开控制台 ▼' }}
+                </span>
+              </div>
             </div>
-
             <div v-if="showGraphLogs" ref="graphLogsContainer" class="console-body">
               <!-- Tab 1: LLM 实时输入与输出卡片 -->
               <template v-if="consoleActiveTab === 'llm'">
@@ -1195,7 +1204,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
@@ -1601,6 +1610,13 @@ function toggleExchangeExpand(id) {
 function isExchangeExpanded(id) {
   return expandedExchangeIds.value.has(id)
 }
+function expandAllExchanges() {
+  if (expandedExchangeIds.value.size === graphTaskExchanges.value.length) {
+    expandedExchangeIds.value.clear()
+  } else {
+    expandedExchangeIds.value = new Set(graphTaskExchanges.value.map(x => x.id))
+  }
+}
 const showGraphLogs = ref(true)
 const graphLogsContainer = ref(null)
 const refillEdgesRunning = ref(false)
@@ -1620,7 +1636,17 @@ const graphEdges = computed(() => {
   }))
 })
 
-const GRAPH_COLORS = ['#FF5722', '#2196F3', '#4CAF50', '#9C27B0', '#FF9800', '#00BCD4', '#795548', '#607D8B']
+const GRAPH_COLORS = [
+  '#6366F1', // 星空靛蓝 (Indigo)
+  '#06B6D4', // 灵气青蓝 (Cyan)
+  '#10B981', // 翡翠苍翠 (Emerald)
+  '#F59E0B', // 宗门金赤 (Amber)
+  '#EC4899', // 秘境紫粉 (Pink)
+  '#8B5CF6', // 洞天紫罗兰 (Violet)
+  '#EF4444', // 异变赤焰 (Red)
+  '#14B8A6', // 沧海天青 (Teal)
+  '#F97316'  // 炽炎明橙 (Orange)
+]
 
 function graphNodeType(n) {
   const labels = (n.labels || []).filter(l => l !== 'Entity')
@@ -1636,7 +1662,9 @@ function graphNodeColor(n) {
 
 function graphNodeR(n) {
   const name = (n.name || '').length
-  return name > 6 ? 14 : 11
+  const isSelected = selectedGraphNode.value && selectedGraphNode.value.uuid === n.uuid
+  const baseR = name > 6 ? 15 : 12
+  return isSelected ? baseR + 3 : baseR
 }
 
 function graphNodeX(uuid) {
@@ -1743,7 +1771,20 @@ async function fetchGraph() {
 }
 
 function pollGraphTask(taskId) {
+  let pollCount = 0
+  const MAX_POLLS = 720 // 500ms × 720 = 6分钟超时
+  const TERMINAL_STATUSES = ['completed', 'failed', 'COMPLETED', 'FAILED', 'interrupted', 'cancelled', 'error', 'stopped']
   graphPollTimer = setInterval(async () => {
+    pollCount++
+    if (pollCount > MAX_POLLS) {
+      clearInterval(graphPollTimer)
+      graphPollTimer = null
+      graphBuilding.value = false
+      graphProgressMsg.value = ''
+      graphMsg.value = t('world.msgGraphBuildTimeout') || '图谱构建超时，请检查后端状态'
+      graphMsgError.value = true
+      return
+    }
     try {
       const res = await getTaskStatus(taskId)
       const task = res.task || res.data || res
@@ -1759,15 +1800,17 @@ function pollGraphTask(taskId) {
           graphLogsContainer.value.scrollTop = graphLogsContainer.value.scrollHeight
         }
       })
-      if (status === 'completed' || status === 'failed' || status === 'COMPLETED' || status === 'FAILED') {
+      const isTerminal = TERMINAL_STATUSES.includes(status)
+      if (isTerminal) {
         clearInterval(graphPollTimer)
         graphPollTimer = null
         graphBuilding.value = false
         graphProgressMsg.value = ''
         graphProgress.value = 0
-        graphMsg.value = task.message || (status === 'completed' ? t('world.msgGraphBuilt') : t('world.msgGraphBuildFailed'))
-        graphMsgError.value = !(status === 'completed' || status === 'COMPLETED')
-        await fetchGraph()
+        const isSuccess = status === 'completed' || status === 'COMPLETED'
+        graphMsg.value = task.message || (isSuccess ? t('world.msgGraphBuilt') : t('world.msgGraphBuildFailed'))
+        graphMsgError.value = !isSuccess
+        if (isSuccess) await fetchGraph()
       } else {
         graphProgressMsg.value = task.message || t('world.msgGraphBuilding')
         if (task.progress != null) graphProgress.value = task.progress
@@ -1781,7 +1824,7 @@ function pollGraphTask(taskId) {
       graphMsg.value = lost ? t('world.msgGraphTaskLost') : (e.message || t('world.msgGraphStatusQueryFailed'))
       graphMsgError.value = true
     }
-  }, 3000)
+  }, 500)
 }
 
 async function handleBuildGraph() {
@@ -1798,7 +1841,7 @@ async function handleBuildGraph() {
     const res = await buildWorldGraph(projectId, {
       goal: simGoal.value.trim() || undefined,
       force: !!graphInfo.value,
-      resume: !!graphInfo.value
+      resume: false
     })
     graphMsg.value = res.message || t('world.msgGraphStarted')
     pollGraphTask(res.task_id)
@@ -1812,7 +1855,19 @@ async function handleBuildGraph() {
 // 补边：为已有世界图谱补充缺失的关联边（复用任务轮询）
 function pollRefillEdgesTask(taskId) {
   if (refillPollTimerId) clearInterval(refillPollTimerId)
+  let refillPollCount = 0
+  const MAX_REFILL_POLLS = 720 // 6分钟超时
+  const TERMINAL_STATUSES = ['completed', 'failed', 'COMPLETED', 'FAILED', 'interrupted', 'cancelled', 'error', 'stopped']
   refillPollTimerId = setInterval(async () => {
+    refillPollCount++
+    if (refillPollCount > MAX_REFILL_POLLS) {
+      clearInterval(refillPollTimerId)
+      refillPollTimerId = null
+      refillEdgesRunning.value = false
+      graphMsg.value = '补边任务超时，请检查后端状态'
+      graphMsgError.value = true
+      return
+    }
     try {
       const res = await getTaskStatus(taskId)
       const task = res.task || res.data || res
@@ -1828,13 +1883,15 @@ function pollRefillEdgesTask(taskId) {
           graphLogsContainer.value.scrollTop = graphLogsContainer.value.scrollHeight
         }
       })
-      if (status === 'completed' || status === 'failed' || status === 'COMPLETED' || status === 'FAILED') {
+      const isTerminal = TERMINAL_STATUSES.includes(status)
+      if (isTerminal) {
         clearInterval(refillPollTimerId)
         refillPollTimerId = null
         refillEdgesRunning.value = false
-        graphMsg.value = task.message || (status === 'completed' ? t('world.msgRefillEdgesDone') : t('world.msgRefillEdgesFailed'))
-        graphMsgError.value = !(status === 'completed' || status === 'COMPLETED')
-        await fetchGraph()
+        const isSuccess = status === 'completed' || status === 'COMPLETED'
+        graphMsg.value = task.message || (isSuccess ? t('world.msgRefillEdgesDone') : t('world.msgRefillEdgesFailed'))
+        graphMsgError.value = !isSuccess
+        if (isSuccess) await fetchGraph()
       } else {
         graphMsg.value = task.message || t('world.msgRefillEdgesRunning')
         graphMsgError.value = false
@@ -1847,7 +1904,7 @@ function pollRefillEdgesTask(taskId) {
       graphMsg.value = lost ? t('world.msgRefillTaskLost') : (e.message || t('world.msgRefillEdgesStatusFailed'))
       graphMsgError.value = true
     }
-  }, 3000)
+  }, 500)
 }
 
 async function handleRefillEdges() {
@@ -2201,8 +2258,8 @@ async function handleDetect() {
   try {
     const res = await detectWorldConflicts(projectId)
     let finished = false
-    for (let i = 0; i < 120 && !finished; i++) {
-      await new Promise(r => setTimeout(r, 2000))
+    for (let i = 0; i < 480 && !finished; i++) {
+      await new Promise(r => setTimeout(r, 500))
       const task = await getTaskStatus(res.task_id)
       if (task.status === 'completed') {
         saveMsg.value = t('world.msgConflictDone', { count: task.result?.conflict_count ?? 0 })
@@ -2386,7 +2443,7 @@ function toggleConflictSelMode() {
   if (!conflictSelMode.value) selConflictIds.value = []
 }
 async function runBatchConflictStatus(status) {
-  const targets = report.value.conflicts.filter(c => isSelConflict(c))
+  const targets = (report.value?.conflicts || []).filter(c => isSelConflict(c))
   if (!targets.length || batchConflictBusy.value) return
   if (!window.confirm(t('world.batchConflictConfirm', { n: targets.length, st: status === 'accepted' ? t('world.acceptBg') : t('world.dismissConflict') }))) return
   batchConflictBusy.value = true
@@ -2895,7 +2952,8 @@ function startSimPolling(simulationId) {
   simPollTimer = setInterval(async () => {
     try {
       const res = await getWorldSimulation(projectId, simulationId)
-      const sim = res.simulation
+      const sim = res.simulation || res.data?.simulation || res.data || {}
+      if (!sim.status) return
       simStatus.value = sim.status
       simProgress.value = sim.progress || {}
       if (sim.status === 'completed') {
@@ -2921,7 +2979,7 @@ function startSimPolling(simulationId) {
     } catch (e) {
       console.error('轮询模拟状态失败', e)
     }
-  }, 5000)
+  }, 500)
 }
 
 async function handleStartSim() {
@@ -2939,8 +2997,6 @@ async function handleStartSim() {
   simProgress.value = { current_step: 0, total_steps: simSteps.value || 6, message: '正在初始化世界推演环境...' }
   simEvents.value = []
   characters.value = []
-  simQualityIssues.value = []
-  stepSummaries.value = []
   reportSimulationId.value = ''
   reportText.value = ''
   reportEmptyNote.value = ''
@@ -3139,14 +3195,15 @@ function pollWhatIf(simulationId, question) {
     tries++
     try {
       const r = await getWorldSimulation(projectId, simulationId)
-      const sim = r.simulation
+      const sim = r.simulation || r.data?.simulation || r.data || {}
+      if (!sim.status) return
       if (sim.status === 'completed') {
         clearInterval(whatIfPollTimer)
         whatIfPollTimer = null
         whatIfEvents.value = (sim.result || {}).events || []
         whatIfMsg.value = t('world.msgWhatifDone', { count: (sim.result || {}).event_count || 0 })
         whatIfMsgError.value = false
-      } else if (sim.status === 'failed' || tries > 120) {
+      } else if (sim.status === 'failed' || tries > 720) {
         clearInterval(whatIfPollTimer)
         whatIfPollTimer = null
         whatIfMsg.value = sim.status === 'failed' ? t('world.msgWhatifFailed', { err: sim.error || t('world.msgUnknownError') }) : t('world.msgWhatifTimeout')
@@ -3155,7 +3212,7 @@ function pollWhatIf(simulationId, question) {
     } catch (e) {
       console.error('轮询推演状态失败', e)
     }
-  }, 5000)
+  }, 500)
 }
 
 async function loadAvailableModels() {
@@ -4070,6 +4127,27 @@ onUnmounted(() => {
 .console-toggle:hover {
   color: #fff;
   background: #232530;
+}
+.console-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.console-action-btn {
+  background: #232530;
+  border: 1px solid #333644;
+  color: #d8dae3;
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.console-action-btn:hover {
+  color: #fff;
+  background: #2e303d;
+  border-color: #4b5563;
 }
 .console-body {
   max-height: 280px;
@@ -5384,28 +5462,44 @@ onUnmounted(() => {
   cursor: grab;
 }
 .graph-edge {
-  stroke: #D0D0D0;
-  stroke-width: 1;
+  stroke: rgba(148, 163, 184, 0.45);
+  stroke-width: 1.2;
+  transition: stroke 0.2s, stroke-width 0.2s;
 }
 .graph-node {
-  stroke: #FFF;
-  stroke-width: 1.5;
+  stroke: #FFFFFF;
+  stroke-width: 2;
   cursor: pointer;
-  opacity: 0.92;
-  transition: opacity 0.15s;
+  opacity: 0.94;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
+  transition: transform 0.2s ease, opacity 0.2s ease, stroke-width 0.2s ease, filter 0.2s ease;
 }
 .graph-node:hover {
   opacity: 1;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
 }
 .graph-node.selected {
   stroke: #a1c50a;
-  stroke-width: 2.5;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 10px rgba(161, 197, 10, 0.8));
+  animation: graph-pulse 1.8s infinite alternate ease-in-out;
+}
+@keyframes graph-pulse {
+  0% {
+    filter: drop-shadow(0 0 5px rgba(161, 197, 10, 0.5));
+  }
+  100% {
+    filter: drop-shadow(0 0 12px rgba(161, 197, 10, 0.95));
+  }
 }
 .graph-node-label {
-  font-size: 10px;
-  fill: #333;
-  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  fill: #1E293B;
+  font-family: 'JetBrains Mono', 'Noto Sans SC', monospace;
   pointer-events: none;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.9), 0 0 4px #FFFFFF;
 }
 .graph-node-info {
   margin-top: 10px;

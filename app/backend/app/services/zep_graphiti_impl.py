@@ -711,11 +711,18 @@ class GraphitiClient(ZepClientAdapter):
             name=f"episode_{graph_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}",
             episode_body=data,
             source=source_type,
-            source_description="mirofish_simulation",
+            source_description="world_knowledge_graph",
             reference_time=datetime.now(timezone.utc),
             group_id=graph_id,
             entity_types=entity_types or None,
             edge_types=edge_types or None,
+            custom_extraction_instructions=(
+                "这是小说/故事/世界设定文本，请按世界推演知识图谱视角提取实体。"
+                "重点提取：人物角色（含称谓、身份）、势力组织（宗门/国家/阵营等）、"
+                "地理场所（城市/地域/秘境/神域等）、重要器物（法宝/神器/道具等）、"
+                "核心概念（功法/境界/法则/制度等）。"
+                "不要忽略世界设定中的非人类实体（如神祇、异族、特殊存在）。"
+            ),
         )
         return result.episode.uuid if result and result.episode else ""
 

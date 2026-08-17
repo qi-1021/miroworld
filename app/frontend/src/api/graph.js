@@ -23,10 +23,7 @@ export function generateOntology(formData) {
     service({
       url: '/api/graph/ontology/generate',
       method: 'post',
-      data: formData,
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
+      data: formData
     })
   )
 }

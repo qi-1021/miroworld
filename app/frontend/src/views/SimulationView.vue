@@ -88,7 +88,7 @@ const props = defineProps({
 const viewMode = ref('split')
 
 // Data State
-const currentSimulationId = ref(route.params.simulationId)
+const currentSimulationId = computed(() => props.simulationId || route.params.simulationId)
 const projectData = ref(null)
 const graphData = ref(null)
 const graphLoading = ref(false)
@@ -292,10 +292,12 @@ onMounted(async () => {
   addLog(t('log.simViewInit'))
 
   // 检查并关闭正在运行的模拟（用户从 Step 3 返回时）
-  await checkAndStopRunningSimulation()
-
-  // 加载模拟数据
-  loadSimulationData()
+  try {
+    await checkAndStopRunningSimulation()
+    await loadSimulationData()
+  } catch (err) {
+    console.error('初始化模拟视图失败:', err)
+  }
 })
 </script>
 

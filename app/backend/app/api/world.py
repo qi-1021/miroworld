@@ -448,17 +448,29 @@ def build_world_graph(project_id: str):
             )
             generator = OntologyGenerator(llm_client=_build_llm_client_for_project(project_id))
             from ..services.ontology_generator import generate_ontology_with_cache
-            ontology = generate_ontology_with_cache(
-                generator=generator,
-                document_texts=[text],
-                simulation_requirement=goal or "构建小说世界的知识图谱",
-                additional_context=(
-                    "这是世界模拟的设定资料（背景设定与小说正文）。"
-                    "请提取适合知识图谱的实体类型（人物/地点/组织/物品/概念等）与关系类型，"
-                    "并全部使用与文本一致的中文命名。"
-                ),
-                cache_key_parts=(text, goal or "", generator.llm_client.model),
-            )
+            # 如果 force 为真，绕过缓存生成本体
+            if force:
+                ontology = generator.generate(
+                    document_texts=[text],
+                    simulation_requirement=goal or "构建小说世界的知识图谱",
+                    additional_context=(
+                        "这是世界模拟的设定资料（背景设定与小说正文）。"
+                        "请提取适合知识图谱的实体类型（人物/地点/组织/物品/概念等）与关系类型，"
+                        "并全部使用与文本一致的中文命名。"
+                    ),
+                )
+            else:
+                ontology = generate_ontology_with_cache(
+                    generator=generator,
+                    document_texts=[text],
+                    simulation_requirement=goal or "构建小说世界的知识图谱",
+                    additional_context=(
+                        "这是世界模拟的设定资料（背景设定与小说正文）。"
+                        "请提取适合知识图谱的实体类型（人物/地点/组织/物品/概念等）与关系类型，"
+                        "并全部使用与文本一致的中文命名。"
+                    ),
+                    cache_key_parts=(text, goal or "", generator.llm_client.model),
+                )
             task_manager.update_task(
                 task_id, progress=20,
                 message=f"本体生成完成：{len(ontology.get('entity_types', []))} 个实体类型"
@@ -471,11 +483,25 @@ def build_world_graph(project_id: str):
             proj = ProjectManager.get_project(project_id) or project
             from ..services.world_graph_refill import (
                 load_build_progress, chunk_hash, mark_chunks_done,
-                save_episodes_cache,
+                save_episodes_cache, build_progress_path,
             )
 
+            # force重建时清理已有的断点缓存文件
+            if force:
+                try:
+                    p_path = build_progress_path(project_id)
+                    if os.path.exists(p_path):
+                        os.remove(p_path)
+                        build_logger.info(f"force 为真，已清理历史断点: {p_path}")
+                except Exception as ex:
+                    build_logger.warning(f"清理断点缓存失败: {ex}")
+
             # 已有图谱 + 断点清单 → 复用同一 graph_id 续构建，避免从头开始
-            if proj.graph_id and (resume or can_resume):
+            # 注意：如果 force 为真，上面已清理断点，can_resume 重新计算应为 False，强制重建
+            has_progress = load_build_progress(project_id) if proj and proj.graph_id else None
+            eff_resume = bool(has_progress and proj and proj.graph_id) and (resume or not force)
+
+            if proj.graph_id and eff_resume:
                 graph_id = proj.graph_id
                 task_manager.update_task(
                     task_id, progress=25,
@@ -648,8 +674,8 @@ def build_world_graph(project_id: str):
                     project.status = ProjectStatus.FAILED
                     project.error = f"世界图谱构建失败: {friendly}"
                     ProjectManager.save_project(project)
-            except Exception:
-                pass
+            except Exception as _save_err:
+                logger.warning(f"更新项目失败状态时写盘异常（不影响主错误）: {_save_err}")
 
     thread = threading.Thread(target=_build_task, daemon=True)
     thread.start()

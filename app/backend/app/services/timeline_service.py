@@ -86,10 +86,13 @@ def load_timeline(project_id: str, source: Optional[str] = None) -> Dict[str, An
         # 兼容旧数据：source=='future'/'branch' 回填 kind；未来/分支事件强制排在"现在"之后
         if events:
             past_max = max(
-                (e.get('sort_lower') or 0.0)
-                for e in events
-                if e.get('source') not in ('future', 'branch')
-                and e.get('kind') not in ('future', 'branch')
+                (
+                    (e.get('sort_lower') or 0.0)
+                    for e in events
+                    if e.get('source') not in ('future', 'branch')
+                    and e.get('kind') not in ('future', 'branch')
+                ),
+                default=0.0,
             )
             fut = [e for e in events
                    if e.get('source') in ('future', 'branch')

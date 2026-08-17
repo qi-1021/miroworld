@@ -684,7 +684,7 @@ class OasisProfileGenerator:
 
     def _get_system_prompt(self, is_individual: bool) -> str:
         """获取系统提示词"""
-        base_prompt = "你是社交媒体用户画像生成专家。生成详细、真实的人设用于舆论模拟,最大程度还原已有现实情况。必须返回有效的JSON格式，所有字符串值不能包含未转义的换行符。使用中文。"
+        base_prompt = "你是小说世界角色与势力设定专家。生成详细、生动的人设用于世界推演，最大程度还原设定中的人物性格、势力背景与行为动机。必须返回有效的JSON格式，所有字符串值不能包含未转义的换行符。使用中文。"
         return base_prompt
 
     def _build_individual_persona_prompt(
@@ -700,7 +700,7 @@ class OasisProfileGenerator:
         attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "无"
         context_str = context[:3000] if context else "无额外上下文"
 
-        return f"""为实体生成详细的社交媒体用户人设,最大程度还原已有现实情况。
+        return f"""为角色实体生成详细的小说世界角色设定，最大程度还原世界观与情节背景。
 
 实体名称: {entity_name}
 实体类型: {entity_type}
@@ -712,21 +712,21 @@ class OasisProfileGenerator:
 
 请生成JSON，包含以下字段:
 
-1. bio: 社交媒体简介，200字
-2. persona: 详细人设描述（2000字的纯文本），需包含:
-   - 基本信息（年龄、职业、教育背景、所在地）
-   - 人物背景（重要经历、与事件的关联、社会关系）
-   - 性格特征（MBTI类型、核心性格、情绪表达方式）
-   - 社交媒体行为（发帖频率、内容偏好、互动风格、语言特点）
-   - 立场观点（对话题的态度、可能被激怒/感动的内容）
-   - 独特特征（口头禅、特殊经历、个人爱好）
-   - 个人记忆（人设的重要部分，要介绍这个个体与事件的关联，以及这个个体在事件中的已有动作与反应）
+1. bio: 角色简短生平与身份概述，200字
+2. persona: 详细角色设定描述（2000字的纯文本），需包含:
+   - 基本信息（年龄、身份、出身背景、所属势力/地域）
+   - 人物背景（重要经历、与核心事件/冲突的关联、人际关系网络）
+   - 性格特征（MBTI类型、核心性格、情绪表达方式、处事风格）
+   - 行为与处事风格（行动动机、决策偏好、人际互动方式、语言特点与口癖）
+   - 立场与动机（对核心世界事件/冲突的态度、价值追求、易被触动的底线）
+   - 独特特征（口头禅、特殊能力/技能、个人爱好）
+   - 个人记忆（人设的重要部分，要介绍这个角色与事件的关联，以及这个角色在事件中的已有动作与反应）
 3. age: 年龄数字（必须是整数）
 4. gender: 性别，必须是英文: "male" 或 "female"
 5. mbti: MBTI类型（如INTJ、ENFP等）
-6. country: 国家（使用中文，如"中国"）
-7. profession: 职业
-8. interested_topics: 感兴趣话题数组
+6. country: 所属国家/地域/势力（使用中文）
+7. profession: 职业/身份（如"修士"、"将军"、"商人"等）
+8. interested_topics: 核心关切与行动目标数组
 
 重要:
 - 所有字段值必须是字符串或数字，不要使用换行符
@@ -749,7 +749,7 @@ class OasisProfileGenerator:
         attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "无"
         context_str = context[:3000] if context else "无额外上下文"
 
-        return f"""为机构/群体实体生成详细的社交媒体账号设定,最大程度还原已有现实情况。
+        return f"""为组织/势力实体生成详细的势力设定与行为准则，最大程度还原世界观背景。
 
 实体名称: {entity_name}
 实体类型: {entity_type}
@@ -761,28 +761,27 @@ class OasisProfileGenerator:
 
 请生成JSON，包含以下字段:
 
-1. bio: 官方账号简介，200字，专业得体
-2. persona: 详细账号设定描述（2000字的纯文本），需包含:
-   - 机构基本信息（正式名称、机构性质、成立背景、主要职能）
-   - 账号定位（账号类型、目标受众、核心功能）
-   - 发言风格（语言特点、常用表达、禁忌话题）
-   - 发布内容特点（内容类型、发布频率、活跃时间段）
-   - 立场态度（对核心话题的官方立场、面对争议的处理方式）
-   - 特殊说明（代表的群体画像、运营习惯）
-   - 机构记忆（机构人设的重要部分，要介绍这个机构与事件的关联，以及这个机构在事件中的已有动作与反应）
-3. age: 固定填30（机构账号的虚拟年龄）
-4. gender: 固定填"other"（机构账号使用other表示非个人）
-5. mbti: MBTI类型，用于描述账号风格，如ISTJ代表严谨保守
-6. country: 国家（使用中文，如"中国"）
-7. profession: 机构职能描述
-8. interested_topics: 关注领域数组
+1. bio: 势力/组织概述，200字，体现势力格局
+2. persona: 详细势力设定描述（2000字的纯文本），需包含:
+   - 势力定位（组织性质、势力范围、核心宗旨与权力结构）
+   - 处事风格（对外风格、内部规训、禁忌底线）
+   - 行动特征（惯用手段、决策周期、重大行动触发条件）
+   - 立场态度（对核心世界冲突的官方立场、危机应对准则）
+   - 特殊说明（代表的阶层/阵营画像、盟友与敌对关系）
+   - 势力记忆（势力在事件中的关键动作、已发生的历史与影响）
+3. age: 固定填30（势力组织的抽象年龄标记）
+4. gender: 固定填"other"（势力组织使用other表示非个人）
+5. mbti: MBTI类型，用于描述组织决策风格，如ISTJ代表严谨保守
+6. country: 所属国家/大陆/阵营（使用中文）
+7. profession: 势力/机构职能描述
+8. interested_topics: 核心关切领域与战略目标数组
 
 重要:
 - 所有字段值必须是字符串或数字，不允许null值
 - persona必须是一段连贯的文字描述，不要使用换行符
 - 使用中文（除了gender字段必须用英文"other"）
 - age必须是整数30，gender必须是字符串"other"
-- 机构账号发言要符合其身份定位"""
+- 势力的行动与决断要符合其在世界观中的身份定位与利益诉求"""
 
     def _generate_profile_rule_based(
         self,
@@ -798,63 +797,63 @@ class OasisProfileGenerator:
 
         if entity_type_lower in ["student", "alumni"]:
             return {
-                "bio": f"{entity_type} with interests in academics and social issues.",
-                "persona": f"{entity_name} is a {entity_type.lower()} who is actively engaged in academic and social discussions. They enjoy sharing perspectives and connecting with peers.",
+                "bio": entity_summary[:200] if entity_summary else f"{entity_type}: {entity_name}",
+                "persona": entity_summary or f"{entity_name}是一名{entity_type}，积极参与世界中的各类事件与活动。",
                 "age": random.randint(18, 30),
                 "gender": random.choice(["male", "female"]),
                 "mbti": random.choice(self.MBTI_TYPES),
                 "country": random.choice(self.COUNTRIES),
-                "profession": "Student",
-                "interested_topics": ["Education", "Social Issues", "Technology"],
+                "profession": entity_type,
+                "interested_topics": ["学习", "成长", "探索"],
             }
 
         elif entity_type_lower in ["publicfigure", "expert", "faculty"]:
             return {
-                "bio": f"Expert and thought leader in their field.",
-                "persona": f"{entity_name} is a recognized {entity_type.lower()} who shares insights and opinions on important matters. They are known for their expertise and influence in public discourse.",
+                "bio": entity_summary[:200] if entity_summary else f"{entity_type}: {entity_name}",
+                "persona": entity_summary or f"{entity_name}是一名{entity_type}，在所处世界中具有重要影响力与威望。",
                 "age": random.randint(35, 60),
                 "gender": random.choice(["male", "female"]),
                 "mbti": random.choice(["ENTJ", "INTJ", "ENTP", "INTP"]),
                 "country": random.choice(self.COUNTRIES),
-                "profession": entity_attributes.get("occupation", "Expert"),
-                "interested_topics": ["Politics", "Economics", "Culture & Society"],
+                "profession": entity_attributes.get("occupation", entity_type),
+                "interested_topics": ["权力", "秩序", "知识"],
             }
 
         elif entity_type_lower in ["mediaoutlet", "socialmediaplatform"]:
             return {
-                "bio": f"Official account for {entity_name}. News and updates.",
-                "persona": f"{entity_name} is a media entity that reports news and facilitates public discourse. The account shares timely updates and engages with the audience on current events.",
-                "age": 30,  # 机构虚拟年龄
-                "gender": "other",  # 机构使用other
-                "mbti": "ISTJ",  # 机构风格：严谨保守
-                "country": "中国",
-                "profession": "Media",
-                "interested_topics": ["General News", "Current Events", "Public Affairs"],
-            }
-
-        elif entity_type_lower in ["university", "governmentagency", "ngo", "organization"]:
-            return {
-                "bio": f"Official account of {entity_name}.",
-                "persona": f"{entity_name} is an institutional entity that communicates official positions, announcements, and engages with stakeholders on relevant matters.",
+                "bio": entity_summary[:200] if entity_summary else f"{entity_type}: {entity_name}",
+                "persona": entity_summary or f"{entity_name}是一个{entity_type}，在世界中负责信息传递与舆论引导职能。",
                 "age": 30,  # 机构虚拟年龄
                 "gender": "other",  # 机构使用other
                 "mbti": "ISTJ",  # 机构风格：严谨保守
                 "country": "中国",
                 "profession": entity_type,
-                "interested_topics": ["Public Policy", "Community", "Official Announcements"],
+                "interested_topics": ["信息", "动态", "事务"],
+            }
+
+        elif entity_type_lower in ["university", "governmentagency", "ngo", "organization"]:
+            return {
+                "bio": entity_summary[:200] if entity_summary else f"{entity_type}: {entity_name}",
+                "persona": entity_summary or f"{entity_name}是一个{entity_type}，代表其所属阵营与利益方，在关键事件中积极发挥影响。",
+                "age": 30,  # 机构虚拟年龄
+                "gender": "other",  # 机构使用other
+                "mbti": "ISTJ",  # 机构风格：严谨保守
+                "country": "中国",
+                "profession": entity_type,
+                "interested_topics": ["秩序", "治理", "发展"],
             }
 
         else:
             # 默认人设
             return {
                 "bio": entity_summary[:150] if entity_summary else f"{entity_type}: {entity_name}",
-                "persona": entity_summary or f"{entity_name} is a {entity_type.lower()} participating in social discussions.",
+                "persona": entity_summary or f"{entity_name}是一个{entity_type}，参与世界推演中的各类事件与互动。",
                 "age": random.randint(25, 50),
                 "gender": random.choice(["male", "female"]),
                 "mbti": random.choice(self.MBTI_TYPES),
                 "country": random.choice(self.COUNTRIES),
                 "profession": entity_type,
-                "interested_topics": ["General", "Social Issues"],
+                "interested_topics": ["世界", "事件"],
             }
 
     def set_graph_id(self, graph_id: str):
