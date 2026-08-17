@@ -769,26 +769,51 @@
         <div v-if="simHistory.length" class="sim-history">
           <div class="sim-history-title">
             <span>{{ $t('world.reportHistoryTitle') }}</span>
-            <button class="mini-btn ghost" @click="exportAllWorldlines">{{ $t('world.exportAllWorldlines') }}</button>
-            <button v-if="simHistory.length >= 2" class="mini-btn ghost" @click="toggleCompareMode">
-              {{ compareMode ? $t('world.cancel') : $t('world.compareWorldlines') }}
-            </button>
-            <button v-if="compareMode && compareSelected.length === 2" class="mini-btn" @click="openCompare">
-              {{ $t('world.compare') }}
-            </button>
-            <button v-if="compareMode && compareSelected.length === 2" class="mini-btn" @click="mergeSelected">
-              {{ $t('world.mergeWorldlines') }}
-            </button>
+            <div class="sim-history-actions">
+              <button class="mini-btn ghost" @click="toggleSimBatchMode">
+                {{ simBatchMode ? '退出批量' : '批量管理' }}
+              </button>
+              <template v-if="simBatchMode">
+                <button class="mini-btn ghost" @click="toggleSelectAllSims">
+                  {{ selectedSimIds.length === simHistory.length ? '取消全选' : '全选' }}
+                </button>
+                <button
+                  class="mini-btn danger"
+                  :disabled="!selectedSimIds.length || deletingSimBatch"
+                  @click="runBatchDeleteSimulations"
+                >
+                  <span v-if="deletingSimBatch" class="spinner-xs"></span>
+                  🗑️ 批量删除 ({{ selectedSimIds.length }})
+                </button>
+              </template>
+              <button class="mini-btn ghost" @click="exportAllWorldlines">{{ $t('world.exportAllWorldlines') }}</button>
+              <button v-if="simHistory.length >= 2" class="mini-btn ghost" @click="toggleCompareMode">
+                {{ compareMode ? $t('world.cancel') : $t('world.compareWorldlines') }}
+              </button>
+              <button v-if="compareMode && compareSelected.length === 2" class="mini-btn" @click="openCompare">
+                {{ $t('world.compare') }}
+              </button>
+              <button v-if="compareMode && compareSelected.length === 2" class="mini-btn" @click="mergeSelected">
+                {{ $t('world.mergeWorldlines') }}
+              </button>
+            </div>
           </div>
-          <div v-for="(h, i) in simHistory" :key="i" class="sim-history-item">
+          <div v-for="(h, i) in simHistory" :key="i" class="sim-history-item" :class="{ 'batch-selected': selectedSimIds.includes(h.simulation_id) }">
             <input
-              v-if="compareMode"
+              v-if="simBatchMode"
+              type="checkbox"
+              class="sim-compare-check"
+              :checked="selectedSimIds.includes(h.simulation_id)"
+              @change="toggleSelectSim(h.simulation_id)"
+            />
+            <input
+              v-else-if="compareMode"
               type="checkbox"
               class="sim-compare-check"
               :checked="compareSelected.includes(h.simulation_id)"
               @change="toggleCompareSelect(h)"
             />
-            <template v-else>
+            <template v-if="!compareMode">
               <span class="sim-history-time">{{ formatTime(h.created_at) }}</span>
               <span class="sim-history-status" :class="h.status">{{ statusLabel(h.status) }}</span>
               <span class="sim-history-count">{{ $t('world.eventCount', { count: (h.result || {}).event_count || 0 }) }}</span>
@@ -950,12 +975,25 @@
                 >
                   {{ expandedExchangeIds.size === graphTaskExchanges.length ? '全部折叠' : '全部展开' }}
                 </button>
+                <button
+                  type="button"
+                  class="console-action-btn"
+                  :class="{ active: autoScrollLogs }"
+                  :title="autoScrollLogs ? '自动滚底开启（用户上滑会自动暂停）' : '点击开启自动滚底'"
+                  @click="toggleAutoScrollLogs"
+                >
+                  {{ autoScrollLogs ? '锁定最底' : '自由浏览' }}
+                </button>
                 <span class="console-toggle" @click="showGraphLogs = !showGraphLogs">
                   {{ showGraphLogs ? '收起控制台 ▲' : '展开控制台 ▼' }}
                 </span>
               </div>
             </div>
-            <div v-if="showGraphLogs" ref="graphLogsContainer" class="console-body">
+            <div v-if="showGraphLogs" ref="graphLogsContainer" class="console-body" @scroll="handleConsoleScroll">
+              <!-- 悬浮一键回到底部小按钮 -->
+              <button v-if="!isScrolledToBottom" type="button" class="btn-scroll-bottom" @click="scrollToConsoleBottom">
+                ⬇ 回到最新底部
+              </button>
               <!-- Tab 1: LLM 实时输入与输出卡片 -->
               <template v-if="consoleActiveTab === 'llm'">
                 <div v-if="!graphTaskExchanges.length" class="console-empty-tip">
@@ -1619,6 +1657,35 @@ function expandAllExchanges() {
 }
 const showGraphLogs = ref(true)
 const graphLogsContainer = ref(null)
+const autoScrollLogs = ref(true)
+const isScrolledToBottom = ref(true)
+
+function handleConsoleScroll() {
+  if (!graphLogsContainer.value) return
+  const el = graphLogsContainer.value
+  const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+  // 如果距离底部超过 40px，说明用户正在往上翻看历史，暂停自动强行滚底
+  isScrolledToBottom.value = distFromBottom <= 40
+  if (!isScrolledToBottom.value && autoScrollLogs.value) {
+    autoScrollLogs.value = false
+  }
+}
+
+function scrollToConsoleBottom() {
+  if (graphLogsContainer.value) {
+    graphLogsContainer.value.scrollTop = graphLogsContainer.value.scrollHeight
+    isScrolledToBottom.value = true
+    autoScrollLogs.value = true
+  }
+}
+
+function toggleAutoScrollLogs() {
+  autoScrollLogs.value = !autoScrollLogs.value
+  if (autoScrollLogs.value) {
+    scrollToConsoleBottom()
+  }
+}
+
 const refillEdgesRunning = ref(false)
 let refillPollTimerId = null
 const graphMsg = ref('')
@@ -1796,10 +1863,14 @@ function pollGraphTask(taskId) {
         graphTaskExchanges.value = task.llm_exchanges
       }
       nextTick(() => {
-        if (graphLogsContainer.value) {
+        if (graphLogsContainer.value && autoScrollLogs.value) {
           graphLogsContainer.value.scrollTop = graphLogsContainer.value.scrollHeight
         }
       })
+      // 渐进式图谱动态呈现：构建过程中每 6 次轮询（约 3 秒）静默拉取一次图谱数据，让用户看到图谱逐渐成型
+      if (pollCount % 6 === 0) {
+        fetchGraph().catch(() => {})
+      }
       const isTerminal = TERMINAL_STATUSES.includes(status)
       if (isTerminal) {
         clearInterval(graphPollTimer)
@@ -2612,6 +2683,50 @@ async function continueSimulation(sim) {
   } finally {
     simStarting.value = false
   }
+}
+
+const simBatchMode = ref(false)
+const selectedSimIds = ref([])
+const deletingSimBatch = ref(false)
+
+function toggleSimBatchMode() {
+  simBatchMode.value = !simBatchMode.value
+  if (!simBatchMode.value) selectedSimIds.value = []
+}
+
+function toggleSelectSim(id) {
+  const i = selectedSimIds.value.indexOf(id)
+  if (i >= 0) selectedSimIds.value.splice(i, 1)
+  else selectedSimIds.value.push(id)
+}
+
+function toggleSelectAllSims() {
+  if (selectedSimIds.value.length === simHistory.value.length) {
+    selectedSimIds.value = []
+  } else {
+    selectedSimIds.value = simHistory.value.map(s => s.simulation_id)
+  }
+}
+
+async function runBatchDeleteSimulations() {
+  if (!selectedSimIds.value.length || deletingSimBatch.value) return
+  const count = selectedSimIds.value.length
+  if (!window.confirm(`确定要批量删除选中的 ${count} 条世界推演记录吗？删除后不可恢复。`)) return
+  deletingSimBatch.value = true
+  simMsg.value = ''
+  simMsgError.value = false
+  let successCount = 0
+  for (const sid of [...selectedSimIds.value]) {
+    try {
+      await deleteWorldSimulation(projectId, sid)
+      successCount++
+    } catch (_) {}
+  }
+  selectedSimIds.value = []
+  simBatchMode.value = false
+  deletingSimBatch.value = false
+  simMsg.value = `已成功批量删除 ${successCount} 条世界推演记录`
+  await loadSimHistory()
 }
 
 async function confirmDeleteSimulation(sim) {
@@ -5872,9 +5987,39 @@ onUnmounted(() => {
   .assistant-actions { flex-direction: column; }
   .assistant-actions .action-btn { width: 100%; }
 }
-@media (max-width: 360px) {
-  .back-btn { font-size: 10px; padding: 6px 8px; }
-  .header-right { gap: 6px; }
+.btn-scroll-bottom {
+  position: sticky;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #1d1d1f;
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  z-index: 10;
+  transition: all 0.2s ease;
 }
-
+.btn-scroll-bottom:hover {
+  background: #a1c50a;
+  color: #10203a;
+  transform: translateX(-50%) translateY(-2px);
+}
+.sim-history-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.sim-history-item.batch-selected {
+  border-color: #a1c50a;
+  background: #f8faee;
+}
 </style>

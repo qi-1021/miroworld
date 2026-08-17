@@ -214,7 +214,7 @@
       </div>
 
       <!-- 线性模式：时间条 + 事件卡列表 -->
-      <div v-if="displayMode === 'linear'" class="tl-linear-mode">
+      <div v-if="effectiveDisplayMode === 'linear'" class="tl-linear-mode">
       <div class="timeline-bar-wrap">
         <div class="tl-tick-row">
           <span class="tl-tick">{{ $t('timeline.early') }}</span>
@@ -312,6 +312,7 @@
           <div class="tl-card-summary">{{ ev.summary }}</div>
           <div v-if="ev.location_name" class="tl-card-loc">{{ $t('timeline.location') }}：{{ ev.location_name }}</div>
           <div class="tl-card-actions">
+            <button class="mini-act primary-act" :title="$t('fork.continueFromEvent') || '从此事件节点继续推演'" @click.stop="openContinueFromEvent(ev)">⚡ {{ $t('fork.continueBtn') || '继续推演' }}</button>
             <button class="mini-act" @click.stop="openFork(ev)">{{ $t('fork.forkBtn') }}</button>
             <button class="mini-act" @click.stop="openObjection(ev)">{{ $t('objection.objectionBtn') }}</button>
             <button class="mini-act" @click.stop="openEdit(ev)">{{ $t('timeline.manualEdit') }}</button>
@@ -322,7 +323,7 @@
       <!-- /线性模式 -->
 
       <!-- 并行模式：线程泳道 -->
-      <div v-else-if="displayMode === 'parallel'" class="tl-parallel-mode">
+      <div v-else-if="effectiveDisplayMode === 'parallel'" class="tl-parallel-mode">
         <div v-if="parallelLanes.length === 0" class="tl-state">{{ $t('timeline.noThreads') }}</div>
         <div v-for="lane in parallelLanes" :key="lane.key" class="lane-block">
           <div class="lane-head" :style="laneStyle(lane)">
@@ -350,6 +351,7 @@
               <div class="tl-card-summary">{{ ev.summary }}</div>
               <div v-if="ev.location_name" class="tl-card-loc">{{ $t('timeline.location') }}：{{ ev.location_name }}</div>
               <div class="tl-card-actions">
+                <button class="mini-act primary-act" :title="$t('fork.continueFromEvent') || '从此事件节点继续推演'" @click.stop="openContinueFromEvent(ev)">⚡ {{ $t('fork.continueBtn') || '继续推演' }}</button>
                 <button class="mini-act" @click.stop="openFork(ev)">{{ $t('fork.forkBtn') }}</button>
                 <button class="mini-act" @click.stop="openObjection(ev)">{{ $t('objection.objectionBtn') }}</button>
                 <button class="mini-act" @click.stop="openEdit(ev)">{{ $t('timeline.manualEdit') }}</button>
@@ -361,7 +363,7 @@
       <!-- /并行模式 -->
 
       <!-- 树状模式：可展开树状 SVG 结构图 -->
-      <div v-else-if="displayMode === 'tree'" class="tl-tree-mode">
+      <div v-else-if="effectiveDisplayMode === 'tree'" class="tl-tree-mode">
         <div class="tl-mode-head">
           <span class="tl-tree-hint">{{ $t('timeline.structureTree') }}</span>
           <span class="mini-legend">
@@ -399,9 +401,9 @@
       <!-- /树状模式 -->
 
       <!-- 网状 / 元叙事模式：力导向 SVG 关联图 -->
-      <div v-else-if="displayMode === 'network' || displayMode === 'meta'" class="tl-net-mode">
+      <div v-else-if="effectiveDisplayMode === 'network' || effectiveDisplayMode === 'meta'" class="tl-net-mode">
         <div class="tl-mode-head">
-          <span class="tl-net-title">{{ displayMode === 'meta' ? $t('timeline.metaTitle') : $t('timeline.networkTitle') }}</span>
+          <span class="tl-net-title">{{ effectiveDisplayMode === 'meta' ? $t('timeline.metaTitle') : $t('timeline.networkTitle') }}</span>
           <span class="mini-legend">
             <span class="lg-item"><i class="lg-dot dot-ink"></i>{{ $t('timeline.structure.nodeHappened') }}</span>
             <span class="lg-item"><i class="lg-dot dot-future"></i>{{ $t('timeline.kindFuture') }}</span>
@@ -840,6 +842,7 @@ function selectTimelineType(key) {
 // ===== 展示模式（自动/线性/并行/树状/网状/元叙事）=====
 const displayMode = ref('auto')
 const displayPickerOpen = ref(false)
+const autoResolvedMode = ref('linear')
 const displayModes = computed(() => [
   { key: 'auto', label: t('timeline.mode.auto'), desc: '' },
   { key: 'linear', label: t('timeline.mode.linear'), desc: '' },
@@ -848,10 +851,22 @@ const displayModes = computed(() => [
   { key: 'network', label: t('timeline.mode.network'), desc: '' },
   { key: 'meta', label: t('timeline.mode.meta'), desc: '' }
 ])
+
+const effectiveDisplayMode = computed(() => {
+  if (displayMode.value !== 'auto') return displayMode.value
+  return autoResolvedMode.value || 'linear'
+})
+
 const displayModeLabel = computed(() => {
   const found = displayModes.value.find(m => m.key === displayMode.value)
-  return found ? found.label : t('timeline.mode.auto')
+  const base = found ? found.label : t('timeline.mode.auto')
+  if (displayMode.value === 'auto') {
+    const sub = displayModes.value.find(m => m.key === effectiveDisplayMode.value)
+    return `${base} (${sub ? sub.label : t('timeline.mode.linear')})`
+  }
+  return base
 })
+
 // 后端结构类型 → 展示模式
 const BUILD_TYPE_TO_MODE = {
   single: 'linear',
@@ -867,16 +882,20 @@ function selectDisplayMode(key) {
   if (key === 'auto') resolveAutoMode()
 }
 async function resolveAutoMode() {
-  if (displayMode.value !== 'auto') return
   try {
     const res = await getTimelineStructure(props.projectId)
     const body = res?.data || res || {}
     const type = body.structure?.type || (body.data?.structure?.type)
     if (type && BUILD_TYPE_TO_MODE[type]) {
-      displayMode.value = BUILD_TYPE_TO_MODE[type]
+      autoResolvedMode.value = BUILD_TYPE_TO_MODE[type]
+    } else {
+      // 本地按事件特征自适应：有分支/父子事件走 tree/parallel，普通走 linear
+      const hasBranches = events.value.some(e => e.parent_event_id || e.branch_id || e.source === 'branch')
+      autoResolvedMode.value = hasBranches ? 'tree' : 'linear'
     }
   } catch (e) {
-    // 结构端不可用时不报错，保持线性默认
+    const hasBranches = events.value.some(e => e.parent_event_id || e.branch_id || e.source === 'branch')
+    autoResolvedMode.value = hasBranches ? 'tree' : 'linear'
   }
 }
 
@@ -1496,8 +1515,8 @@ function expandRender() { renderLimit.value += RENDER_STEP }
 function showAllEvents() { renderLimit.value = Infinity }
 
 // 网状/元叙事页面内模式：事件或模式变化时重绘力导向 SVG
-watch(() => [displayMode.value, filterKey()], () => {
-  if (displayMode.value === 'network' || displayMode.value === 'meta') {
+watch(() => [effectiveDisplayMode.value, filterKey()], () => {
+  if (effectiveDisplayMode.value === 'network' || effectiveDisplayMode.value === 'meta') {
     nextTick(renderNetSvg)
   }
 }, { deep: true })
@@ -1846,11 +1865,24 @@ async function runFuture() {
   finally { futureRunning.value = false; }
 }
 
-// ===== 分叉推演 =====
+// ===== 分叉推演 & 从节点继续推演 =====
 function openFork(ev) {
   forkEvent.value = ev; forkGoal.value = ''; forkHorizon.value = null; forkMsg.value = ''; forkMsgError.value = false;
   resetForkProgress();
   forkEventCount.value = 0; forkBranchId.value = ''; continueGoalInput.value = ''; guideInput.value = '';
+  forkInterrupted.value = false;
+}
+function openContinueFromEvent(ev) {
+  forkEvent.value = ev;
+  forkGoal.value = t('fork.continueGoalDefault', { name: ev.summary?.slice(0, 20) || '当前事件' }) || `顺承“${ev.summary?.slice(0, 20)}”的局势走向继续演化`;
+  forkHorizon.value = 3;
+  forkMsg.value = '';
+  forkMsgError.value = false;
+  resetForkProgress();
+  forkEventCount.value = 0;
+  forkBranchId.value = '';
+  continueGoalInput.value = '';
+  guideInput.value = '';
   forkInterrupted.value = false;
 }
 function resetForkProgress() {

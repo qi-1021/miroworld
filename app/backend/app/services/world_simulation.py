@@ -686,7 +686,9 @@ class WorldSimulationService:
         4. 后台线程调用 .venv-simulation 子进程
         """
         bible = WorldBibleService.get_bible(project_id)
-        if bible is None or (not bible.background_text.strip() and not bible.story_text.strip()):
+        bg_txt = (bible.background_text or "") if bible else ""
+        st_txt = (bible.story_text or "") if bible else ""
+        if bible is None or (not bg_txt.strip() and not st_txt.strip()):
             raise ValueError("尚未提交世界输入，请先在「世界设定」中保存背景/正文")
 
         if time_mode not in ("minutes", "narrative"):

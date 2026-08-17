@@ -83,7 +83,7 @@ def load_timeline(project_id: str, source: Optional[str] = None) -> Dict[str, An
             events = [e for e in data.get("events", []) if e.get("source") == source]
         else:
             events = data.get("events", [])
-        # 兼容旧数据：source=='future'/'branch' 回填 kind；未来/分支事件强制排在"现在"之后
+        # 兼容旧数据：source=='future'/'branch' 回填 kind；未来事件排在已有主线之后，分支事件保持从分叉点起算的时间
         if events:
             past_max = max(
                 (
@@ -102,7 +102,8 @@ def load_timeline(project_id: str, source: Optional[str] = None) -> Dict[str, An
                     e['kind'] = 'future'
                 if e.get('source') == 'branch' and not e.get('kind'):
                     e['kind'] = 'branch'
-                if (e.get('sort_lower') or 0.0) <= past_max:
+                # 仅当未来预测事件（非分支）没有合法时间且小于等于历史最大时间时才兜底顺延
+                if e.get('kind') == 'future' and (e.get('sort_lower') or 0.0) <= past_max:
                     e['sort_lower'] = past_max + 1.0 + i
                     e['sort_upper'] = e['sort_lower']
         return {"project_id": project_id, "source": source, "events": events}

@@ -269,8 +269,8 @@ class TaskManager:
                             task.logs.append(entry)
                 if log is not None and log.strip():
                     task.logs.append(f"[{now_str}] {log.strip()}")
-                if len(task.logs) > 200:
-                    task.logs = task.logs[-200:]
+                if len(task.logs) > 2000:
+                    task.logs = task.logs[-2000:]
                 if result is not None:
                     task.result = result
                 if error is not None:
@@ -293,8 +293,8 @@ class TaskManager:
             if task:
                 task.updated_at = datetime.now()
                 task.llm_exchanges.append(exchange)
-                if len(task.llm_exchanges) > 100:
-                    task.llm_exchanges = task.llm_exchanges[-100:]
+                if len(task.llm_exchanges) > 1000:
+                    task.llm_exchanges = task.llm_exchanges[-1000:]
         self._persist_task(task_id)
 
 
