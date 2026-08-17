@@ -161,8 +161,27 @@ cd app/backend
 .venv/bin/pytest tests/ -q  # 670+ 个单元测试用例 100% 绿色全通
 ```
 
+## ✍️ 作者寄语 / 随笔
+
+> 这里是专属的「加料区 / 创作者留言板」，你可以随时在此记录你的推演感悟、创作背景、开发心得或给使用者的悄悄话：
+>
+> *“推演不是为了预知未来，而是为了在无数种可能的分叉中，看清每一个选择背后的重量与人性。愿每位踏入 Miroworld 的创作者，都能在这里推演属于自己的璀璨星辰与故事世界。”*
+>
+> *(随时编辑此区域，添加你的个性化见解、更新计划或创作故事)*
+
+---
+
+## 🙏 鸣谢与致敬 (Acknowledgments)
+
+本项目基于开源社区的智慧与心血演进而来，特别向以下优秀的开源项目与贡献者致以最崇高的谢意：
+
+- **🌟 [MiroFish 原始官方项目](https://github.com/666ghg/MiroFish)**：感谢原作者及团队开创性的群体智能预测引擎设计，为世界推演与多智能体交互奠定了坚实而充满想象力的基石！
+- **🛠️ [MiroFish-local](https://github.com/tt-a1i/MiroFish-local)**：感谢将 MiroFish 引入本地化部署的探索者与同志们，为零云端依赖的便携式运行提供了宝贵的实践基础。
+- **🧬 [Graphiti / Zep](https://github.com/getzep/graphiti)** 与 **[Camel-AI / OASIS](https://github.com/camel-ai/oasis)**：感谢提供强大的知识图谱与多智能体仿真驱动支持。
+
 ---
 
 ## 📄 开源许可证
 
 本项目遵循 [AGPL-3.0 License](LICENSE) 开源协议。
+
