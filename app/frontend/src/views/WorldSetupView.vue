@@ -1081,6 +1081,27 @@
               </div>
             </div>
 
+            <div class="graph-legend-bar">
+              <button
+                type="button"
+                class="legend-tag setting-tag"
+                :class="{ active: sourceFilter === 'all' || sourceFilter === 'setting' }"
+                @click="toggleSourceFilter('setting')"
+                title="点击按来源筛选"
+              >
+                <span class="legend-ring setting-ring"></span> 设定基石实体
+              </button>
+              <button
+                type="button"
+                class="legend-tag dynamic-tag"
+                :class="{ active: sourceFilter === 'all' || sourceFilter === 'dynamic' }"
+                @click="toggleSourceFilter('dynamic')"
+                title="点击按来源筛选"
+              >
+                <span class="legend-ring dynamic-ring"></span> 正文/推演衍生
+              </button>
+            </div>
+
             <div class="graph-controls">
               <span class="graph-zoom-label">{{ Math.round(graphZoom * 100) }}%</span>
               <button type="button" class="graph-ctrl-btn" title="放大" @click="zoomGraph(0.2)">➕</button>
@@ -1136,7 +1157,7 @@
                       class="graph-edge"
                       :class="{
                         highlight: isEdgeConnected(e),
-                        dimmed: isEdgeDimmed(e)
+                        dimmed: isEdgeDimmed(e) || (sourceFilter !== 'all' && (!isNodeMatchingSource(e.source) || !isNodeMatchingSource(e.target)))
                       }"
                       :marker-end="isEdgeConnected(e) ? 'url(#edge-arrow-active)' : 'url(#edge-arrow)'"
                     />
@@ -1164,7 +1185,9 @@
                     :class="{
                       selected: selectedGraphNode && selectedGraphNode.uuid === n.uuid,
                       connected: isNodeConnectedToSelected(n.uuid),
-                      dimmed: isNodeDimmed(n.uuid)
+                      dimmed: isNodeDimmed(n.uuid) || (sourceFilter !== 'all' && !isNodeMatchingSource(n.uuid)),
+                      'is-setting-node': isSettingNode(n),
+                      'is-dynamic-node': !isSettingNode(n)
                     }"
                     @click.stop="toggleSelectGraphNode(n)"
                     @mousedown.stop="startDragNode(n, $event)"
@@ -1175,12 +1198,32 @@
                       :r="graphNodeR(n) + 10"
                       class="node-halo"
                     />
-                    <!-- 节点外圆 -->
+                    <!-- 设定基石节点外层双环 / 菱角标识 -->
+                    <circle
+                      v-if="isSettingNode(n)"
+                      :r="graphNodeR(n) + 4"
+                      class="setting-node-outer"
+                    />
+                    <!-- 衍生实体节点外层虚线环 -->
+                    <circle
+                      v-else
+                      :r="graphNodeR(n) + 3"
+                      class="dynamic-node-outer"
+                    />
+                    <!-- 节点外圆主体 -->
                     <circle
                       :r="graphNodeR(n)"
                       class="graph-node"
                       :style="{ fill: graphNodeColor(n) }"
                     />
+                    <!-- 节点源头徽标（金星代表设定基石） -->
+                    <text
+                      v-if="isSettingNode(n)"
+                      class="setting-badge-icon"
+                      text-anchor="middle"
+                      dy=".35em"
+                    >✦</text>
+
                     <!-- 节点主体名称 -->
                     <text
                       class="graph-node-label"
@@ -1210,6 +1253,12 @@
                   <span class="panel-dot" :style="{ background: graphNodeColor(selectedGraphNode) }"></span>
                   <span class="panel-title">{{ selectedGraphNode.name }}</span>
                   <span class="panel-type-badge">{{ graphNodeType(selectedGraphNode) }}</span>
+                  <span
+                    class="panel-source-badge"
+                    :class="isSettingNode(selectedGraphNode) ? 'badge-setting' : 'badge-dynamic'"
+                  >
+                    {{ isSettingNode(selectedGraphNode) ? '✦ 设定基石' : '⚡ 演化衍生' }}
+                  </span>
                 </div>
                 <button type="button" class="panel-close-btn" @click="selectedGraphNode = null">✕</button>
               </div>
@@ -1910,6 +1959,45 @@ const selectedGraphAttrs = computed(() => {
     return true
   }).slice(0, 12)
 })
+
+// 实体源头分类识别（世界设定本源 vs 正文推演衍生）
+const sourceFilter = ref('all') // 'all' | 'setting' | 'dynamic'
+
+function isSettingNode(n) {
+  if (!n) return false
+  // 1. 如果节点对象本身携带 source_type / is_setting 标记
+  if (n.source_type === 'setting' || n.is_setting || n.source === 'setting') return true
+  // 2. 如果来自世界设定库预设的人物列表或本体实体类型
+  const inCharList = charactersList.value.some(c => c.name && n.name && c.name.trim() === n.name.trim())
+  if (inCharList) return true
+  // 3. 检查属性中是否有世界观/设定标识
+  if (n.attributes) {
+    if (n.attributes.is_setting || n.attributes.source === 'world_bible' || n.attributes.origin === 'setting') {
+      return true
+    }
+  }
+  // 4. 根据命名或首批生成特征判断（如果是前 30% 核心实体且具备完整生平属性）
+  if (n.summary && (n.summary.includes('设定') || n.summary.includes('世界观') || n.summary.includes('背景'))) {
+    return true
+  }
+  return false
+}
+
+function isNodeMatchingSource(uuid) {
+  if (sourceFilter.value === 'all') return true
+  const node = graphNodes.value.find(n => n.uuid === uuid)
+  if (!node) return true
+  const isSet = isSettingNode(node)
+  return sourceFilter.value === 'setting' ? isSet : !isSet
+}
+
+function toggleSourceFilter(type) {
+  if (sourceFilter.value === type) {
+    sourceFilter.value = 'all'
+  } else {
+    sourceFilter.value = type
+  }
+}
 
 // 图谱地图交互状态（平移、缩放、搜索、拖拽、全屏）
 const graphPan = ref({ x: 0, y: 0 })
@@ -6110,12 +6198,90 @@ onUnmounted(() => {
   font-weight: 700;
   font-size: 11px;
 }
+.graph-legend-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.legend-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.legend-tag.active {
+  background: rgba(255, 255, 255, 0.14);
+  color: #f8fafc;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.legend-ring {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.setting-ring {
+  background: #f59e0b;
+  box-shadow: 0 0 6px #f59e0b;
+}
+.dynamic-ring {
+  background: #06b6d4;
+  border: 1px dashed #fff;
+}
+.setting-node-outer {
+  fill: none;
+  stroke: #f59e0b;
+  stroke-width: 1.6;
+  opacity: 0.85;
+  filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.6));
+}
+.dynamic-node-outer {
+  fill: none;
+  stroke: rgba(6, 182, 212, 0.7);
+  stroke-width: 1.4;
+  stroke-dasharray: 4 3;
+  animation: dynamic-spin 8s linear infinite;
+}
+@keyframes dynamic-spin {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: 28; }
+}
+.setting-badge-icon {
+  font-size: 10px;
+  fill: #fff;
+  font-weight: 900;
+  pointer-events: none;
+  text-shadow: 0 0 4px #f59e0b;
+}
+.panel-source-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.badge-setting {
+  background: rgba(245, 158, 11, 0.25);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.badge-dynamic {
+  background: rgba(6, 182, 212, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(6, 182, 212, 0.4);
+}
 .node-group {
   cursor: pointer;
   transition: opacity 0.25s ease;
 }
 .node-group.dimmed {
-  opacity: 0.2;
+  opacity: 0.15;
 }
 .node-halo {
   fill: none;
