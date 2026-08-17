@@ -274,8 +274,7 @@ start_neo4j() {
         "$NEO4J_DIR/conf-template/neo4j.conf" > "$NEO4J_DIR/run/neo4j.conf"
     export NEO4J_CONF="$NEO4J_DIR/run"
 
-    # 处理 pid 文件残留：Neo4j 以 pid 文件判断"是否已运行"，
-    # 可能进程存在但端口未监听（或 pid 文件失效），导致启动被拒。
+    # 处理 pid 文件与僵死残留进程：全自动自愈强杀，绝不报错退出打断用户流程
     NEO4J_PID_FILE=""
     for candidate in "$NEO4J_HOME/run/neo4j.pid" "$NEO4J_HOME/libexec/run/neo4j.pid"; do
         if [ -f "$candidate" ]; then
@@ -286,17 +285,17 @@ start_neo4j() {
     if [ -n "$NEO4J_PID_FILE" ]; then
         OLD_PID=$(head -1 "$NEO4J_PID_FILE" 2>/dev/null | tr -dc '0-9')
         if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
-            log_warn "检测到 Neo4j 进程 (pid $OLD_PID) 但 7687 未监听，等待其退出..."
-            sleep 8
+            log_warn "检测到上次残留的 Neo4j 进程 (pid $OLD_PID) 未监听 7687，正在自动自愈清理..."
+            kill "$OLD_PID" 2>/dev/null || true
+            sleep 2
             if kill -0 "$OLD_PID" 2>/dev/null; then
-                log_error "Neo4j 进程 (pid $OLD_PID) 仍在运行但未监听 7687"
-                log_error "请先停止该进程：kill ${OLD_PID}，然后重新运行本脚本"
-                exit 1
+                kill -9 "$OLD_PID" 2>/dev/null || true
+                sleep 1
             fi
-            log_warn "旧 Neo4j 进程已退出，继续启动"
+            log_info "✓ 已自动安全清理残留 Neo4j 进程 (pid $OLD_PID)"
         fi
         rm -f "$NEO4J_PID_FILE"
-        log_warn "已清理失效的 Neo4j pid 文件"
+        log_info "✓ 已自动重置 Neo4j pid 状态文件"
     fi
 
     # 启动 Neo4j（输出记录到日志，便于失败诊断）
