@@ -2912,6 +2912,16 @@ async function loadAll() {
       simGoal.value = stats.value.goal
     }
     await fetchGraph()
+
+    // 页面刷新后自动恢复正在构建中的任务轮询（断点续连）
+    if (stats.value && stats.value.graph_build_task_id && (stats.value.graph_status === 'graph_building' || !graphInfo.value?.node_count)) {
+      if (!graphBuilding.value) {
+        graphBuilding.value = true
+        graphProgressMsg.value = '正在恢复后台世界图谱构建进度...'
+        showGraphLogs.value = true
+        pollGraphTask(stats.value.graph_build_task_id)
+      }
+    }
   } catch (e) {
     console.error('加载世界设定失败', e)
     loadError.value = e.message || t('world.loadFailed')

@@ -295,17 +295,30 @@ def get_world_settings(project_id: str):
     stats = WorldBibleService.get_stats(project_id)
     if stats is None:
         return jsonify({"success": True, "stats": None}), 200
-    # 附带世界知识图谱状态（若有）
+    # 附带世界知识图谱状态与后台正在运行的任务（若有）
     try:
-        from ..models.project import ProjectManager
+        from ..models.project import ProjectManager, ProjectStatus
+        from ..models.task import task_manager
         project = ProjectManager.get_project(project_id)
         stats["graph_id"] = project.graph_id if project else None
         stats["graph_status"] = (
             project.status.value if project and project.status else None
         )
+        stats["graph_build_task_id"] = getattr(project, "graph_build_task_id", None)
+        # 若 project.status 为 GRAPH_BUILDING 或有活跃任务，优先定位活跃的 task_id
+        active_task = None
+        for _t in task_manager.list_tasks():
+            _meta = _t.get("metadata") or {}
+            if _meta.get("kind") == "world_graph_build" and _meta.get("project_id") == project_id and _t.get("status") in ("pending", "processing"):
+                active_task = _t
+                break
+        if active_task:
+            stats["graph_build_task_id"] = active_task.get("task_id")
+            stats["graph_status"] = "graph_building"
     except Exception:
         stats["graph_id"] = None
         stats["graph_status"] = None
+        stats["graph_build_task_id"] = None
     return jsonify({"success": True, "stats": stats})
 
 

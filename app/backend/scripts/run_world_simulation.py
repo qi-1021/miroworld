@@ -749,6 +749,7 @@ class WorldEnv:
                 _goal = (char.goal or "").strip() or "按人设自然行动"
                 _recent = self._recent_context(char)
                 _global = self._global_context()
+                _story = self._story_context()
                 _world_mem = self._world_memory()
                 _vars_block = ""
                 if self.active_variables:

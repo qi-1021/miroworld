@@ -1485,21 +1485,29 @@ def _normalize_event(raw: Dict[str, Any], project_id: str, source: str,
                 ev[k] = anchor[k]
         sl = anchor.get("sort_lower")
         su = anchor.get("sort_upper")
-        if sl is not None:
-            ev["sort_lower"] = float(sl)
-            ev["sort_upper"] = float(su if su is not None else sl)
+        tkind = anchor.get("time_kind")
+        if sl is not None and tkind in ("year", "age", "phase"):
+            # 绝对纪年与年龄：以绝对时间为主排序键，叙述序作为微小偏移保证同时间下顺序稳定
+            ev["sort_lower"] = float(sl) * 100.0 + (float(seq) * 0.001)
+            ev["sort_upper"] = float(su if su is not None else sl) * 100.0 + (float(seq) * 0.001)
+        elif sl is not None and tkind == "period":
+            # 相对时间跨度（次年、三年后）：以出现时的自然叙事流 seq 为基准向前平移，绝不沉底或冲顶
+            ev["sort_lower"] = float(seq) * 10.0 + float(sl)
+            ev["sort_upper"] = float(seq) * 10.0 + float(su if su is not None else sl)
         else:
-            ev["sort_lower"] = float(seq)
-            ev["sort_upper"] = float(seq)
+            ev["sort_lower"] = float(seq) * 10.0
+            ev["sort_upper"] = float(seq) * 10.0
     else:
-        # 无时间表达：用年龄（若 LLM 给了）或叙述序 seq
-        if ev["age"] is not None:
-            ev["sort_lower"] = float(ev["age"]); ev["sort_upper"] = float(ev["age"])
-        elif ev["year"] is not None:
-            ev["sort_lower"] = float(ev["year"]) * 10.0
-            ev["sort_upper"] = float(ev["year"]) * 10.0
+        # 无明确时间表达：严格按源文本叙述流的篇章先后顺序 seq 排序
+        if ev["year"] is not None:
+            ev["sort_lower"] = float(ev["year"]) * 100.0 + (float(seq) * 0.001)
+            ev["sort_upper"] = float(ev["year"]) * 100.0 + (float(seq) * 0.001)
+        elif ev["age"] is not None:
+            ev["sort_lower"] = float(ev["age"]) * 100.0 + (float(seq) * 0.001)
+            ev["sort_upper"] = float(ev["age"]) * 100.0 + (float(seq) * 0.001)
         else:
-            ev["sort_lower"] = float(seq); ev["sort_upper"] = float(seq)
+            ev["sort_lower"] = float(seq) * 10.0
+            ev["sort_upper"] = float(seq) * 10.0
     return ev
 
 
