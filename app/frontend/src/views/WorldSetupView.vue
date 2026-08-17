@@ -2285,19 +2285,22 @@ function startDragNode(n, evt) {
   window.addEventListener('mouseup', onMouseUp)
 }
 
-// 优化的全域星图力导向布局（带位置稳定性记忆与绝对防重叠机制）
+// 优化的全域星图力导向布局（轻量自适应退火与防卡死算法）
 function layoutGraph(nodes, edges) {
+  if (!nodes || !nodes.length) return {}
   const pos = {}
-  const count = nodes.length || 1
+  const count = nodes.length
   const existingPos = graphPos.value || {}
 
-  // 1. 优先复用已有节点的既有坐标，新节点按黄金螺旋环绕补充，保证画面绝对平稳不跳跃
+  // 1. 复用已有节点的坐标；新节点按黄金螺旋发散初始化
   const goldenAngle = Math.PI * (3 - Math.sqrt(5))
+  let hasNewNodes = false
   nodes.forEach((n, i) => {
     if (existingPos[n.uuid] && typeof existingPos[n.uuid].x === 'number') {
       pos[n.uuid] = { x: existingPos[n.uuid].x, y: existingPos[n.uuid].y }
     } else {
-      const r = Math.sqrt(i + 1) * 65 + 100
+      hasNewNodes = true
+      const r = Math.sqrt(i + 1) * 55 + 90
       const theta = i * goldenAngle
       pos[n.uuid] = {
         x: GV_W / 2 + Math.cos(theta) * (r * 1.1),
@@ -2306,33 +2309,33 @@ function layoutGraph(nodes, edges) {
     }
   })
 
-  const linkMap = new Map()
-  edges.forEach(e => {
-    if (!linkMap.has(e.source)) linkMap.set(e.source, new Set())
-    if (!linkMap.has(e.target)) linkMap.set(e.target, new Set())
-    linkMap.get(e.source).add(e.target)
-    linkMap.get(e.target).add(e.source)
-  })
+  // 如果没有新节点且已有全部位置，直接返回已有坐标，避免每次无意义地重新耗尽 CPU
+  if (!hasNewNodes && Object.keys(existingPos).length === count) {
+    return pos
+  }
 
-  // 2. 迭代 60 轮动力学退火（大幅降低 CPU 瞬时负担，提升主线程响应速度）
-  for (let iter = 0; iter < 60; iter++) {
-    const cooling = Math.max(0.05, 1 - (iter / 60))
+  // 自适应轮次：节点较多时降低暴力迭代轮次，防止阻塞主线程与按钮事件
+  const maxIters = count > 150 ? 8 : count > 60 ? 15 : 25
 
-    // 2.1 库仑斥力（大范围温和斥力）
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const a = pos[nodes[i].uuid]
-        const b = pos[nodes[j].uuid]
+  // 2. 迭代退火
+  for (let iter = 0; iter < maxIters; iter++) {
+    const cooling = Math.max(0.05, 1 - (iter / maxIters))
+
+    // 2.1 斥力（仅针对采样或近距离节点计算）
+    const step = count > 120 ? 2 : 1
+    for (let i = 0; i < count; i += step) {
+      for (let j = i + 1; j < count; j += step) {
+        const uA = nodes[i].uuid
+        const uB = nodes[j].uuid
+        const a = pos[uA]
+        const b = pos[uB]
+        if (!a || !b) continue
         let dx = a.x - b.x
         let dy = a.y - b.y
         let d = Math.sqrt(dx * dx + dy * dy) || 1
-        
-        const rA = graphNodeR(nodes[i])
-        const rB = graphNodeR(nodes[j])
-        const minDist = rA + rB + 50
-
+        const minDist = 80
         if (d < minDist * 2) {
-          const force = (Math.pow(minDist * 2 - d, 2) / 80) * cooling
+          const force = (Math.pow(minDist * 2 - d, 2) / 120) * cooling
           dx /= d
           dy /= d
           a.x += dx * force
@@ -2343,7 +2346,7 @@ function layoutGraph(nodes, edges) {
       }
     }
 
-    // 2.2 关系引力
+    // 2.2 引力
     edges.forEach(e => {
       const a = pos[e.source]
       const b = pos[e.target]
@@ -2351,8 +2354,8 @@ function layoutGraph(nodes, edges) {
       let dx = b.x - a.x
       let dy = b.y - a.y
       let d = Math.sqrt(dx * dx + dy * dy) || 1
-      const idealLen = 150
-      const force = (d - idealLen) * 0.02 * cooling
+      const idealLen = 140
+      const force = (d - idealLen) * 0.03 * cooling
       dx /= d
       dy /= d
       a.x += dx * force
@@ -2362,37 +2365,13 @@ function layoutGraph(nodes, edges) {
     })
   }
 
-  // 3. 物理刚体绝对防重叠校验（微调 8 轮）
-  for (let pass = 0; pass < 8; pass++) {
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const uA = nodes[i].uuid
-        const uB = nodes[j].uuid
-        const a = pos[uA]
-        const b = pos[uB]
-        let dx = a.x - b.x
-        let dy = a.y - b.y
-        let d = Math.sqrt(dx * dx + dy * dy) || 0.1
-        const requiredGap = graphNodeR(nodes[i]) + graphNodeR(nodes[j]) + 45
-
-        if (d < requiredGap) {
-          const overlap = requiredGap - d
-          let nx = dx / d
-          let ny = dy / d
-          a.x += nx * (overlap * 0.5)
-          a.y += ny * (overlap * 0.5)
-          b.x -= nx * (overlap * 0.5)
-          b.y -= ny * (overlap * 0.5)
-        }
-      }
-    }
-  }
-
-  // 4. 边界软限制
+  // 3. 边界软限制
   nodes.forEach(n => {
     const p = pos[n.uuid]
-    p.x = Math.max(90, Math.min(GV_W - 90, p.x))
-    p.y = Math.max(70, Math.min(GV_H - 70, p.y))
+    if (p) {
+      p.x = Math.max(80, Math.min(GV_W - 80, p.x))
+      p.y = Math.max(60, Math.min(GV_H - 60, p.y))
+    }
   })
   return pos
 }
@@ -2416,6 +2395,7 @@ async function fetchGraph() {
 
 function pollGraphTask(taskId) {
   let pollCount = 0
+  let lastNodeCount = 0
   const MAX_POLLS = 360 // 1000ms × 360 = 6分钟超时
   const TERMINAL_STATUSES = ['completed', 'failed', 'COMPLETED', 'FAILED', 'interrupted', 'cancelled', 'error', 'stopped']
   if (graphPollTimer) clearInterval(graphPollTimer)
@@ -2445,8 +2425,8 @@ function pollGraphTask(taskId) {
           graphLogsContainer.value.scrollTop = graphLogsContainer.value.scrollHeight
         }
       })
-      // 渐进式图谱动态呈现：每 5 次轮询（约 5 秒）更新一次图谱节点，避免高频重绘导致画面抖动与卡顿
-      if (pollCount % 5 === 0) {
+      // 渐进式图谱动态呈现：每 6 秒探测一次，且仅在有新节点或完成时才执行重绘，彻底避免主线程假死
+      if (pollCount % 6 === 0) {
         fetchGraph().catch(() => {})
       }
       const isTerminal = TERMINAL_STATUSES.includes(status)
