@@ -74,10 +74,13 @@ def _ensure_async_loop():
                 while _async_loop is None:
                     import time
                     time.sleep(0.01)
-                # 循环就绪后创建互斥锁（首次 acquire 发生在该循环线程上）
+                # 循环就绪后在专用循环内部创建互斥锁（确保 Lock 绑在 _async_loop 上）
                 global _episode_lock
                 if _episode_lock is None:
-                    _episode_lock = asyncio.Lock()
+                    async def _create_lock():
+                        global _episode_lock
+                        _episode_lock = asyncio.Lock()
+                    asyncio.run_coroutine_threadsafe(_create_lock(), _async_loop).result(timeout=5)
 
 
 def _run_async(coro):
