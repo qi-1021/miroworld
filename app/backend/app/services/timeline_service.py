@@ -2247,6 +2247,9 @@ def _extract_task_body(project_id: str, source: str, task_id: str, resume: bool 
         all_events.sort(key=lambda e: (e.get("sort_lower") or 0))
         with _timeline_lock_for(project_id):
             existing = load_timeline(project_id, None).get("events", [])
+            if not resume:
+                # 强制重新抽取（非断点续传）：先剔除已有列表中来自本 source 的旧事件，避免重复堆叠
+                existing = [e for e in existing if e.get("source") != source]
             existing_merged = _merge_events(existing, all_events)
             _save_timeline(project_id, existing_merged)
 
@@ -2283,21 +2286,37 @@ def _extract_task_body(project_id: str, source: str, task_id: str, resume: bool 
 
 
 def _merge_events(existing: List[Dict[str, Any]], new: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """把新抽事件并入现有事件，按 summary+location 近似去重（保留已有、跳过重复新事件）。"""
-    seen = set()
+    """把新抽事件并入现有事件，按 id 与 summary+location 全面去重（保留已有、跳过重复新事件）。"""
+    seen_keys = set()
+    seen_ids = set()
+    result = []
     for e in existing:
-        seen.add(_dedupe_key(e))
+        eid = str(e.get("id") or "").strip()
+        k = _dedupe_key(e)
+        if eid:
+            seen_ids.add(eid)
+        seen_keys.add(k)
+        result.append(e)
+
     for e in new:
-        key = _dedupe_key(e)
-        if key not in seen:
-            seen.add(key)
-            existing.append(e)
-    return existing
+        eid = str(e.get("id") or "").strip()
+        k = _dedupe_key(e)
+        if eid and eid in seen_ids:
+            continue
+        if k in seen_keys:
+            continue
+        if eid:
+            seen_ids.add(eid)
+        seen_keys.add(k)
+        result.append(e)
+    return result
 
 
 def _dedupe_key(e: Dict[str, Any]) -> str:
-    return (f"{e.get('source')}|{e.get('summary')}|{e.get('location_name')}|"
-            f"{e.get('thread_id') or ''}|{e.get('dimension') or 'main'}")
+    summary = str(e.get("summary") or "").strip()
+    loc = str(e.get("location_name") or "").strip()
+    time_txt = str(e.get("time_text") or "").strip()
+    return f"{summary}|{loc}|{time_txt}"
 
 
 def _source_text(project_id: str, story: bool) -> str:

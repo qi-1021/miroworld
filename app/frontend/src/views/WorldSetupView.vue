@@ -662,13 +662,13 @@
               class="mini-btn"
               :disabled="simStatus === 'paused'"
               @click="handleControl('pause')"
-            >{{ $t('world.pause') }}</button>
+            >⏸ {{ $t('world.pause') || '暂停' }}</button>
             <button
               class="mini-btn"
               :disabled="simStatus !== 'paused'"
               @click="handleControl('resume')"
-            >{{ $t('world.resume') }}</button>
-            <button class="mini-btn danger" @click="handleControl('stop')">{{ $t('world.stop') }}</button>
+            >▶ {{ $t('world.resume') || '继续' }}</button>
+            <button class="mini-btn danger" @click="handleControl('stop')">⏹ {{ $t('world.stop') || '停止' }}</button>
             <button
               type="button"
               class="mini-btn god-mode-btn"
@@ -2480,8 +2480,8 @@ async function handleBuildGraph() {
   graphBuilding.value = true
   graphMsg.value = ''
   graphMsgError.value = false
-  graphProgressMsg.value = ''
-  graphProgress.value = 0
+  graphProgressMsg.value = '正在初始化图谱构建任务...'
+  graphProgress.value = 2
   graphTaskLogs.value = [`[${new Date().toTimeString().slice(0, 8)}] 正在启动世界图谱构建流程...`]
   graphTaskExchanges.value = []
   showGraphLogs.value = true
@@ -2491,11 +2491,21 @@ async function handleBuildGraph() {
       force: !!graphInfo.value,
       resume: false
     })
-    graphMsg.value = res.message || t('world.msgGraphStarted')
-    pollGraphTask(res.task_id)
+    const taskId = res?.task_id || res?.data?.task_id || (typeof res === 'string' ? res : null)
+    graphMsg.value = res?.message || t('world.msgGraphStarted') || '图谱构建已启动'
+    if (taskId) {
+      pollGraphTask(taskId)
+    } else {
+      // 若后端已同步建完或未返回 taskId，直接拉取图谱
+      await fetchGraph()
+      graphBuilding.value = false
+      graphProgressMsg.value = ''
+    }
   } catch (e) {
     graphBuilding.value = false
-    graphMsg.value = (e.message || t('world.msgGraphStartFailed')) + t('world.checkModelConfig')
+    graphProgressMsg.value = ''
+    const errMsg = e?.response?.data?.error || e?.message || t('world.msgGraphStartFailed') || '图谱构建启动失败'
+    graphMsg.value = errMsg
     graphMsgError.value = true
   }
 }

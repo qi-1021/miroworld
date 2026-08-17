@@ -962,12 +962,11 @@ def create_llm_caller(config: Dict[str, Any]):
     base_url = llm_cfg.get("base_url") or os.environ.get("LLM_BASE_URL", "")
     model = llm_cfg.get("model") or os.environ.get("LLM_MODEL_NAME", "gpt-4o-mini")
 
-    if not api_key:
-        raise ValueError("缺少 LLM API Key：请在配置或 LLM_API_KEY 环境变量中提供")
-
-    import httpx
-
     async def call(text: str) -> str:
+        if not api_key:
+            return "在原地观察周围局势并思索对策。"
+
+        import httpx
         url = f"{base_url.rstrip('/')}/chat/completions"
         payload = {
             "model": model,
@@ -979,18 +978,24 @@ def create_llm_caller(config: Dict[str, Any]):
             "max_tokens": 300,
         }
         headers = {"Authorization": f"Bearer {api_key}"}
-        # 空响应重试（OpenCode 网关偶发返回空内容）
+        # 空响应与异常重试
         last_content = ""
         for attempt in range(3):
-            async with httpx.AsyncClient(timeout=120) as client:
-                resp = await client.post(url, json=payload, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
-                last_content = data["choices"][0]["message"]["content"] or ""
+            try:
+                async with httpx.AsyncClient(timeout=60) as client:
+                    resp = await client.post(url, json=payload, headers=headers)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        choices = data.get("choices", [])
+                        if choices and isinstance(choices[0], dict):
+                            last_content = choices[0].get("message", {}).get("content") or ""
+            except Exception as e:
+                print(f"  ⚠ [LLM] 调用异常 (尝试 {attempt + 1}/3): {e}")
             if last_content.strip():
-                return last_content
-            await asyncio.sleep(1.0 + attempt)
-        return "我停下来等待。"
+                return last_content.strip()
+            await asyncio.sleep(0.5 + attempt * 0.5)
+
+        return "在原地调整状态，密切留意周围动向。"
 
     return call
 
