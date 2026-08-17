@@ -60,12 +60,23 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%port%" ^| findstr "LISTENI
         echo !_cmd! | find /i "concurrently" >nul 2>nul && set "_islocal=1"
         echo !_cmd! | find /i "npm run dev"  >nul 2>nul && set "_islocal=1"
     )
+    REM 如果 wmic 为空（Win11 默认无 wmic），使用 PowerShell 兜底识别
+    if "!_islocal!"=="0" (
+        for /f "delims=" %%c in ('powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=!_pid!').CommandLine" 2^>nul') do (
+            set "_cmd=%%c"
+            echo !_cmd! | find /i "mirofish"      >nul 2>nul && set "_islocal=1"
+            echo !_cmd! | find /i "run.py"       >nul 2>nul && set "_islocal=1"
+            echo !_cmd! | find /i "vite"         >nul 2>nul && set "_islocal=1"
+            echo !_cmd! | find /i "concurrently" >nul 2>nul && set "_islocal=1"
+            echo !_cmd! | find /i "npm run dev"  >nul 2>nul && set "_islocal=1"
+        )
+    )
     if "!_islocal!"=="1" (
         echo [INFO] 结束 PID %%a (%name% :%port%)
         if "%FORCE_ALL%"=="1" (
-            taskkill /F /PID %%a >nul 2>nul
+            taskkill /F /PID %%a /T >nul 2>nul
         ) else (
-            taskkill /PID %%a >nul 2>nul
+            taskkill /PID %%a /T >nul 2>nul
         )
     ) else (
         echo [WARN] 端口 %port% 的 PID %%a 非本项目进程，跳过（如需停止请手动处理）
@@ -76,17 +87,21 @@ goto :eof
 REM ==== 子程序：按命令行标记兜底清理残留子进程（模拟等） ====
 :kill_by_marker
 set "marker=%~1"
+REM 优先使用 PowerShell（全版本 Windows 原生支持）
+powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*%marker%*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" 2>nul
+if not errorlevel 1 goto :eof
+
+REM wmic 兜底（老版本 Windows）
 set "tmpfile=%TEMP%\mirofish-stop-%RANDOM%.txt"
 wmic process get ProcessId,CommandLine 2>nul > "%tmpfile%"
 if errorlevel 1 (
     if exist "%tmpfile%" del /q "%tmpfile%" >nul 2>nul
     goto :eof
 )
-REM wmic 输出形如 "ProcessId=1234  CommandLine=""...marker..."""
 for /f "tokens=1,2 delims==" %%A in ('type "%tmpfile%" ^| findstr /i "!marker!"') do (
     for /f "tokens=1 delims= " %%P in ("%%B") do (
         echo [INFO] 结束残留进程 PID %%P (marker: !marker!)
-        taskkill /F /PID %%P >nul 2>nul
+        taskkill /F /PID %%P /T >nul 2>nul
     )
 )
 del /q "%tmpfile%" >nul 2>nul
