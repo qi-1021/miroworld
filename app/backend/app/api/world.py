@@ -272,8 +272,8 @@ def get_world_settings(project_id: str):
         stats["graph_status"] = (
             project.status.value if project and project.status else None
         )
-        stats["graph_build_task_id"] = getattr(project, "graph_build_task_id", None)
-        # 若 project.status 为 GRAPH_BUILDING 或有活跃任务，优先定位活跃的 task_id
+        # 若 project.status 为 GRAPH_BUILDING，必须核验后台是否真有活跃任务；
+        # 若后台无活跃任务（如由于之前服务重启/中断导致），自动自愈纠正状态，绝不永久锁死！
         active_task = None
         for _t in task_manager.list_tasks():
             _meta = _t.get("metadata") or {}
@@ -283,6 +283,13 @@ def get_world_settings(project_id: str):
         if active_task:
             stats["graph_build_task_id"] = active_task.get("task_id")
             stats["graph_status"] = "graph_building"
+        else:
+            # 真实无活跃任务运行：若此前残留在 graph_building，自动自愈重置
+            if project and project.status == ProjectStatus.GRAPH_BUILDING:
+                project.status = ProjectStatus.GRAPH_COMPLETED if project.graph_id else ProjectStatus.CREATED
+                ProjectManager.save_project(project)
+                stats["graph_status"] = project.status.value
+            stats["graph_build_task_id"] = None
     except Exception:
         stats["graph_id"] = None
         stats["graph_status"] = None
