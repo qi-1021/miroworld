@@ -37,6 +37,7 @@ class Task:
     error: Optional[str] = None    # 错误信息
     metadata: Dict = field(default_factory=dict)  # 额外元数据
     progress_detail: Dict = field(default_factory=dict)  # 详细进度信息
+    logs: list = field(default_factory=list)  # 实时阶段过程日志
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -49,6 +50,7 @@ class Task:
             "progress": self.progress,
             "message": self.message,
             "progress_detail": self.progress_detail,
+            "logs": self.logs,
             "result": self.result,
             "error": self.error,
             "metadata": self.metadata,
@@ -70,6 +72,7 @@ class Task:
             error=data.get("error"),
             metadata=data.get("metadata", {}),
             progress_detail=data.get("progress_detail", {}),
+            logs=data.get("logs", []),
         )
 
 
@@ -216,7 +219,8 @@ class TaskManager:
         message: Optional[str] = None,
         result: Optional[Dict] = None,
         error: Optional[str] = None,
-        progress_detail: Optional[Dict] = None
+        progress_detail: Optional[Dict] = None,
+        log: Optional[str] = None,
     ):
         """
         更新任务状态
@@ -229,26 +233,41 @@ class TaskManager:
             result: 结果
             error: 错误信息
             progress_detail: 详细进度信息
+            log: 追加的日志行
         """
         with self._task_lock:
             task = self._tasks.get(task_id)
             if task:
                 task.updated_at = datetime.now()
+                now_str = datetime.now().strftime("%H:%M:%S")
                 if status is not None:
                     task.status = status
                 if progress is not None:
                     task.progress = progress
                 if message is not None:
                     task.message = message
+                    if message.strip():
+                        entry = f"[{now_str}] {message.strip()}"
+                        if not task.logs or task.logs[-1] != entry:
+                            task.logs.append(entry)
+                if log is not None and log.strip():
+                    task.logs.append(f"[{now_str}] {log.strip()}")
+                if len(task.logs) > 200:
+                    task.logs = task.logs[-200:]
                 if result is not None:
                     task.result = result
                 if error is not None:
                     task.error = error
+                    task.logs.append(f"[{now_str}] ❌ 错误: {error}")
                 if progress_detail is not None:
                     task.progress_detail = progress_detail
 
         # 生产环境持久化：每次状态变更都落盘
         self._persist_task(task_id)
+
+    def add_log(self, task_id: str, log: str):
+        """为任务追加单条实时日志"""
+        self.update_task(task_id, log=log)
 
     def complete_task(self, task_id: str, result: Dict):
         """标记任务完成"""

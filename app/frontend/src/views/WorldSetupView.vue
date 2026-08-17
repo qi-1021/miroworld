@@ -920,6 +920,21 @@
             </div>
             <span class="graph-progress-text">{{ graphProgressMsg || $t('world.graphBuilding') }}</span>
           </div>
+          <!-- 实时过程控制台与详细步骤日志 -->
+          <div v-if="graphBuilding || (graphTaskLogs && graphTaskLogs.length)" class="graph-live-console">
+            <div class="console-header" @click="showGraphLogs = !showGraphLogs">
+              <span class="console-title">📜 实时构建执行过程 (Live Logs)</span>
+              <span class="console-toggle">{{ showGraphLogs ? '收起 ▲' : '展开 ▼' }} ({{ graphTaskLogs.length }} 步骤记录)</span>
+            </div>
+            <div v-if="showGraphLogs" ref="graphLogsContainer" class="console-body">
+              <div v-for="(log, idx) in graphTaskLogs" :key="idx" class="console-line">
+                {{ log }}
+              </div>
+              <div v-if="graphBuilding" class="console-line pending-pulse">
+                <span class="pulse-dot"></span> 正在实时分析当前语料块与图谱关联...
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- SVG 力导向可视化 -->
@@ -1510,6 +1525,9 @@ const graphPos = ref({})             // uuid -> {x, y}（力导向布局结果�
 const graphBuilding = ref(false)
 const graphProgressMsg = ref('')
 const graphProgress = ref(0)
+const graphTaskLogs = ref([])
+const showGraphLogs = ref(true)
+const graphLogsContainer = ref(null)
 const refillEdgesRunning = ref(false)
 let refillPollTimerId = null
 const graphMsg = ref('')
@@ -1655,6 +1673,14 @@ function pollGraphTask(taskId) {
       const res = await getTaskStatus(taskId)
       const task = res.task || res.data || res
       const status = task.status
+      if (task.logs && Array.isArray(task.logs)) {
+        graphTaskLogs.value = task.logs
+        nextTick(() => {
+          if (graphLogsContainer.value) {
+            graphLogsContainer.value.scrollTop = graphLogsContainer.value.scrollHeight
+          }
+        })
+      }
       if (status === 'completed' || status === 'failed' || status === 'COMPLETED' || status === 'FAILED') {
         clearInterval(graphPollTimer)
         graphPollTimer = null
@@ -1687,6 +1713,8 @@ async function handleBuildGraph() {
   graphMsgError.value = false
   graphProgressMsg.value = ''
   graphProgress.value = 0
+  graphTaskLogs.value = [`[${new Date().toTimeString().slice(0, 8)}] 正在启动世界图谱构建流程...`]
+  showGraphLogs.value = true
   try {
     const res = await buildWorldGraph(projectId, {
       goal: simGoal.value.trim() || undefined,
@@ -1710,6 +1738,14 @@ function pollRefillEdgesTask(taskId) {
       const res = await getTaskStatus(taskId)
       const task = res.task || res.data || res
       const status = task.status
+      if (task.logs && Array.isArray(task.logs)) {
+        graphTaskLogs.value = task.logs
+        nextTick(() => {
+          if (graphLogsContainer.value) {
+            graphLogsContainer.value.scrollTop = graphLogsContainer.value.scrollHeight
+          }
+        })
+      }
       if (status === 'completed' || status === 'failed' || status === 'COMPLETED' || status === 'FAILED') {
         clearInterval(refillPollTimerId)
         refillPollTimerId = null
@@ -1737,6 +1773,8 @@ async function handleRefillEdges() {
   refillEdgesRunning.value = true
   graphMsg.value = ''
   graphMsgError.value = false
+  graphTaskLogs.value = [`[${new Date().toTimeString().slice(0, 8)}] 正在启动知识图谱关联边补充 (Refill Edges)...`]
+  showGraphLogs.value = true
   try {
     // 补边是对已建图谱的重放，无需 goal 参数（与后端契约一致）
     const res = await refillWorldGraphEdges(projectId)
@@ -3894,6 +3932,72 @@ onUnmounted(() => {
   background: #F5F7E8;
   border-radius: 6px;
   font-size: 12px;
+}
+
+/* 实时构建执行控制台 */
+.graph-live-console {
+  margin-top: 14px;
+  background: #181920;
+  border-radius: 8px;
+  border: 1px solid #2e303d;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+  font-family: 'JetBrains Mono', monospace;
+  text-align: left;
+}
+.console-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  background: #111217;
+  border-bottom: 1px solid #282a36;
+  cursor: pointer;
+  user-select: none;
+}
+.console-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a1c50a;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.console-toggle {
+  font-size: 11px;
+  color: #8f92a3;
+}
+.console-body {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.console-line {
+  font-size: 11.5px;
+  color: #d8dae3;
+  line-height: 1.5;
+  word-break: break-all;
+}
+.console-line.pending-pulse {
+  color: #a1c50a;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.pulse-dot {
+  width: 6px;
+  height: 6px;
+  background: #a1c50a;
+  border-radius: 50%;
+  animation: pulse 1.2s infinite ease-in-out;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
 }
 .sim-graph-detail-inner {
   display: flex;
