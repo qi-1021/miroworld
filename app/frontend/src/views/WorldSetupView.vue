@@ -2062,29 +2062,43 @@ function graphNodeType(n) {
   return labels.join(' / ') || t('world.graphNodeEntity')
 }
 
-// 智能判定该实体是否具备独立意志/人格（适合进行角色深度访谈与对话）
+// 智能判定该实体是否具备独立意志/人格/角色身份（适合进行角色深度访谈与对话）
 function isCharacterNode(n) {
   if (!n) return false
   const labels = (n.labels || []).map(l => String(l).toLowerCase())
   const typeStr = graphNodeType(n).toLowerCase()
   const nameStr = (n.name || '').toLowerCase()
+  const attrs = (n.attributes && typeof n.attributes === 'object') ? n.attributes : {}
   
-  // 1. 显式人物/角色标签判定
-  const charKeywords = ['人物', '角色', '干员', '领袖', '主角', '配角', '神祇', '英雄', '生物', 'person', 'character', 'agent', 'npc', 'individual']
+  // 1. 显式排除绝对无意识的客体实体类型（地点、国家、城市、物品、器物、法宝、武器、酒类、事件、法则、概念、疾病、星门）
+  const nonCharKeywords = ['国家', '地点', '城市', '物品', '器物', '法宝', '武器', '酒类', '道具', '事件', '概念', '法则', '境界', '疾病', '星门', 'location', 'place', 'item', 'event', 'concept', 'weapon']
+  if (labels.some(l => nonCharKeywords.some(k => l.includes(k)))) return false
+  if (nonCharKeywords.some(k => typeStr.includes(k))) return false
+
+  // 2. 显式人物/角色/个体人类/职业身份/生命体标签判定
+  const charKeywords = [
+    '个人', '个体', '人类', '人物', '角色', '职业', '医生', '干员', '领袖', '主角', '配角', 
+    '指挥官', '老师', '居民', '神祇', '英雄', '生物', '人', 'person', 'character', 'agent', 'npc', 'individual', 'human'
+  ]
   if (labels.some(l => charKeywords.some(k => l.includes(k)))) return true
   if (charKeywords.some(k => typeStr.includes(k))) return true
   
-  // 2. 预设角色列表命中判定
+  // 3. 属性中包含典型人物角色特征（如具备 role、full_name、affiliation、department 等属性）
+  if (attrs.role || attrs.full_name || attrs.profession_name || attrs.key_trait || attrs.affiliation) {
+    return true
+  }
+
+  // 4. 预设角色列表命中判定
   const charArr = characters.value || []
   if (charArr.some(c => {
     const cName = typeof c === 'string' ? c : (c?.name || '')
     return cName && n.name && cName.trim() === n.name.trim()
   })) return true
 
-  // 3. 排除明显非人物的实体类型（地点、国家、物品、法宝、事件、法则、概念、疾病）
-  const nonCharKeywords = ['国家', '地点', '城市', '物品', '器物', '法宝', '道具', '事件', '概念', '法则', '境界', '疾病', '星门', 'location', 'place', 'item', 'event', 'concept']
-  if (labels.some(l => nonCharKeywords.some(k => l.includes(k)))) return false
-  if (nonCharKeywords.some(k => typeStr.includes(k))) return false
+  // 5. 默认策略：只要不是明确的客体（物品/地点/事件），且不是组织概念，均视为可交互的潜在角色个体
+  if (!labels.includes('组织') && !labels.includes('国家') && !typeStr.includes('组织')) {
+    return true
+  }
 
   return false
 }
