@@ -144,7 +144,16 @@
     "testing": "正在测试...",
     "testSuccess": "模型测试通过，已验证可用",
     "globalDefault": "全局默认角色绑定",
-    "globalDefaultDesc": "未单独配置模型绑定的项目将默认继承这组模型设置。"
+    "globalDefaultDesc": "未单独配置模型绑定的项目将默认继承这组模型设置。",
+    "exportBundle": "导出模型配置包（包含密钥，可分享给他人直接使用）",
+    "exportBundleShort": "导出配置",
+    "exportBundleSuccess": "模型配置包已导出，可将下载的 JSON 文件分享给他人",
+    "importBundle": "导入他人分享的模型配置包",
+    "importBundleShort": "导入分享",
+    "importBundleSuccess": "成功导入 {conns} 个连接，{models} 个模型",
+    "addModel": "添加模型",
+    "quickAddModelPlaceholder": "输入模型ID，如 gpt-4o / deepseek-chat",
+    "addModelSuccess": "已将模型 {name} 添加到该供应商"
   },
   "meta": {
     "title": "Miroworld - 预测万物",

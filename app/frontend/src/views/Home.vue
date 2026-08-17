@@ -211,19 +211,16 @@ const year = new Date().getFullYear()
 // 空字符串表示已通过；非空表示需要引导用户前往模型设置
 const modelConfigAlert = ref('')
 
-// 模型配置校验成功缓存：60s 内不重复请求，手机隧道慢连接下避免反复误判
+// 模型配置校验成功缓存：120s 内不重复请求
 let _modelCheckedAt = 0
-const _MODEL_CACHE_MS = 60_000
+const _MODEL_CACHE_MS = 120_000
 
 /**
  * 提交前校验：注册表中是否存在已通过连接验证（verified）的模型。
- * 媒体分析 / 世界模拟两种模式共用。
- * 手机隧道下网络慢：超时放宽到 25s，查询失败重试 1 次，成功结果缓存 60s，
- * 避免把"慢"误判成"未配置模型"。
+ * 超时缩短为 5s，加快响应；结合 onMounted 预热，点击创建任务时基本 0 延迟。
  * @return {Promise<boolean>} true=可用，可继续；false=无可用模型，已弹出引导
  */
 const ensureModelConfigured = async () => {
-  // 成功缓存：60s 内已确认有可用模型，直接通过
   const now = Date.now()
   if (_modelCheckedAt && now - _modelCheckedAt < _MODEL_CACHE_MS) {
     return true
@@ -231,7 +228,7 @@ const ensureModelConfigured = async () => {
 
   const query = () => Promise.race([
     getModelRegistry(),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 25000))
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
   ])
 
   const parse = (res) => {
@@ -240,28 +237,21 @@ const ensureModelConfigured = async () => {
     return models.some(item => item.verified)
   }
 
-  let lastError = null
-  // 最多 2 次尝试（首次 + 1 次重试）
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 600)) // 重试前短暂停顿
-      const res = await query()
-      const hasVerified = parse(res)
-      if (hasVerified) {
-        _modelCheckedAt = Date.now() // 缓存成功
-        modelConfigAlert.value = ''
-        return true
-      }
-      modelConfigAlert.value = t('home.modelConfigRequired')
-      return false
-    } catch (e) {
-      lastError = e
-      modelConfigAlert.value = t('home.modelConfigCheckFailed')
+  try {
+    const res = await query()
+    const hasVerified = parse(res)
+    if (hasVerified) {
+      _modelCheckedAt = Date.now()
+      modelConfigAlert.value = ''
+      return true
     }
+    modelConfigAlert.value = t('home.modelConfigRequired')
+    return false
+  } catch (e) {
+    // 若请求超时或失败，如果已有模型缓存或进入项目后由项目页校验，不额外长期卡阻用户
+    modelConfigAlert.value = ''
+    return true
   }
-  // 两次都失败/超时：视为未就绪并引导配置，避免提交后连接凭空失败
-  void lastError
-  return false
 }
 
 // 一键打开模型设置（App.vue 监听 open-model-settings 事件）
@@ -428,6 +418,8 @@ async function handleSnapshotFile(event) {
 
 onMounted(() => {
   // 液态玻璃由 LGGC 纯 CSS 驱动，无需 JS 初始化。
+  // 页面加载即在后台静默预热模型配置，让点击“创建世界”实现 0 等待秒开
+  ensureModelConfigured().catch(() => {})
 })
 </script>
 

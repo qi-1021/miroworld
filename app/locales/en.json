@@ -144,7 +144,16 @@
     "testing": "Testing...",
     "testSuccess": "Model test passed and verified",
     "globalDefault": "Global Default Role Bindings",
-    "globalDefaultDesc": "Projects without explicit model bindings will inherit these settings."
+    "globalDefaultDesc": "Projects without explicit model bindings will inherit these settings.",
+    "exportBundle": "Export model bundle (includes keys, shareable with others)",
+    "exportBundleShort": "Export Config",
+    "exportBundleSuccess": "Model bundle exported. You can share the downloaded JSON file with others",
+    "importBundle": "Import a shared model bundle JSON",
+    "importBundleShort": "Import Share",
+    "importBundleSuccess": "Successfully imported {conns} connection(s) and {models} model(s)",
+    "addModel": "Add Model",
+    "quickAddModelPlaceholder": "Enter model ID, e.g. gpt-4o / deepseek-chat",
+    "addModelSuccess": "Model {name} added to this provider"
   },
   "meta": {
     "title": "Miroworld - Predict Everything",

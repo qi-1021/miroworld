@@ -507,6 +507,126 @@ class ModelRegistryService:
             self._atomic_write(self.registry_path, registry)
             return {"revision": registry["revision"], "id": snapshot["snapshot_id"], "snapshot": self._redact_snapshot(snapshot)}
 
+    def export_bundle(self, *, include_secrets: bool = True) -> Dict[str, Any]:
+        """导出模型配置包（供文件分享给他人）。"""
+        with self._lock:
+            registry = self._read_registry()
+            secrets = self._read_secrets()
+            bundle_connections = []
+            for conn in registry.get("connections", []):
+                conn_data = dict(conn)
+                if include_secrets:
+                    secret_val = self.resolve_connection_secret(conn["id"])
+                    if secret_val:
+                        conn_data["api_key"] = secret_val
+                bundle_connections.append(conn_data)
+            
+            bundle_models = [dict(m) for m in registry.get("models", [])]
+            bundle_presets = [dict(p) for p in registry.get("presets", [])]
+            return {
+                "format": "miroworld-model-bundle",
+                "version": 1,
+                "exported_at": self._now(),
+                "include_secrets": include_secrets,
+                "connections": bundle_connections,
+                "models": bundle_models,
+                "presets": bundle_presets,
+            }
+
+    def import_bundle(self, bundle: Dict[str, Any], *, expected_revision: Optional[int] = None) -> Dict[str, Any]:
+        """导入分享的模型配置包，智能合并连接与模型条目。"""
+        if not isinstance(bundle, dict) or bundle.get("format") != "miroworld-model-bundle":
+            raise ValueError("无效的模型配置文件格式")
+        with self._lock:
+            registry = self._read_registry()
+            secrets = self._read_secrets()
+            self._check_revision(registry, expected_revision)
+
+            conn_id_map = {}
+            imported_conns = 0
+            imported_models = 0
+
+            # 1. 合并连接
+            for b_conn in bundle.get("connections", []):
+                old_id = b_conn.get("id")
+                endpoint = (b_conn.get("endpoint") or "").strip()
+                api_key = b_conn.get("api_key")
+                # 检查是否已有相同 endpoint 的连接
+                existing = next((c for c in registry["connections"] if c.get("endpoint") == endpoint), None)
+                if existing:
+                    target_id = existing["id"]
+                    conn_id_map[old_id] = target_id
+                    # 若提供了新密钥且原先无密钥，则补充
+                    if api_key and not self.resolve_connection_secret(target_id):
+                        record = secrets["connections"].setdefault(target_id, {"revisions": {}, "current": None})
+                        rev_id = self._new_id("sec")
+                        record["revisions"][rev_id] = {"value": api_key, "created_at": self._now()}
+                        record["current"] = rev_id
+                        existing["has_secret"] = True
+                        existing["secret_suffix"] = str(api_key)[-4:] if len(str(api_key)) >= 4 else "••"
+                else:
+                    target_id = self._new_id("conn")
+                    conn_id_map[old_id] = target_id
+                    has_secret = bool(api_key)
+                    sec_suffix = (str(api_key)[-4:] if len(str(api_key)) >= 4 else "••") if has_secret else None
+                    new_conn = {
+                        "id": target_id,
+                        "name": b_conn.get("name") or "导入的连接",
+                        "endpoint": endpoint,
+                        "provider_id": b_conn.get("provider_id") or "custom",
+                        "protocol": b_conn.get("protocol") or "openai-compatible",
+                        "capabilities": b_conn.get("capabilities") or {},
+                        "auth_scheme": b_conn.get("auth_scheme") or "bearer",
+                        "headers": b_conn.get("headers") or {},
+                        "options": b_conn.get("options") or {},
+                        "has_secret": has_secret,
+                        "secret_suffix": sec_suffix,
+                        "created_at": self._now(),
+                        "updated_at": self._now(),
+                    }
+                    registry["connections"].append(new_conn)
+                    imported_conns += 1
+                    if has_secret:
+                        rev_id = self._new_id("sec")
+                        secrets["connections"][target_id] = {
+                            "revisions": {rev_id: {"value": api_key, "created_at": self._now()}},
+                            "current": rev_id
+                        }
+
+            # 2. 合并模型条目
+            for b_model in bundle.get("models", []):
+                old_conn_id = b_model.get("connection_id")
+                new_conn_id = conn_id_map.get(old_conn_id, old_conn_id)
+                model_id_str = b_model.get("model_id")
+                # 检查该连接下是否已有同名 model_id
+                existing_model = next((m for m in registry["models"] if m.get("connection_id") == new_conn_id and m.get("model_id") == model_id_str), None)
+                if not existing_model:
+                    new_model_entry = {
+                        "id": self._new_id("model"),
+                        "name": b_model.get("name") or model_id_str,
+                        "connection_id": new_conn_id,
+                        "model_id": model_id_str,
+                        "capabilities": b_model.get("capabilities") or ["chat"],
+                        "verified": bool(b_model.get("verified", False)),
+                        "metadata": b_model.get("metadata") or {},
+                        "local_path": b_model.get("local_path"),
+                        "created_at": self._now(),
+                        "updated_at": self._now(),
+                    }
+                    registry["models"].append(new_model_entry)
+                    imported_models += 1
+
+            registry["revision"] = int(registry.get("revision", 0)) + 1
+            self._atomic_write(self.registry_path, registry)
+            self._atomic_write(self.secrets_path, secrets)
+            self._restrict_secret_permissions()
+            return {
+                "revision": registry["revision"],
+                "imported_connections": imported_conns,
+                "imported_models": imported_models,
+                "registry": self.get_redacted_registry()
+            }
+
     def resolve_snapshot_secret(self, snapshot_id: str, role: ModelRole) -> Optional[str]:
         with self._lock:
             registry = self._read_registry()

@@ -404,6 +404,30 @@ def create_task_snapshot(owner_type: str, owner_id: str):
         return _handle_exception(exc)
 
 
+@models_bp.route("/bundle/export", methods=["GET"])
+def export_model_bundle():
+    """导出当前所有已配置的模型连接与模型条目（支持文件分享）。"""
+    try:
+        include_secrets = request.args.get("include_secrets", "true").lower() in ("true", "1", "yes")
+        bundle = registry_service.export_bundle(include_secrets=include_secrets)
+        return _success(bundle)
+    except Exception as exc:
+        return _handle_exception(exc)
+
+
+@models_bp.route("/bundle/import", methods=["POST"])
+def import_model_bundle():
+    """导入分享的模型配置包文件并自动合并。"""
+    try:
+        body = _json_body()
+        bundle = body.get("bundle") if "bundle" in body else body
+        expected_revision = body.get("revision") if "bundle" in body else None
+        result = registry_service.import_bundle(bundle, expected_revision=expected_revision)
+        return _success(result)
+    except Exception as exc:
+        return _handle_exception(exc)
+
+
 @models_bp.route("/tasks/<owner_type>/<owner_id>/snapshot/<snapshot_id>", methods=["GET"])
 def get_task_snapshot(owner_type: str, owner_id: str, snapshot_id: str):
     try:

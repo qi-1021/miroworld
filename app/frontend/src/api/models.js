@@ -52,6 +52,14 @@ export const updateProjectModelBindings = (projectId, payload) => (
   service.put(`/api/models/projects/${projectId || '_global'}/bindings`, payload)
 )
 
+export const exportModelBundle = (includeSecrets = true) => (
+  service.get('/api/models/bundle/export', { params: { include_secrets: includeSecrets } })
+)
+
+export const importModelBundle = (bundle, revision) => (
+  service.post('/api/models/bundle/import', { bundle, revision })
+)
+
 // ==================== 本地向量模型 ====================
 
 export const scanLocalModels = () => service.get('/api/models/local/scan')

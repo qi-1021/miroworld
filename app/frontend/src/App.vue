@@ -182,11 +182,11 @@ html, body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: var(--mf-ink);
-  /* 苹果风：极淡冷暖透射层，让卡片背面的模糊有内容可透。 */
+  /* 苹果极简风：纯净素雅浅灰白背景，无杂色光晕 */
   background-color: #f5f5f7;
   background-image:
-    linear-gradient(118deg, rgba(255, 246, 232, 0.7), rgba(235, 247, 250, 0.72) 38%, rgba(245, 238, 255, 0.62) 70%, rgba(255, 244, 230, 0.68)),
-    linear-gradient(180deg, #f8f8fa, #eef1f6);
+    radial-gradient(100% 100% at 50% 0%, rgba(255, 255, 255, 0.85) 0%, rgba(245, 245, 247, 0) 100%),
+    linear-gradient(180deg, #f8f8fa 0%, #f0f0f4 100%);
   background-attachment: fixed;
   min-height: 100vh;
 }
