@@ -15,7 +15,7 @@ import re
 # 地点归一词典：别名(用 | 分隔) → (规范名, kind)
 # 长别名优先匹配（罗德岛本舰 → 罗德岛）。
 # ---------------------------------------------------------------------------
-PLACE_DICT = {
+DEFAULT_PLACE_DICT = {
     "泰拉|TERRA|大地": ("泰拉", "continent"),
     "维多利亚|VICTORIA": ("维多利亚", "nation"),
     "乌萨斯|URSUS": ("乌萨斯", "nation"),
@@ -38,12 +38,25 @@ PLACE_DICT = {
     "科罗萨分布带|塔尔干分布带|璟屿分布带": ("源石矿脉分布带", "site"),
 }
 
+PLACE_DICT = DEFAULT_PLACE_DICT.copy()
+
+def register_custom_places(custom_dict: dict):
+    """动态注册或合并项目专属地点词典。"""
+    global PLACE_DICT
+    if custom_dict and isinstance(custom_dict, dict):
+        PLACE_DICT = {**DEFAULT_PLACE_DICT, **custom_dict}
+
+def reset_custom_places():
+    """重置回默认地点词典。"""
+    global PLACE_DICT
+    PLACE_DICT = DEFAULT_PLACE_DICT.copy()
+
 # 排序用的规范名 → 层级序号（大区 > 大陆 > 国家 > 城市 > 设施 > 地点，
 # 仅用于同级聚合展示，不参与时间排序）
 _PLACE_KIND_ORDER = {"continent": 0, "nation": 1, "region": 2, "city": 3, "facility": 4, "site": 5}
 
 
-def normalize_location(text: str):
+def normalize_location(text: str, custom_places: dict = None):
     """
     把原文地点表达归一化为 (location_name, location_kind, matched)。
     命中词典返回规范名；未命中返回 (原文, 'unspecified', False)。
@@ -52,9 +65,10 @@ def normalize_location(text: str):
     if not text or not str(text).strip():
         return "", "unspecified", False
     s = str(text).strip()
+    target_dict = {**PLACE_DICT, **(custom_places or {})} if custom_places else PLACE_DICT
     # 构建匹配项目：按别名长度降序，保证"罗德岛本舰"在"罗德岛"之前匹配
     entries = []
-    for aliases, (name, kind) in PLACE_DICT.items():
+    for aliases, (name, kind) in target_dict.items():
         for a in aliases.split("|"):
             a = a.strip()
             if a:

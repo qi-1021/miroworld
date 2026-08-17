@@ -48,36 +48,9 @@ from ..models.project import ProjectManager, ProjectStatus
 logger = get_logger('mirofish.api')
 
 def _build_llm_client_for_project(project_id: str) -> LLMClient:
-    """优先使用项目绑定的已验证模型，其次注册表已验证 chat 模型，最后回退旧配置。"""
-    try:
-        registry = ModelRegistryService()
-        bindings = registry.get_project_bindings(project_id)
-        if bindings and bindings.to_dict().get(ModelRole.PRIMARY.value):
-            snapshot = registry.create_snapshot(
-                owner_type="project",
-                owner_id=project_id,
-                bindings=bindings,
-                expected_revision=None,
-            )
-            resolved = ModelResolver(registry).resolve_chat(ModelRole.PRIMARY, snapshot["id"])
-            return LLMClient(
-                api_key=resolved.api_key,
-                base_url=resolved.endpoint,
-                model=resolved.model_id,
-            )
-    except Exception as e:
-        logger.warning(f"使用项目绑定模型失败，尝试注册表回退: {e}")
-
-    try:
-        from ..services.zep_graphiti_impl import GraphitiClient
-        resolved = GraphitiClient._resolve_registry_chat_model()
-        if resolved:
-            api_key, base_url, model = resolved
-            return LLMClient(api_key=api_key, base_url=base_url, model=model)
-    except Exception as e:
-        logger.warning(f"注册表模型回退失败，使用默认配置: {e}")
-
-    return LLMClient()
+    """使用统一模型注册表服务构建 LLM 客户端。"""
+    from ..services.model_registry import ModelRegistryService
+    return ModelRegistryService.get_llm_client_for_project(project_id=project_id)
 
 
 def allowed_file(filename: str) -> bool:

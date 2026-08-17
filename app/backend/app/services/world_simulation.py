@@ -536,61 +536,11 @@ class WorldSimulationService:
 
     @classmethod
     def _build_llm_client(cls, project_id: str, agent_model_id: Optional[str] = None) -> LLMClient:
-        """指定 Agent 模型优先，其次项目绑定模型，其次注册表已验证 chat 模型"""
-        if agent_model_id:
-            try:
-                from ..services.model_registry import ModelRegistryService
-                registry = ModelRegistryService()
-                reg_data = registry._read_registry()
-                entry = next((m for m in reg_data.get("models", []) if m.get("id") == agent_model_id or m.get("model_id") == agent_model_id), None)
-                if entry:
-                    conn_id = entry.get("connection_id")
-                    conn = next((c for c in reg_data.get("connections", []) if c.get("id") == conn_id), None)
-                    secrets = registry._read_secrets().get("connections", {}).get(conn_id, {})
-                    api_key = secrets.get("api_key")
-                    endpoint = conn.get("endpoint") if conn else None
-                    if endpoint:
-                        return LLMClient(
-                            api_key=api_key or Config.LLM_API_KEY,
-                            base_url=endpoint,
-                            model=entry.get("model_id") or agent_model_id,
-                        )
-            except Exception as e:
-                logger.warning(f"指定 Agent 模型解析失败，回退默认: {e}")
-
-        try:
-            from ..services.model_registry import ModelRegistryService
-            from ..services.model_resolver import ModelResolver
-            from ..models.model_config import ModelRole
-
-            registry = ModelRegistryService()
-            bindings = registry.get_project_bindings(project_id)
-            if bindings and bindings.to_dict().get(ModelRole.PRIMARY.value):
-                snapshot = registry.create_snapshot(
-                    owner_type="project",
-                    owner_id=project_id,
-                    bindings=bindings,
-                    expected_revision=None,
-                )
-                resolved = ModelResolver(registry).resolve_chat(ModelRole.PRIMARY, snapshot["id"])
-                return LLMClient(
-                    api_key=resolved.api_key,
-                    base_url=resolved.endpoint,
-                    model=resolved.model_id,
-                )
-        except Exception as e:
-            logger.warning(f"项目绑定模型解析失败: {e}")
-
-        try:
-            from ..services.zep_graphiti_impl import GraphitiClient
-            resolved = GraphitiClient._resolve_registry_chat_model()
-            if resolved:
-                api_key, base_url, model = resolved
-                return LLMClient(api_key=api_key, base_url=base_url, model=model)
-        except Exception as e:
-            logger.warning(f"注册表模型回退失败: {e}")
-
-        return LLMClient()
+        from ..services.model_registry import ModelRegistryService
+        return ModelRegistryService.get_llm_client_for_project(
+            project_id=project_id,
+            agent_model_id=agent_model_id,
+        )
 
     @classmethod
     def _generate_world_config(
@@ -1084,11 +1034,30 @@ class WorldSimulationService:
 
         max_step = max(int(e.get("step") or 0) for e in base_events)
         offset = max_step
+        
+        # 插入因果过渡缝合事件（Causal Transition Event），明确世界线交汇背景
+        transition_event = {
+            "id": f"ev_merge_transition_{offset + 1}",
+            "step": offset + 1,
+            "agent_id": "system_narrator",
+            "agent_name": "世界线交汇信标",
+            "action": f"【世界线收敛与因果缝合】主世界线与分支世界线（{branch_simulation_id[-8:]}）在此节点发生交汇。由于历史选择收敛，后续事件将基于两者的因果交织继续推演。",
+            "location": base_events[-1].get("location") or "多维因果交汇处",
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "links": [base_events[-1].get("id")] if base_events else [],
+            "causal_transition": True,
+        }
+        base_events.append(transition_event)
+
         for e in branch_events:
             e = dict(e)
-            e["step"] = int(e.get("step") or 0) + offset
+            # 步号顺延在过渡事件之后
+            e["step"] = int(e.get("step") or 0) + offset + 1
             e["id"] = f"{e.get('id') or 'ev'}_merged_{len(base_events)}"
-            e["links"] = []
+            e["merged_from_branch"] = branch_simulation_id
+            # 建立首个分支事件与过渡事件的前向引用链接
+            if not e.get("links"):
+                e["links"] = [transition_event["id"]]
             base_events.append(e)
 
         base_config_path = base.config_path or os.path.join(
@@ -1128,6 +1097,7 @@ class WorldSimulationService:
                 "merge_base": base.simulation_id,
                 "merge_branch": branch.simulation_id,
                 "label": label,
+                "has_causal_transition": True,
             },
         }
         with cls._lock:

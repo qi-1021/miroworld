@@ -647,3 +647,85 @@ class ModelRegistryService:
             record = secrets.get("connections", {}).get(connection_id, {})
             revision_id = record.get("current")
             return record.get("revisions", {}).get(revision_id, {}).get("value") if revision_id else None
+
+    @classmethod
+    def get_llm_client_for_project(
+        cls,
+        project_id: Optional[str] = None,
+        role: Optional[ModelRole] = None,
+        agent_model_id: Optional[str] = None,
+    ) -> Any:
+        """统一为指定项目构建 LLM 客户端：
+        1. 优先使用 agent_model_id（若显式指定了模型条目）；
+        2. 其次使用项目绑定的已验证模型（按指定角色或 PRIMARY 角色）；
+        3. 再次使用注册表中第一个已验证的 chat 模型；
+        4. 最后回退到环境变量 .env 中的默认 LLM 配置。
+        """
+        from ..utils.llm_client import LLMClient
+        from .model_resolver import ModelResolver
+
+        target_role = role or ModelRole.PRIMARY
+        registry = cls()
+
+        # 1. 显式指定了 agent_model_id
+        if agent_model_id:
+            try:
+                entry = registry.get_model_entry(agent_model_id)
+                if entry and "chat" in entry.get("capabilities", []):
+                    conn_id = entry.get("connection_id")
+                    conn = registry.get_connection(conn_id) if conn_id else None
+                    secret = registry.resolve_connection_secret(conn_id) if conn_id else None
+                    if conn and conn.get("endpoint"):
+                        return LLMClient(
+                            api_key=secret or "",
+                            base_url=conn.get("endpoint"),
+                            model=entry.get("model_id"),
+                        )
+            except Exception:
+                pass
+
+        # 2. 项目绑定的已验证模型
+        if project_id:
+            try:
+                bindings = registry.get_project_bindings(project_id)
+                if bindings and (bindings.to_dict().get(target_role.value) or bindings.to_dict().get(ModelRole.PRIMARY.value)):
+                    snapshot = registry.create_snapshot(
+                        owner_type="project",
+                        owner_id=project_id,
+                        bindings=bindings,
+                        expected_revision=None,
+                    )
+                    resolved = ModelResolver(registry).resolve_chat(
+                        role=target_role,
+                        snapshot_id=snapshot.snapshot_id,
+                    )
+                    return LLMClient(
+                        api_key=resolved.api_key or "",
+                        base_url=resolved.endpoint,
+                        model=resolved.model_id,
+                    )
+            except Exception:
+                pass
+
+        # 3. 注册表中第一个已验证的 chat 模型
+        try:
+            reg_data = registry.get_redacted_registry()
+            verified_models = [
+                m for m in reg_data.get("models", [])
+                if m.get("verified") and "chat" in m.get("capabilities", [])
+            ]
+            if verified_models:
+                m = verified_models[0]
+                conn = next((c for c in reg_data.get("connections", []) if c.get("id") == m.get("connection_id")), None)
+                if conn:
+                    secret = registry.resolve_connection_secret(conn.get("id"))
+                    return LLMClient(
+                        api_key=secret or "",
+                        base_url=conn.get("endpoint"),
+                        model=m.get("model_id"),
+                    )
+        except Exception:
+            pass
+
+        # 4. 回退到 .env 默认配置
+        return LLMClient()
