@@ -986,6 +986,15 @@
             ⏹ 取消构建 (保留已完成批次)
           </button>
           <button
+            v-if="graphBuilding"
+            type="button"
+            class="mini-btn ghost"
+            title="如果页面意外卡死或状态未同步，点击立即重置按钮状态"
+            @click="resetGraphBuildStatus"
+          >
+            🔄 恢复可点击状态
+          </button>
+          <button
             class="action-btn btn-ghost"
             :disabled="refillEdgesRunning || !graphInfo || !graphInfo.node_count || graphBuilding"
             @click="handleRefillEdges"
@@ -1235,6 +1244,7 @@
                   <g
                     v-for="(n, i) in graphNodes"
                     :key="'n' + i"
+                    v-memo="[n.uuid, graphPos[n.uuid]?.x, graphPos[n.uuid]?.y, selectedGraphNode?.uuid === n.uuid, isNodeConnectedToSelected(n.uuid), sourceFilter]"
                     :transform="`translate(${graphNodeX(n.uuid)},${graphNodeY(n.uuid)})`"
                     class="node-group"
                     :class="{
@@ -2584,6 +2594,17 @@ async function cancelGraphBuild() {
   await fetchGraph().catch(() => {})
 }
 
+function resetGraphBuildStatus() {
+  if (graphPollTimer) {
+    clearInterval(graphPollTimer)
+    graphPollTimer = null
+  }
+  graphBuilding.value = false
+  graphProgressMsg.value = ''
+  graphMsg.value = '已强制重置图谱状态，所有按钮已恢复可用。'
+  graphMsgError.value = false
+}
+
 function openInterviewWithNode(node) {
   if (!node || !node.name) return
   interviewCharacter.value = node.name
@@ -2894,14 +2915,30 @@ async function loadAll() {
     }
     await fetchGraph()
 
-    // 页面刷新后自动恢复正在构建中的任务轮询（断点续连）
-    if (stats.value && stats.value.graph_build_task_id && (stats.value.graph_status === 'graph_building' || !graphInfo.value?.node_count)) {
-      if (!graphBuilding.value) {
-        graphBuilding.value = true
-        graphProgressMsg.value = '正在恢复后台世界图谱构建进度...'
-        showGraphLogs.value = true
-        pollGraphTask(stats.value.graph_build_task_id)
+    // 页面刷新后自动恢复正在构建中的任务轮询（断点续连且严格防死锁）
+    if (stats.value && stats.value.graph_build_task_id && stats.value.graph_status === 'graph_building') {
+      try {
+        const taskRes = await getTaskStatus(stats.value.graph_build_task_id)
+        const t = taskRes.task || taskRes.data || taskRes
+        if (t && (t.status === 'processing' || t.status === 'pending')) {
+          if (!graphBuilding.value) {
+            graphBuilding.value = true
+            graphProgressMsg.value = t.message || '正在恢复后台世界图谱构建进度...'
+            showGraphLogs.value = true
+            pollGraphTask(stats.value.graph_build_task_id)
+          }
+        } else {
+          // 历史任务已结束或已失败，安全释放前端状态，避免按钮失灵
+          graphBuilding.value = false
+          graphProgressMsg.value = ''
+        }
+      } catch {
+        graphBuilding.value = false
+        graphProgressMsg.value = ''
       }
+    } else {
+      graphBuilding.value = false
+      graphProgressMsg.value = ''
     }
   } catch (e) {
     console.error('加载世界设定失败', e)
