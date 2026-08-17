@@ -1889,7 +1889,22 @@ def _task_log(task_id: str, text: str) -> None:
 def get_status(task_id: str) -> Optional[Dict[str, Any]]:
     _ensure_tasks_loaded()
     with _task_lock:
-        return dict(_tasks.get(task_id, {}))
+        if task_id in _tasks:
+            return dict(_tasks[task_id])
+
+    # 磁盘直接回查（多进程 / 偶发异步落盘与内存不同步时兜底）
+    task_file = os.path.join(_TASKS_DIR, f"{task_id}.json")
+    if os.path.isfile(task_file):
+        try:
+            with open(task_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                with _task_lock:
+                    _tasks[task_id] = data
+                return dict(data)
+        except Exception as e:
+            logger.warning(f"从磁盘读取时间线任务状态失败: {task_id}, {e}")
+    return None
 
 
 # ---------------------------------------------------------------------------
