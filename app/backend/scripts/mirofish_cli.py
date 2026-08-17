@@ -310,6 +310,26 @@ def cmd_sim(args) -> dict:
         include_timeline=args.include_timeline,
         from_event_id=args.from_event_id,
     )
+    sim_id = state.simulation_id
+    if getattr(args, "wait", False):
+        start_t = time.time()
+        timeout = getattr(args, "timeout", 1800.0)
+        last_event_count = 0
+        while time.time() - start_t < timeout:
+            sim = WorldSimulationService.get_state(sim_id)
+            if not sim:
+                time.sleep(1)
+                continue
+            # 流式输出新事件
+            events = (sim.result or {}).get("events", [])
+            if len(events) > last_event_count:
+                for ev in events[last_event_count:]:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] [第{ev.get('round')}轮] 【{ev.get('character')}】: {ev.get('action')}", file=sys.stderr)
+                last_event_count = len(events)
+            if sim.status in ("completed", "failed", "stopped"):
+                return {"simulation": sim.to_dict()}
+            time.sleep(1)
+        return {"simulation": (WorldSimulationService.get_state(sim_id) or state).to_dict(), "timeout": True}
     return {"simulation": state.to_dict()}
 
 
@@ -604,6 +624,10 @@ def _cmd_graph_build_world(project_id: str, resume: bool = True,
     调用 POST /api/world/<pid>/graph/build，保证与网页端完全一致。
     """
     from app import create_app
+    from app.models.task import TaskManager
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+    TaskManager.PERSIST_DIR = os.path.join(data_dir, "task-manager")
+    
     app = create_app()
     app.config["TESTING"] = True
     task_id: Optional[str] = None
@@ -622,7 +646,7 @@ def _cmd_graph_build_world(project_id: str, resume: bool = True,
         task_id = data.get("task_id")
         graph_id = data.get("graph_id")
         already = bool(data.get("already_running"))
-    if wait:
+    if wait and task_id:
         st = _wait_task_by_tm(task_id, timeout)
         return {"task_id": task_id, "graph_id": graph_id,
                 "already_running": already, "status": st}
@@ -630,12 +654,33 @@ def _cmd_graph_build_world(project_id: str, resume: bool = True,
 
 
 def _wait_task_by_tm(task_id: str, timeout: float) -> dict:
-    from app.models.task import TaskManager
+    from app.models.task import TaskManager, Task
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+    TaskManager.PERSIST_DIR = os.path.join(data_dir, "task-manager")
+    tm = TaskManager()
     start = time.time()
+    last_log_count = 0
     while time.time() - start < timeout:
-        task = TaskManager().get_task(task_id)
-        if task and task.status.value in ("completed", "failed"):
-            return {"status": task.status.value, "result": task.result, "error": task.error}
+        task = tm.get_task(task_id)
+        if not task and TaskManager.PERSIST_DIR:
+            task_file = os.path.join(TaskManager.PERSIST_DIR, f"{task_id}.json")
+            if os.path.isfile(task_file):
+                try:
+                    with open(task_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    if isinstance(data, dict):
+                        task = Task.from_dict(data)
+                except Exception:
+                    pass
+        if task:
+            # 实时流式输出新增日志
+            logs = task.logs or []
+            if len(logs) > last_log_count:
+                for l in logs[last_log_count:]:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] {l}", file=sys.stderr)
+                last_log_count = len(logs)
+            if task.status.value in ("completed", "failed"):
+                return {"status": task.status.value, "progress": task.progress, "result": task.result, "error": task.error}
         time.sleep(1)
     return {"status": "timeout", "task_id": task_id}
 
@@ -845,6 +890,8 @@ def _parser() -> argparse.ArgumentParser:
     ss.add_argument("--goal", default="")
     ss.add_argument("--include-timeline", action="store_true")
     ss.add_argument("--from-event-id", default="")
+    ss.add_argument("--wait", action="store_true")
+    ss.add_argument("--timeout", type=float, default=1800.0)
 
     a = sub.add_parser("assistant")
     aa = a.add_subparsers(dest="action", required=True)

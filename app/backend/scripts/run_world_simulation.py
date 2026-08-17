@@ -146,14 +146,15 @@ class WorldEvent:
 
 # ---------------------------------------------------------------- 动作解析
 
-# 动作意图关键词（轻量解析，不依赖 LLM）
+# 动作意图关键词（轻量解析，覆盖小说世界推演与故事交互）
 ACTION_INTENTS = [
-    ("move", ["前往", "走去", "走向", "走出", "去往", "来到", "离开", "去", "走到", "返回", "进入", "赶到", "赶到"]),
-    ("talk", ["对", "告诉", "问", "打听", "说", "交谈", "聊天", "询问", "分享", "搭话", "喊"]),
-    ("use", ["使用", "施展", "施放", "拿起", "喝", "吃", "用", "端起"]),
-    ("trade", ["买", "卖", "交易", "购买", "收购"]),
-    ("explore", ["看看", "观察", "查看", "探索", "巡视", "检查", "张望", "环顾", "四处"]),
-    ("wait", ["等待", "等着", "待", "休息", "想想", "停下"]),
+    ("move", ["前往", "走去", "走向", "走出", "去往", "来到", "离开", "去", "走到", "返回", "进入", "赶到", "赶往", "出发", "移步"]),
+    ("talk", ["对", "告诉", "问", "打听", "说", "交谈", "聊天", "询问", "分享", "搭话", "喊", "向", "汇报", "下达", "商讨", "研讨", "沟通", "召集"]),
+    ("explore", ["看看", "观察", "查看", "探索", "巡视", "检查", "张望", "环顾", "四处", "勘察", "警戒", "巡逻", "探查", "审视", "搜寻"]),
+    ("use", ["使用", "施展", "施放", "拿起", "喝", "吃", "用", "端起", "启动", "救治", "治疗", "操作", "布置", "架设"]),
+    ("trade", ["买", "卖", "交易", "购买", "收购", "交付", "转交"]),
+    ("plan", ["规划", "制定", "筹备", "构思", "协助", "支援", "准备", "分析"]),
+    ("wait", ["等待", "等着", "待在", "休息", "停留", "停下"]),
 ]
 
 # 动作目标截断词：遇到这些词说明主要目标已结束（后面是次要从句）
@@ -645,44 +646,58 @@ class WorldEnv:
         target = action.get("target", "")
 
         if atype == "move":
-            # 尝试移动到目标地点：先精确匹配 target，再在整句里模糊匹配
+            # 尝试移动到目标地点：精确 -> 子串 -> 最长公共前缀模糊匹配
+            desc = action.get("desc", "")
             candidates = []
             for loc_id, loc in self.locations.items():
                 if loc.name in target or loc_id in target:
-                    candidates.append((loc_id, loc, 2))  # 精确命中优先级 2
-                elif loc.name in action.get("desc", ""):
-                    candidates.append((loc_id, loc, 1))  # 整句命中优先级 1
+                    candidates.append((loc_id, loc, 3))
+                elif loc.name in desc:
+                    candidates.append((loc_id, loc, 2))
+                elif target and (loc.name.startswith(target[:3]) or target.startswith(loc.name[:3])):
+                    candidates.append((loc_id, loc, 1))
             if candidates:
                 candidates.sort(key=lambda x: -x[2])
                 loc_id, loc, _ = candidates[0]
                 if loc_id == character.location:
-                    return f"你已经在【{loc.name}】了"
+                    return f"你已经在【{loc.name}】了，正在开展实地行动"
                 character.location = loc_id
                 return f"你来到了【{loc.name}】"
-            return f"未能找到地点「{target}」，你留在原地"
+            # 兜底：若目标包含当前地点的核心字样，视为在当前地点深入行动
+            curr_loc = self.locations.get(character.location)
+            if curr_loc and target and any(k in target for k in (curr_loc.name[:2], "前哨", "基地", "区域", "冰原")):
+                return f"你在【{curr_loc.name}】展开深入行动"
+            return f"你在【{curr_loc.name if curr_loc else '原地'}】调整行动方向"
 
         if atype == "talk":
-            # 与在场角色交谈（对话结果记录，不真正调 LLM 回复——最小实现）
             present = [
                 c for c in self.characters.values()
                 if c.id != character.id and c.location == character.location
             ]
             if present:
                 names = "、".join(c.name for c in present)
-                return f"你与{names}交谈：{target or '（闲聊）'}"
-            return "这里没有可以交谈的对象，你自言自语"
-
-        if atype == "use":
-            return f"你使用了「{target or '物品'}」"
-
-        if atype == "trade":
-            return f"你试图交易：{target or '（未指明物品）'}"
+                return f"你与{names}交谈并协同：{target or '商讨当前行动方案'}"
+            # 若对方不在本地点，输出联络或传达信息
+            return f"你发出讯息与指令：{target or '同步任务进展'}"
 
         if atype == "explore":
             loc = self.locations.get(character.location)
-            return f"你仔细观察了周围：{loc.description if loc else '空无一物'}"
+            return f"你仔细勘察了【{loc.name if loc else '周围'}】：{loc.description if loc else '环境逐步明朗'}"
 
-        return "你停下来想了想，暂时没有行动"
+        if atype == "use":
+            return f"你使用了「{target or '专业设备'}」并完成相应部署"
+
+        if atype == "trade":
+            return f"你完成了物资交接与资源调配：{target or '医疗与工程补给'}"
+
+        if atype == "plan":
+            return f"你正在推进计划：{action.get('desc', '周密部署后续行动')[:60]}"
+
+        # wait 或其他动作：结合具体意图返回生动叙事
+        desc_text = action.get("desc", "").strip()
+        if desc_text and len(desc_text) > 3:
+            return f"你保持专注，正在【{desc_text[:50]}】"
+        return "你保持警惕，在原地调整状态并密切留意周围动向"
 
     def load_history(self, events: List[Dict[str, Any]], start_step: int = 1):
         """续推：把历史事件载入环境，作为角色记忆与剧情上下文；从 start_step 继续跑。"""
