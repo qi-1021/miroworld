@@ -2098,17 +2098,21 @@ function isSettingNode(n) {
   if (!n) return false
   // 1. 如果节点对象本身携带 source_type / is_setting 标记
   if (n.source_type === 'setting' || n.is_setting || n.source === 'setting') return true
-  // 2. 如果来自世界设定库预设的人物列表或本体实体类型
-  const inCharList = charactersList.value.some(c => c.name && n.name && c.name.trim() === n.name.trim())
+  // 2. 如果来自世界设定库预设的人物列表或本体实体类型（使用已声明的 characters）
+  const charArr = characters.value || []
+  const inCharList = charArr.some(c => {
+    const cName = typeof c === 'string' ? c : (c?.name || '')
+    return cName && n.name && cName.trim() === n.name.trim()
+  })
   if (inCharList) return true
   // 3. 检查属性中是否有世界观/设定标识
-  if (n.attributes) {
+  if (n.attributes && typeof n.attributes === 'object') {
     if (n.attributes.is_setting || n.attributes.source === 'world_bible' || n.attributes.origin === 'setting') {
       return true
     }
   }
-  // 4. 根据命名或首批生成特征判断（如果是前 30% 核心实体且具备完整生平属性）
-  if (n.summary && (n.summary.includes('设定') || n.summary.includes('世界观') || n.summary.includes('背景'))) {
+  // 4. 根据命名或首批生成特征判断
+  if (n.summary && typeof n.summary === 'string' && (n.summary.includes('设定') || n.summary.includes('世界观') || n.summary.includes('背景'))) {
     return true
   }
   return false
