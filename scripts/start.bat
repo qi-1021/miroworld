@@ -21,14 +21,20 @@ echo    Miroworld 可移植部署启动脚本 (Windows)
 echo ================================================
 echo.
 
+REM 设置国内镜像自动加速环境变量（清华源/华为源/npmmirror）
+if "%UV_INDEX_URL%"=="" set UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+if "%PIP_INDEX_URL%"=="" set PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+if "%NPM_CONFIG_REGISTRY%"=="" set NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
+
 REM 检查与自动准备依赖
-echo [INFO] 检查并自动准备运行环境...
+echo [INFO] 检查并自动准备运行环境 (已启用国内镜像自动加速)...
 
 REM 1. 检查/自动安装 uv
 where uv >nul 2>nul
 if errorlevel 1 (
     echo [INFO] 正在自动获取 uv 包管理工具...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps1 | iex" >nul 2>nul
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+      "try { irm https://astral.sh/uv/install.ps1 | iex } catch { irm https://mirror.ghproxy.com/https://raw.githubusercontent.com/astral-sh/uv/main/install.ps1 | iex }" >nul 2>nul
     set "PATH=%USERPROFILE%\.local\bin;%USERPROFILE%\.cargo\bin;!PATH!"
 )
 where uv >nul 2>nul

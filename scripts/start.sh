@@ -92,7 +92,12 @@ ensure_command() {
 
 # 检查与自动安装所有前置依赖（傻瓜式一键就绪，用户无需手动操作）
 check_and_auto_install_dependencies() {
-    log_info "检查并自动准备运行环境..."
+    log_info "检查并自动准备运行环境 (已启用国内镜像自动加速)..."
+
+    # 国内镜像环境变量支持（清华/阿里/华为源）
+    export UV_INDEX_URL="${UV_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}"
+    export PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}"
+    export NPM_CONFIG_REGISTRY="${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}"
 
     # 1. 确保 uv 存在（uv 可以管理独立 Python 与虚拟环境）
     if ! command -v uv &> /dev/null; then
@@ -103,7 +108,8 @@ check_and_auto_install_dependencies() {
             export PATH="$HOME/.local/bin:$PATH"
         else
             log_info "正在自动安装 uv 包管理工具..."
-            curl -LsSf https://astral.sh/uv/install.sh | sh || true
+            # 官方源 + 国内 GitHub 加速镜像重试
+            curl -LsSf https://astral.sh/uv/install.sh | sh || curl -LsSf https://mirror.ghproxy.com/https://raw.githubusercontent.com/astral-sh/uv/main/install.sh | sh || true
             export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
         fi
     fi
@@ -216,11 +222,30 @@ start_neo4j() {
 
     # 自动傻瓜式下载与安装 Neo4j（用户第一次运行无需手动执行 install-neo4j.sh）
     if [ ! -d "$NEO4J_HOME" ]; then
-        log_info "未检测到本地 Neo4j，正在自动一键下载并部署 Neo4j 5.26.0 便携版..."
+        log_info "未检测到本地 Neo4j，正在自动通过国内多源加速下载并部署 Neo4j 5.26.0 便携版..."
         mkdir -p "$NEO4J_DIR"
         local os_type=$(uname -s)
-        local neo4j_url="https://dist.neo4j.org/neo4j-community-5.26.0-unix.tar.gz"
-        curl -L -o "$NEO4J_DIR/neo4j-5.26.0-unix.tar.gz" "$neo4j_url"
+        local neo4j_urls=(
+            "https://dist.neo4j.org/neo4j-community-5.26.0-unix.tar.gz"
+            "https://mirrors.huaweicloud.com/neo4j/neo4j-community-5.26.0-unix.tar.gz"
+            "https://mirror.iscas.ac.cn/neo4j/neo4j-community-5.26.0-unix.tar.gz"
+        )
+        local dl_ok=0
+        for u in "${neo4j_urls[@]}"; do
+            log_info "尝试从加速节点获取: $u"
+            if curl -L --connect-timeout 10 -m 300 -o "$NEO4J_DIR/neo4j-5.26.0-unix.tar.gz" "$u"; then
+                if [ -s "$NEO4J_DIR/neo4j-5.26.0-unix.tar.gz" ] && tar -tzf "$NEO4J_DIR/neo4j-5.26.0-unix.tar.gz" >/dev/null 2>&1; then
+                    dl_ok=1
+                    log_info "✓ 下载成功！"
+                    break
+                fi
+            fi
+            rm -f "$NEO4J_DIR/neo4j-5.26.0-unix.tar.gz"
+        done
+        if [ "$dl_ok" -ne 1 ]; then
+            log_error "所有 Neo4j 下载节点均失败，请检查网络连接"
+            exit 1
+        fi
         tar -xzf "$NEO4J_DIR/neo4j-5.26.0-unix.tar.gz" -C "$NEO4J_DIR"
         mv "$NEO4J_DIR/neo4j-community-5.26.0" "$NEO4J_HOME"
         rm -f "$NEO4J_DIR/neo4j-5.26.0-unix.tar.gz"

@@ -61,12 +61,32 @@ else
     exit 1
 fi
 
-log_info "下载 Neo4j 5.26.0..."
-log_info "URL: $NEO4J_URL"
+log_info "下载 Neo4j 5.26.0 (支持国内多源自动加速)..."
 
-# 下载
-if ! curl -L -o neo4j-5.26.0-unix.tar.gz "$NEO4J_URL"; then
-    log_error "下载失败"
+# 镜像加速地址列表（国内加速源优先，官方源兜底）
+NEO4J_URLS=(
+    "https://dist.neo4j.org/neo4j-community-5.26.0-unix.tar.gz"
+    "https://mirrors.huaweicloud.com/neo4j/neo4j-community-5.26.0-unix.tar.gz"
+    "https://mirror.iscas.ac.cn/neo4j/neo4j-community-5.26.0-unix.tar.gz"
+)
+
+DOWNLOAD_SUCCESS=0
+for url in "${NEO4J_URLS[@]}"; do
+    log_info "尝试从下载节点获取: $url"
+    if curl -L --connect-timeout 10 -m 300 -o neo4j-5.26.0-unix.tar.gz "$url"; then
+        # 校验文件非空且为有效 gzip
+        if [ -s neo4j-5.26.0-unix.tar.gz ] && tar -tzf neo4j-5.26.0-unix.tar.gz >/dev/null 2>&1; then
+            DOWNLOAD_SUCCESS=1
+            log_info "✓ 下载成功！"
+            break
+        fi
+    fi
+    log_warn "该节点下载未完成或网络受限，正在切换下一个加速节点..."
+    rm -f neo4j-5.26.0-unix.tar.gz
+done
+
+if [ "$DOWNLOAD_SUCCESS" -ne 1 ]; then
+    log_error "所有 Neo4j 下载节点均失败，请检查网络连接"
     exit 1
 fi
 
