@@ -12,10 +12,12 @@
       </div>
       <div class="header-right">
         <button class="back-btn ghost" @click="highContrast = !highContrast">{{ highContrast ? $t('world.contrastOff') : $t('world.contrastOn') }}</button>
-        <select class="project-switcher" :value="projectId" @change="switchProject">
-          <option v-for="p in projects" :key="p.project_id" :value="p.project_id">{{ p.name || p.project_id }}</option>
-        </select>
-        <span class="project-id">{{ projectId }}</span>
+        <div class="project-switcher-wrap" :title="`Project ID: ${projectId}`">
+          <span class="switcher-label">📁 {{ $t('world.currentProject') }}:</span>
+          <select class="project-switcher" :value="projectId" @change="switchProject">
+            <option v-for="p in projects" :key="p.project_id" :value="p.project_id">{{ p.name || p.project_id }}</option>
+          </select>
+        </div>
         <button class="back-btn" :disabled="snapshotBusy" @click="exportSnapshot">{{ $t('world.exportSnapshot') }}</button>
         <button class="back-btn" :disabled="snapshotBusy" @click="importFileInput.click()">{{ $t('world.importSnapshot') }}</button>
         <input ref="importFileInput" type="file" accept=".json,.miroworld.json,application/json" style="display:none" @change="onImportSnapshot" />
@@ -546,6 +548,15 @@
               </option>
             </select>
           </div>
+          <div class="sim-field sim-field-wide">
+            <label class="sim-label">🤖 {{ $t('world.agentModelLabel') }}</label>
+            <select v-model="selectedAgentModel" class="sim-input">
+              <option value="">{{ $t('world.useDefaultModel') }}</option>
+              <option v-for="m in availableModels" :key="m.id" :value="m.model_id">
+                {{ m.display_name || m.model_id }} ({{ m.provider_type }})
+              </option>
+            </select>
+          </div>
           <button class="action-btn sim-start" :disabled="simStarting || simStatus === 'running'" @click="handleStartSim">
             <span v-if="simStarting" class="spinner-sm"></span>
             {{ simStarting ? $t('world.simStarting') : simStatus === 'running' ? $t('world.simRunning') : $t('world.simStartBtn') }}
@@ -739,6 +750,7 @@
               <button class="mini-btn ghost" @click="copyWorldline(root)">{{ $t('world.copyWorldline') }}</button>
               <button v-if="root.status === 'completed' && !((root.result || {}).meta || {}).whatif_question" class="mini-btn" @click="startWhatIf(root)">{{ $t('world.whatifBtn') }}</button>
               <button v-if="root.status === 'completed' && !((root.result || {}).meta || {}).whatif_question" class="mini-btn ghost" @click="batchWhatIf(root)">{{ $t('world.batchWhatif') }}</button>
+              <button class="mini-btn danger" :title="$t('world.deleteWorldline')" @click.stop="confirmDeleteSimulation(root)">🗑️</button>
             </div>
             <div v-if="!collapsedRoots.has(root.simulation_id)">
               <div v-for="child in root.children" :key="child.simulation_id" class="tree-node child">
@@ -753,6 +765,7 @@
                 <button v-if="child.result?.meta?.whatif_question" class="mini-btn" :disabled="simStarting" @click="rerunBranchWithSettings(child)">{{ $t('world.rerunBranchWithSettings') }}</button>
                 <button class="mini-btn ghost" @click="exportSimulation(child)">{{ $t('world.exportSimulation') }}</button>
                 <button class="mini-btn ghost" @click="copyWorldline(child)">{{ $t('world.copyWorldline') }}</button>
+                <button class="mini-btn danger" :title="$t('world.deleteWorldline')" @click.stop="confirmDeleteSimulation(child)">🗑️</button>
               </div>
               </div>
             </div>
@@ -796,6 +809,7 @@
                 </button>
                 <button class="mini-btn ghost" @click="openChartRecord(h)">{{ $t('world.chronicleBtn') }}</button>
               </template>
+              <button class="mini-btn danger" :title="$t('world.deleteWorldline')" @click.stop="confirmDeleteSimulation(h)">🗑️</button>
             </template>
           </div>
           <!-- 当前模拟的 what-if 推演对话框 -->
@@ -1137,11 +1151,13 @@ import {
   getWorldNovel,
   buildWorldGraph,
   getWorldGraph,
-  refillWorldGraphEdges
+  refillWorldGraphEdges,
+  deleteWorldSimulation
 } from '../api/world'
 import { getTaskStatus, exportProjectSnapshot, importProjectSnapshot, listProjects } from '../api/graph'
 import { askAssistant, runAssistantAction, listAgentTasks, listAgentTools } from '../api/assistant'
 import { getTimeline, generateTimelineCharacters } from '../api/timeline'
+import { getModelRegistry } from '../api/models'
 import TimelineView from '../components/TimelineView.vue'
 
 const route = useRoute()
@@ -1233,6 +1249,8 @@ const simStorySummaryLlm = ref(false)
 const simMaxConcurrency = ref(1)
 const simStartEventId = ref('')
 const simTimelineEvents = ref([])
+const availableModels = ref([])
+const selectedAgentModel = ref('')
 const simGoal = ref('')  // 任务目标（可选，决定推演走向）
 const simStarting = ref(false)
 const simStatus = ref('idle')
@@ -2424,6 +2442,29 @@ async function continueSimulation(sim) {
   }
 }
 
+async function confirmDeleteSimulation(sim) {
+  const name = sim.result?.meta?.name || sim.result?.meta?.whatif_question || sim.simulation_id
+  if (!window.confirm(t('world.deleteWorldlineConfirm', { name }))) return
+  try {
+    await deleteWorldSimulation(projectId, sim.simulation_id)
+    simMsg.value = t('world.deleteWorldlineSuccess')
+    simMsgError.value = false
+    if (simPollingId === sim.simulation_id) {
+      if (simPollTimer) clearInterval(simPollTimer)
+      simPollTimer = null
+      simPollingId = ''
+      simStatus.value = 'idle'
+      simProgress.value = {}
+      simEvents.value = []
+      characters.value = []
+    }
+    await loadSimHistory()
+  } catch (e) {
+    simMsg.value = e?.message || t('world.msgUnknownError')
+    simMsgError.value = true
+  }
+}
+
 async function editWorldlineMeta(sim) {
   const currentName = sim.result?.meta?.name || ''
   const currentNote = sim.result?.meta?.note || ''
@@ -2775,6 +2816,20 @@ async function handleStartSim() {
   simMsgError.value = false
   simCtlMsg.value = ''
   simCtlMsgError.value = false
+  if (simPollTimer) clearInterval(simPollTimer)
+  simPollTimer = null
+
+  // 彻底重置前序模拟残留状态
+  simStatus.value = 'running'
+  simProgress.value = { current_step: 0, total_steps: simSteps.value || 6, message: '正在初始化世界推演环境...' }
+  simEvents.value = []
+  characters.value = []
+  simQualityIssues.value = []
+  stepSummaries.value = []
+  reportSimulationId.value = ''
+  reportText.value = ''
+  reportEmptyNote.value = ''
+
   try {
     const jumps = simTimeJumps.value
       .split(/[,，、;；]+/)
@@ -2789,16 +2844,12 @@ async function handleStartSim() {
       story_summary_mode: simStorySummaryLlm.value ? 'llm' : 'rule',
       max_concurrency: simMaxConcurrency.value || 1,
       from_event_id: simStartEventId.value || undefined,
-      goal: simGoal.value.trim() || undefined
+      goal: simGoal.value.trim() || undefined,
+      agent_model_id: selectedAgentModel.value || undefined
     })
     const sim = res.simulation
     simStatus.value = 'running'
     simMsg.value = t('world.msgSimStarted', { id: sim.simulation_id })
-    simEvents.value = []
-    characters.value = []
-    reportSimulationId.value = ''
-    reportText.value = ''
-    reportEmptyNote.value = ''
     simPollingId = sim.simulation_id
     startSimPolling(sim.simulation_id)
   } catch (e) {
@@ -2992,11 +3043,23 @@ function pollWhatIf(simulationId, question) {
   }, 5000)
 }
 
+async function loadAvailableModels() {
+  try {
+    const res = await getModelRegistry()
+    const data = res?.data || res || {}
+    const entries = data.entries || []
+    availableModels.value = entries.filter(e => e.capabilities?.includes('chat') || !e.capabilities || e.capabilities.length === 0)
+  } catch (e) {
+    availableModels.value = []
+  }
+}
+
 onMounted(() => {
   loadAll()
   loadSimHistory()
   loadSimTimelineEvents()
   loadProjects()
+  loadAvailableModels()
 
   // 新手引导：首次进入显示 5 步说明
   if (!localStorage.getItem('miroworld.guide.v1')) {

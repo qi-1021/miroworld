@@ -516,6 +516,14 @@ def _execute_assistant_action(project_id: str, action: str, params: dict):
         )
         return {"simulation": updated}
 
+    if action in ("delete_simulation", "delete_world_simulation"):
+        from ..services.world_simulation import WorldSimulationService
+        sim_id = str(params.get("simulation_id") or "").strip()
+        if not sim_id:
+            raise ValueError("delete_simulation 需要 simulation_id")
+        ok = WorldSimulationService.delete_simulation(project_id, sim_id)
+        return {"success": ok, "simulation_id": sim_id}
+
     if action == "get_worldline_summary":
         from ..services.world_simulation import WorldSimulationService
         sim_id = str(params.get("simulation_id") or "").strip()

@@ -516,8 +516,29 @@ class WorldSimulationService:
     # ---------------- 配置生成 ----------------
 
     @classmethod
-    def _build_llm_client(cls, project_id: str) -> LLMClient:
-        """项目绑定模型优先，其次注册表第一个已验证 chat 模型"""
+    def _build_llm_client(cls, project_id: str, agent_model_id: Optional[str] = None) -> LLMClient:
+        """指定 Agent 模型优先，其次项目绑定模型，其次注册表已验证 chat 模型"""
+        if agent_model_id:
+            try:
+                from ..services.model_registry import ModelRegistryService
+                registry = ModelRegistryService()
+                reg_data = registry._read_registry()
+                entry = next((m for m in reg_data.get("models", []) if m.get("id") == agent_model_id or m.get("model_id") == agent_model_id), None)
+                if entry:
+                    conn_id = entry.get("connection_id")
+                    conn = next((c for c in reg_data.get("connections", []) if c.get("id") == conn_id), None)
+                    secrets = registry._read_secrets().get("connections", {}).get(conn_id, {})
+                    api_key = secrets.get("api_key")
+                    endpoint = conn.get("endpoint") if conn else None
+                    if endpoint:
+                        return LLMClient(
+                            api_key=api_key or Config.LLM_API_KEY,
+                            base_url=endpoint,
+                            model=entry.get("model_id") or agent_model_id,
+                        )
+            except Exception as e:
+                logger.warning(f"指定 Agent 模型解析失败，回退默认: {e}")
+
         try:
             from ..services.model_registry import ModelRegistryService
             from ..services.model_resolver import ModelResolver
@@ -655,6 +676,7 @@ class WorldSimulationService:
         from_event_id: Optional[str] = None,
         story_summary_mode: str = "rule",
         max_concurrency: Optional[int] = None,
+        agent_model_id: Optional[str] = None,
     ) -> WorldSimulationState:
         """
         启动世界模拟：
@@ -695,7 +717,7 @@ class WorldSimulationService:
         def run():
             try:
                 # 1. LLM 生成配置
-                llm = cls._build_llm_client(project_id)
+                llm = cls._build_llm_client(project_id, agent_model_id=agent_model_id)
                 timeline_context = ""
                 if from_event_id or include_timeline:
                     try:

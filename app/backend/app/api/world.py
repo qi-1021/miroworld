@@ -549,7 +549,7 @@ def build_world_graph(project_id: str):
                         pct = 30 + int(((_bstart + _blen * frac) / max(_nrem, 1)) * 55)
                         task_manager.update_task(
                             task_id, progress=max(30, min(85, pct)),
-                            message=f"批内 {done}/{_blen}：{msg or ''}",
+                            message=f"第 {batch_num}/{total_batches} 批 · {msg or ''}",
                         )
 
                     try:
@@ -1128,8 +1128,8 @@ def start_world_simulation(project_id: str):
             max_concurrency = int(data.get('max_concurrency') or 0) or None
         except (TypeError, ValueError):
             max_concurrency = None
-
-        state = WorldSimulationService.start_simulation(
+        agent_model_id = str(data.get('agent_model_id') or '').strip() or None
+        kwargs = dict(
             project_id=project_id,
             total_steps=total_steps,
             time_step_minutes=time_step_minutes,
@@ -1141,6 +1141,10 @@ def start_world_simulation(project_id: str):
             story_summary_mode=story_summary_mode,
             max_concurrency=max_concurrency,
         )
+        if agent_model_id:
+            kwargs["agent_model_id"] = agent_model_id
+
+        state = WorldSimulationService.start_simulation(**kwargs)
         return jsonify({"success": True, "simulation": state.to_dict()})
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 400
@@ -1176,6 +1180,7 @@ def get_world_simulation(project_id: str, simulation_id: str):
 
 
 @world_bp.route('/<project_id>/simulation/<simulation_id>', methods=['DELETE'])
+@world_bp.route('/<project_id>/simulations/<simulation_id>', methods=['DELETE'])
 def delete_world_simulation(project_id: str, simulation_id: str):
     """删除单条世界模拟（data/world-sim/<project>/<simulation_id>），仅删该条，不动项目。"""
     try:

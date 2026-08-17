@@ -522,21 +522,36 @@ class OasisProfileGenerator:
         # 尝试多次生成，直到成功或达到最大重试次数
         max_attempts = 3
         last_error = None
+        import re
 
         for attempt in range(max_attempts):
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[
+                call_kwargs = {
+                    "model": self.model_name,
+                    "messages": [
                         {"role": "system", "content": self._get_system_prompt(is_individual)},
                         {"role": "user", "content": prompt}
                     ],
-                    response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)  # 每次重试降低温度
-                    # 不设置max_tokens，让LLM自由发挥
-                )
+                    "response_format": {"type": "json_object"},
+                    "temperature": max(0.1, 0.7 - (attempt * 0.1)),
+                    "extra_body": {"thinking": {"type": "disabled"}}
+                }
+                try:
+                    response = self.client.chat.completions.create(**call_kwargs)
+                except Exception as call_err:
+                    # 若网关不支持 extra_body 或 json_object，降级重试
+                    if "extra_body" in str(call_err) or "thinking" in str(call_err):
+                        call_kwargs.pop("extra_body", None)
+                        response = self.client.chat.completions.create(**call_kwargs)
+                    elif "response_format" in str(call_err) or "json_object" in str(call_err):
+                        call_kwargs.pop("response_format", None)
+                        response = self.client.chat.completions.create(**call_kwargs)
+                    else:
+                        raise call_err
 
-                content = response.choices[0].message.content
+                content = response.choices[0].message.content or ""
+                # 剥离 <think>...</think> 思考链
+                content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
 
                 # 检查是否被截断（finish_reason不是'stop'）
                 finish_reason = response.choices[0].finish_reason

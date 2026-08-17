@@ -432,8 +432,12 @@ def _extract_json_from_markdown(text: str) -> Any:
     """
     if not text or not text.strip():
         return None
+    import re
     candidates = []
     raw = text.strip()
+    raw = re.sub(r'<think>[\s\S]*?</think>', '', raw).strip()
+    if not raw:
+        return None
     candidates.append(raw)
     # Markdown 围栏
     if "```" in raw:

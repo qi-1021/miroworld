@@ -246,6 +246,16 @@ export function getWorldSimulation(projectId, simulationId) {
 }
 
 /**
+ * 删除单条世界模拟
+ */
+export function deleteWorldSimulation(projectId, simulationId) {
+  return service({
+    url: `/api/world/${projectId}/simulation/${simulationId}`,
+    method: 'delete'
+  })
+}
+
+/**
  * 控制世界模拟（暂停/恢复/停止/采访）
  * @param {String} projectId
  * @param {String} simulationId

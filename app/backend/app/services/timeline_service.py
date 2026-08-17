@@ -313,6 +313,10 @@ def _extract_json_array(text: str):
     if not text or not text.strip():
         return None
     raw = text.strip()
+    # 剥离 <think>...</think> 思考链
+    raw = re.sub(r'<think>[\s\S]*?</think>', '', raw).strip()
+    if not raw:
+        return None
     candidates = [raw]
     if "```" in raw:
         for part in raw.split("```"):
@@ -336,7 +340,13 @@ def _extract_json_array(text: str):
     for cand in candidates:
         try:
             val = json.loads(cand)
-            return val if isinstance(val, list) else None
+            if isinstance(val, list):
+                return val
+            if isinstance(val, dict):
+                # 兼容模型包裹在顶层字段如 {"characters": [...]} / {"events": [...]} / {"data": [...]}
+                for v in val.values():
+                    if isinstance(v, list):
+                        return v
         except Exception:
             continue
     return None
@@ -3157,11 +3167,15 @@ def _characters_generate_body(project_id: str, task_id: str) -> None:
         if not arr:
             raise ValueError("人物设定生成失败：LLM 未返回数组")
 
-        _task_log(task_id, "合并保存（仅填空字段，不覆盖既有设定）")
+        _task_log(task_id, "合并保存（填入字段，不覆盖既有设定）")
         _update_task(task_id, stage="合并保存", progress=90)
         by_name = {}
         for p in profiles:
-            by_name[str(p.get("name") or "").strip()] = p
+            raw_n = str(p.get("name") or "").strip()
+            if raw_n:
+                by_name[raw_n] = p
+                by_name[raw_n.lower()] = p
+
         filled = 0
         for item in arr:
             if not isinstance(item, dict):
@@ -3169,15 +3183,31 @@ def _characters_generate_body(project_id: str, task_id: str) -> None:
             name = str(item.get("name") or "").strip()
             if not name:
                 continue
-            target = by_name.get(name)
+            target = by_name.get(name) or by_name.get(name.lower())
             if target is None:
-                continue
-            # 仅当 traits/description 仍为空时填入；不覆盖非空
-            if not str(target.get("traits") or "").strip():
-                target["traits"] = str(item.get("traits") or "").strip()[:_CHAR_TRAITS_MAX]
-            if not str(target.get("description") or "").strip():
-                target["description"] = str(item.get("description") or "").strip()[:_CHAR_DESC_MAX]
-            if (str(target.get("traits") or "").strip() or str(target.get("description") or "").strip()):
+                # 模糊匹配：去除括号后缀、空格匹配
+                for k, p in list(by_name.items()):
+                    if k in name or name in k:
+                        target = p
+                        break
+            if target is not None:
+                # 仅当 traits/description 为空时填入
+                if not str(target.get("traits") or "").strip():
+                    target["traits"] = str(item.get("traits") or "").strip()[:_CHAR_TRAITS_MAX]
+                if not str(target.get("description") or "").strip():
+                    target["description"] = str(item.get("description") or "").strip()[:_CHAR_DESC_MAX]
+                if str(target.get("traits") or "").strip() or str(target.get("description") or "").strip():
+                    filled += 1
+            else:
+                # 新发现的人物，补充加入档案
+                new_p = {
+                    "name": name[:40],
+                    "traits": str(item.get("traits") or "").strip()[:_CHAR_TRAITS_MAX],
+                    "description": str(item.get("description") or "").strip()[:_CHAR_DESC_MAX],
+                }
+                profiles.append(new_p)
+                by_name[name] = new_p
+                by_name[name.lower()] = new_p
                 filled += 1
         save_characters(project_id, profiles)
         _task_log(task_id, f"已生成 {filled} 位人物设定初稿")
