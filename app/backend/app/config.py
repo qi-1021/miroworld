@@ -78,13 +78,11 @@ class Config:
     NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD', 'password')
 
     # Graphiti 边提取模式：
-    # - 'skip'（默认）：建图阶段完全跳过边提取。实测 OpenCode 网关对 10+ 实体的
-    #   边提取 0% 成功、每次烧 2×100s+，全跳过是净收益；边由"补边队列"
-    #   （POST /api/world/<pid>/graph/refill_edges）后续补充。
-    # - 'skip-first'：仅首个 episode 跳过（历史遗留选项，保留兼容）。
-    # - 'always'：graphiti 原生行为。补边重放时由 GraphitiClient 在事件循环
-    #   线程内临时切换使用，不通过本环境变量修改。
-    GRAPHITI_EDGE_MODE = os.environ.get('GRAPHITI_EDGE_MODE', 'skip')
+    # - 'skip-first'（默认）：首个分块仅提取实体基石，后续各分块全面提取实体与关系网（边），
+    #   确保知识图谱不仅有节点，更有完整的角色势力错综关系网！
+    # - 'always'：全量抽取边。
+    # - 'skip'：完全跳过边提取（仅在极限网关限速下可选）。
+    GRAPHITI_EDGE_MODE = os.environ.get('GRAPHITI_EDGE_MODE', 'skip-first')
     # graphiti 建图 LLM 并发上限：1=串行（最稳）；2-3=并发处理短小的
     # 属性/摘要调用（边提取已跳过，网关压力大减）。env 可覆盖。
     GRAPHITI_MAX_CONCURRENCY = int(os.environ.get('GRAPHITI_MAX_CONCURRENCY', '1') or '1')

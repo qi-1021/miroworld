@@ -2070,12 +2070,26 @@ function isCharacterNode(n) {
   const nameStr = (n.name || '').toLowerCase()
   const attrs = (n.attributes && typeof n.attributes === 'object') ? n.attributes : {}
   
-  // 1. 显式排除绝对无意识的客体实体类型（地点、国家、城市、物品、器物、法宝、武器、酒类、事件、法则、概念、疾病、星门）
-  const nonCharKeywords = ['国家', '地点', '城市', '物品', '器物', '法宝', '武器', '酒类', '道具', '事件', '概念', '法则', '境界', '疾病', '星门', 'location', 'place', 'item', 'event', 'concept', 'weapon']
+  // 1. 显式排除绝对无意识的客体实体类型（物品、器物、武器、炸弹、法宝、酒类、地点、国家、城市、事件、法则、概念、疾病、星门等）
+  const nonCharKeywords = [
+    '物品', '器物', '法宝', '武器', '炸弹', '酒类', '道具', '药剂', '装备', '材料',
+    '国家', '地点', '城市', '建筑', '区域', '星门', '场所', '遗迹',
+    '事件', '战役', '故事', '灾难', '历史',
+    '概念', '法则', '境界', '疾病', '矿石病', '知识', '技术',
+    'item', 'weapon', 'location', 'place', 'city', 'country', 'event', 'concept'
+  ]
   if (labels.some(l => nonCharKeywords.some(k => l.includes(k)))) return false
   if (nonCharKeywords.some(k => typeStr.includes(k))) return false
+  if (nonCharKeywords.some(k => nameStr.includes(k))) return false
 
-  // 2. 显式人物/角色/个体人类/职业身份/生命体标签判定
+  // 2. 预设角色列表命中判定（最高优先级白名单）
+  const charArr = characters.value || []
+  if (charArr.some(c => {
+    const cName = typeof c === 'string' ? c : (c?.name || '')
+    return cName && n.name && cName.trim() === n.name.trim()
+  })) return true
+
+  // 3. 显式人物/角色/个体人类/职业身份/生命体标签判定
   const charKeywords = [
     '个人', '个体', '人类', '人物', '角色', '职业', '医生', '干员', '领袖', '主角', '配角', 
     '指挥官', '老师', '居民', '神祇', '英雄', '生物', '人', 'person', 'character', 'agent', 'npc', 'individual', 'human'
@@ -2083,20 +2097,8 @@ function isCharacterNode(n) {
   if (labels.some(l => charKeywords.some(k => l.includes(k)))) return true
   if (charKeywords.some(k => typeStr.includes(k))) return true
   
-  // 3. 属性中包含典型人物角色特征（如具备 role、full_name、affiliation、department 等属性）
-  if (attrs.role || attrs.full_name || attrs.profession_name || attrs.key_trait || attrs.affiliation) {
-    return true
-  }
-
-  // 4. 预设角色列表命中判定
-  const charArr = characters.value || []
-  if (charArr.some(c => {
-    const cName = typeof c === 'string' ? c : (c?.name || '')
-    return cName && n.name && cName.trim() === n.name.trim()
-  })) return true
-
-  // 5. 默认策略：只要不是明确的客体（物品/地点/事件），且不是组织概念，均视为可交互的潜在角色个体
-  if (!labels.includes('组织') && !labels.includes('国家') && !typeStr.includes('组织')) {
+  // 4. 属性中包含典型人物角色特征（如具备 role、full_name、key_trait、profession_name 等明确人格字段）
+  if (attrs.role || attrs.full_name || attrs.profession_name || attrs.key_trait) {
     return true
   }
 
