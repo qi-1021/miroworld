@@ -3975,7 +3975,7 @@ function pollWhatIf(simulationId, question) {
     } catch (e) {
       console.error('轮询推演状态失败', e)
     }
-  }, 500)
+  }, 1000)
 }
 
 async function loadAvailableModels() {
