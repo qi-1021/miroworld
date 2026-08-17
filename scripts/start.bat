@@ -21,47 +21,76 @@ echo    Miroworld 可移植部署启动脚本 (Windows)
 echo ================================================
 echo.
 
-REM 检查依赖
-echo [INFO] 检查前置依赖...
+REM 检查与自动准备依赖
+echo [INFO] 检查并自动准备运行环境...
 
-where node >nul 2>nul
-if errorlevel 1 (
-    echo [ERROR] Node.js 未安装。请访问 https://nodejs.org 安装
-    pause
-    exit /b 1
-)
-for /f "tokens=*" %%i in ('node --version') do set NODE_VER=%%i
-echo [INFO] ✓ Node.js %NODE_VER%
-
-where python >nul 2>nul
-if errorlevel 1 (
-    echo [ERROR] Python 未安装。请访问 https://python.org 安装
-    pause
-    exit /b 1
-)
-for /f "tokens=*" %%i in ('python --version') do set PY_VER=%%i
-echo [INFO] ✓ Python %PY_VER%
-
+REM 1. 检查/自动安装 uv
 where uv >nul 2>nul
 if errorlevel 1 (
-    echo [WARN] uv 未安装，启动脚本会自动尝试安装
+    echo [INFO] 正在自动获取 uv 包管理工具...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps1 | iex" >nul 2>nul
+    set "PATH=%USERPROFILE%\.local\bin;%USERPROFILE%\.cargo\bin;!PATH!"
+)
+where uv >nul 2>nul
+if not errorlevel 1 (
+    for /f "tokens=*" %%i in ('uv --version 2^>nul') do echo [INFO] ✓ uv %%i
 )
 
-REM 检查 Java（Neo4j 需要 JVM）
-where java >nul 2>nul
+REM 2. 检查/自动准备 Python
+where python >nul 2>nul
 if errorlevel 1 (
-    echo [ERROR] Java 未安装。Neo4j 需要 JVM，请先安装 Java 17+
+    echo [INFO] 系统未找到 Python，正在尝试自动准备 Python 3.11...
+    where uv >nul 2>nul
+    if not errorlevel 1 (
+        uv python install 3.11 >nul 2>nul
+    ) else (
+        winget install -e --id Python.Python.3.11 --accept-source-agreements --accept-package-agreements >nul 2>nul
+    )
+)
+where python >nul 2>nul
+if not errorlevel 1 (
+    for /f "tokens=*" %%i in ('python --version 2^>nul') do echo [INFO] ✓ Python %%i
+) else (
+    echo [INFO] ✓ Python 将由 uv 自动托管运行
+)
+
+REM 3. 检查/自动准备 Node.js
+where node >nul 2>nul
+if errorlevel 1 (
+    echo [INFO] 未检测到 Node.js，正在尝试自动安装 Node.js LTS...
+    winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements >nul 2>nul
+    set "PATH=C:\Program Files\nodejs;!PATH!"
+)
+where node >nul 2>nul
+if not errorlevel 1 (
+    for /f "tokens=*" %%i in ('node --version 2^>nul') do echo [INFO] ✓ Node.js %%i
+) else (
+    echo [ERROR] Node.js 自动准备失败。请访问 https://nodejs.org 安装 Node.js (>=18.0) 后重新运行
     pause
     exit /b 1
 )
-echo [INFO] ✓ Java 已就绪
+
+REM 4. 检查/自动准备 Java (Neo4j 所需 JVM)
+where java >nul 2>nul
+if errorlevel 1 (
+    echo [INFO] 未检测到 Java，正在尝试自动准备 OpenJDK 17...
+    winget install -e --id EclipseAdoptium.Temurin.17.JRE --accept-source-agreements --accept-package-agreements >nul 2>nul
+)
+where java >nul 2>nul
+if not errorlevel 1 (
+    echo [INFO] ✓ Java 已就绪
+) else (
+    echo [ERROR] Java 17+ 自动准备失败。Neo4j 需要 JVM，请访问 https://adoptium.net 安装 Java 17+
+    pause
+    exit /b 1
+)
 
 REM 清理上次残留（避免端口占用导致启动失败）
 echo [INFO] 清理上次运行残留...
 call "%SCRIPT_DIR%stop.bat" >nul 2>nul
 
 echo.
-echo [INFO] 启动 Neo4j...
+echo [INFO] 检查与启动 Neo4j 知识图谱数据库...
 
 REM 兼容两种安装布局：neo4j\neo4j（安装脚本默认）或 neo4j\neo4j-program（已有便携部署）
 set NEO4J_HOME=%NEO4J_DIR%\neo4j
@@ -72,18 +101,16 @@ if not exist "%NEO4J_HOME%\bin\neo4j.bat" (
     )
 )
 
-REM 检查 Neo4j 是否存在
+REM 自动傻瓜式下载与安装 Neo4j（用户第一次运行无需手动执行 install-neo4j.bat）
 if not exist "%NEO4J_HOME%\bin\neo4j.bat" (
-    REM 自修复：Homebrew 拷贝布局下从 libexec 复制启动脚本
-    if exist "%NEO4J_HOME%\libexec\bin\neo4j.bat" (
-        echo [INFO] 检测到缺失的 bin 启动脚本，正在从 libexec 恢复...
-        copy /y "%NEO4J_HOME%\libexec\bin\neo4j.bat" "%NEO4J_HOME%\bin\neo4j.bat" >nul
-        copy /y "%NEO4J_HOME%\libexec\bin\neo4j-admin.bat" "%NEO4J_HOME%\bin\neo4j-admin.bat" >nul
-    ) else (
-        echo [ERROR] Neo4j 未安装。请运行 install-neo4j.bat
+    echo [INFO] 未检测到本地 Neo4j，正在自动一键下载并部署 Neo4j 5.26.0 便携版...
+    call "%SCRIPT_DIR%install-neo4j.bat"
+    if not exist "%NEO4J_HOME%\bin\neo4j.bat" (
+        echo [ERROR] Neo4j 便携版自动下载失败，请检查网络连接
         pause
         exit /b 1
     )
+    echo [INFO] ✓ Neo4j 便携版自动安装就绪
 )
 
 REM 数据目录跟随便携文件夹（存在持久化数据时使用）

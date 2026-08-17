@@ -79,43 +79,107 @@ wait_for_port() {
     exit 1
 }
 
-# 检查前置依赖
-check_dependencies() {
-    log_info "检查前置依赖..."
-
-    # 检查 Node.js
-    if ! command -v node &> /dev/null; then
-        log_error "Node.js 未安装。请访问 https://nodejs.org 安装"
-        exit 1
+# 自动安装/就绪工具环境
+ensure_command() {
+    local cmd="$1"
+    local install_msg="$2"
+    if ! command -v "$cmd" &> /dev/null; then
+        log_warn "$cmd 未找到，正在自动准备..."
+        return 1
     fi
-    log_info "✓ Node.js $(node --version)"
+    return 0
+}
 
-    # 检查 Python
-    if ! command -v python3 &> /dev/null; then
-        log_error "Python3 未安装。请访问 https://python.org 安装"
-        exit 1
-    fi
-    log_info "✓ Python3 $(python3 --version)"
+# 检查与自动安装所有前置依赖（傻瓜式一键就绪，用户无需手动操作）
+check_and_auto_install_dependencies() {
+    log_info "检查并自动准备运行环境..."
 
-    # 检查 uv
+    # 1. 确保 uv 存在（uv 可以管理独立 Python 与虚拟环境）
     if ! command -v uv &> /dev/null; then
-        log_warn "uv 未安装，尝试安装..."
-        curl -LsSf https://astral.sh/uv/install.sh | sh
+        # 优先检查本地用户目录中的 uv
+        if [ -f "$HOME/.cargo/bin/uv" ]; then
+            export PATH="$HOME/.cargo/bin:$PATH"
+        elif [ -f "$HOME/.local/bin/uv" ]; then
+            export PATH="$HOME/.local/bin:$PATH"
+        else
+            log_info "正在自动安装 uv 包管理工具..."
+            curl -LsSf https://astral.sh/uv/install.sh | sh || true
+            export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+        fi
     fi
-    log_info "✓ uv $(uv --version)"
+    if command -v uv &> /dev/null; then
+        log_info "✓ uv $(uv --version)"
+    else
+        log_warn "uv 自动安装未就绪，将尝试使用系统 Python"
+    fi
 
-    # 检查 Java（Neo4j 需要 JVM）
-    if ! command -v java &> /dev/null; then
-        log_error "Java 未安装。Neo4j 需要 JVM，请先安装 Java 17+"
+    # 2. 检查并准备 Python 3.10+
+    if ! command -v python3 &> /dev/null; then
+        log_info "未检测到系统 Python3，正在由 uv 自动准备 Python 3.11..."
+        if command -v uv &> /dev/null; then
+            uv python install 3.11 || true
+        fi
+    fi
+    if command -v python3 &> /dev/null; then
+        log_info "✓ Python3 $(python3 --version 2>&1)"
+    elif command -v uv &> /dev/null; then
+        log_info "✓ Python 将由 uv 自动托管运行"
+    else
+        log_error "Python 自动获取失败，请确保系统联网"
         exit 1
     fi
-    JAVA_VER=$(java -version 2>&1 | head -1 | sed 's/.*version "//;s/".*//')
-    log_info "✓ Java $JAVA_VER"
+
+    # 3. 检查并准备 Node.js
+    if ! command -v node &> /dev/null; then
+        log_warn "Node.js 未安装，尝试自动通过包管理器准备..."
+        if command -v brew &> /dev/null; then
+            brew install node || true
+        elif command -v apt-get &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y nodejs npm || true
+        elif command -v yum &> /dev/null; then
+            sudo yum install -y nodejs npm || true
+        fi
+    fi
+    if command -v node &> /dev/null; then
+        log_info "✓ Node.js $(node --version)"
+    else
+        log_error "Node.js 自动准备失败。请访问 https://nodejs.org 安装 Node.js (>=18.0)"
+        exit 1
+    fi
+
+    # 4. 检查并准备 Java 17+ (Neo4j 所需 JVM)
+    if ! command -v java &> /dev/null; then
+        log_warn "Java 未安装，正在自动通过包管理器准备 OpenJDK 17..."
+        if command -v brew &> /dev/null; then
+            brew install openjdk@17 || true
+            if [ -d "/opt/homebrew/opt/openjdk@17/bin" ]; then
+                export PATH="/opt/homebrew/opt/openjdk@17/bin:$PATH"
+            elif [ -d "/usr/local/opt/openjdk@17/bin" ]; then
+                export PATH="/usr/local/opt/openjdk@17/bin:$PATH"
+            fi
+        elif command -v apt-get &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y openjdk-17-jre-headless || true
+        elif command -v yum &> /dev/null; then
+            sudo yum install -y java-17-openjdk || true
+        fi
+    fi
+    if command -v java &> /dev/null; then
+        JAVA_VER=$(java -version 2>&1 | head -1 | sed 's/.*version "//;s/".*//')
+        log_info "✓ Java $JAVA_VER"
+    else
+        log_error "Java 17+ 自动准备失败。Neo4j 需要 JVM，请通过 Homebrew 或官网安装 OpenJDK 17"
+        exit 1
+    fi
+}
+
+# 检查依赖别名封装
+check_dependencies() {
+    check_and_auto_install_dependencies
 }
 
 # 检查并启动 Neo4j
 start_neo4j() {
-    log_info "启动 Neo4j..."
+    log_info "检查与启动 Neo4j 知识图谱数据库..."
 
     # Neo4j 的配置解析无法正确处理含中文等非 ASCII 字符的路径。
     # 解决方案：创建 ASCII 软链别名（~/mirofish-portable -> 项目目录），
@@ -139,7 +203,7 @@ start_neo4j() {
 
     # 检查 Neo4j 是否已经运行
     if port_listening 7687; then
-        log_warn "Neo4j 已在监听端口 7687"
+        log_info "✓ Neo4j 已在监听端口 7687，跳过启动"
         return 0
     fi
 
@@ -150,10 +214,17 @@ start_neo4j() {
         log_info "检测到 Neo4j 安装在 $NEO4J_HOME"
     fi
 
-    # 检查 Neo4j 是否存在
+    # 自动傻瓜式下载与安装 Neo4j（用户第一次运行无需手动执行 install-neo4j.sh）
     if [ ! -d "$NEO4J_HOME" ]; then
-        log_error "Neo4j 未安装。请运行 ./scripts/install-neo4j.sh"
-        exit 1
+        log_info "未检测到本地 Neo4j，正在自动一键下载并部署 Neo4j 5.26.0 便携版..."
+        mkdir -p "$NEO4J_DIR"
+        local os_type=$(uname -s)
+        local neo4j_url="https://dist.neo4j.org/neo4j-community-5.26.0-unix.tar.gz"
+        curl -L -o "$NEO4J_DIR/neo4j-5.26.0-unix.tar.gz" "$neo4j_url"
+        tar -xzf "$NEO4J_DIR/neo4j-5.26.0-unix.tar.gz" -C "$NEO4J_DIR"
+        mv "$NEO4J_DIR/neo4j-community-5.26.0" "$NEO4J_HOME"
+        rm -f "$NEO4J_DIR/neo4j-5.26.0-unix.tar.gz"
+        log_info "✓ Neo4j 便携版自动安装就绪"
     fi
 
     # 自修复：Homebrew 拷贝布局下 bin/neo4j 可能是损坏的占位文件，恢复为 libexec 软链
