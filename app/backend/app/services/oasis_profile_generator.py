@@ -819,10 +819,10 @@ class OasisProfileGenerator:
                 "interested_topics": ["权力", "秩序", "知识"],
             }
 
-        elif entity_type_lower in ["mediaoutlet", "socialmediaplatform"]:
+        elif entity_type_lower in ["mediaoutlet", "socialmediaplatform", "infobroker", "courierguild"]:
             return {
                 "bio": entity_summary[:200] if entity_summary else f"{entity_type}: {entity_name}",
-                "persona": entity_summary or f"{entity_name}是一个{entity_type}，在世界中负责信息传递与舆论引导职能。",
+                "persona": entity_summary or f"{entity_name}是一个{entity_type}，在世界中负责重大事态通报与情报流通。",
                 "age": 30,  # 机构虚拟年龄
                 "gender": "other",  # 机构使用other
                 "mbti": "ISTJ",  # 机构风格：严谨保守

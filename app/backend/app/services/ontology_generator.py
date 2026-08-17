@@ -257,13 +257,13 @@ class OntologyGenerator:
 """
 
         message += """
-请根据以上内容，设计适合社会舆论模拟的实体类型和关系类型。
+请根据以上内容，设计适合小说与架空世界推演的实体类型和关系类型。
 
 **必须遵守的规则**：
 1. 必须正好输出10个实体类型
-2. 最后2个必须是兜底类型：Person（个人兜底）和 Organization（组织兜底）
-3. 前8个是根据文本内容设计的具体类型
-4. 所有实体类型必须是现实中可以发声的主体，不能是抽象概念
+2. 包含主要人物/主宰（Person）、势力/宗门/国家（Faction/Organization）、地点/世界秘境（Location/Realm）、关键道具/法宝/资源（Item/Artifact）、法则/事件规则（Law/Rule）等
+3. 最后2个必须是兜底类型：Person（个人兜底）和 Organization（组织/势力兜底）
+4. 前8个是根据小说与设定文本内容精心设计的具体核心类型
 5. 属性名不能使用 name、uuid、group_id 等保留字，用 full_name、org_name 等替代
 """
 
@@ -372,7 +372,7 @@ class OntologyGenerator:
         code_lines = [
             '"""',
             '自定义实体类型定义',
-            '由Miroworld自动生成，用于社会舆论模拟',
+            '由Miroworld自动生成，用于世界观与小说沙盘推演',
             '"""',
             '',
             'from pydantic import Field',
