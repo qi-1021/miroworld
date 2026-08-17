@@ -85,10 +85,18 @@ def _run_async(coro):
     在同步上下文中运行异步协程
 
     使用专用后台线程的事件循环，通过 run_coroutine_threadsafe 提交任务。
-    这样 Neo4j driver 始终绑定到同一个循环，避免跨循环问题。
+    显式通过 context.run 传递当前线程的 ContextVars（包含 current_task_id），
+    确保异步循环内部执行的所有大模型交互与日志均能正确关联当前 Task！
     """
+    import contextvars
     _ensure_async_loop()
-    future = asyncio.run_coroutine_threadsafe(coro, _async_loop)
+    ctx = contextvars.copy_context()
+
+    async def _runner():
+        return await coro
+
+    # 包装在当前上下文中执行
+    future = asyncio.run_coroutine_threadsafe(ctx.run(_runner), _async_loop)
     return future.result(timeout=600)  # 10分钟超时（兼容网关慢响应+重试）
 
 
