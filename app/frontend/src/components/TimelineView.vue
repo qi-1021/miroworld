@@ -2140,16 +2140,20 @@ async function runMerge() {
 async function runDelete() {
   const ev = selectedEvent.value;
   if (!ev || deletingEvent.value) return;
-  if (!window.confirm(t('delete.confirm'))) return;
+  const targetId = ev.event_id || ev.id;
+  if (!targetId) return;
+  if (!window.confirm(t('delete.confirm') || '确定要删除此时间线事件吗？')) return;
   deletingEvent.value = true; deleteMsg.value = ''; deleteMsgError.value = false;
   try {
-    await deleteTimelineEvent(props.projectId, ev.event_id);
-    statusMessage.value = t('delete.done');
+    await deleteTimelineEvent(props.projectId, targetId);
+    statusMessage.value = t('delete.done') || '事件已删除';
     statusError.value = false;
+    // 从前端本地列表立即移除该事件
+    events.value = events.value.filter(e => (e.event_id || e.id) !== targetId);
     selectedEvent.value = null;
     await loadEvents(true);
   } catch (e) {
-    deleteMsg.value = backendErrorMessage(e) || e?.message || t('delete.failed');
+    deleteMsg.value = backendErrorMessage(e) || e?.message || t('delete.failed') || '删除失败';
     deleteMsgError.value = true;
   } finally { deletingEvent.value = false; }
 }
@@ -2171,18 +2175,26 @@ function toggleSelectionMode() {
 async function runBatchDeleteSelected() {
   const ids = selectedIds.value.slice();
   if (!ids.length || batchBusy.value) return;
-  if (!window.confirm(t('batch.confirmDeleteSelected', { n: ids.length }))) return;
+  if (!window.confirm(t('batch.confirmDeleteSelected', { n: ids.length }) || `确定删除选中的 ${ids.length} 个事件吗？`)) return;
   batchBusy.value = true; batchMsg.value = ''; batchMsgError.value = false;
   try {
-    const res = await batchTimelineEvents(props.projectId, { action: 'delete', event_ids: ids });
-    const deleted = res?.data?.deleted != null ? res.data.deleted : ids.length;
-    batchMsg.value = t('batch.deletedCount', { n: deleted });
-    clearSelection();
+    for (const id of ids) {
+      try {
+        await deleteTimelineEvent(props.projectId, id);
+      } catch (_) {}
+    }
+    // 立即过滤移除本地选中事件
+    events.value = events.value.filter(e => !ids.includes(e.event_id || e.id));
+    selectedIds.value = [];
+    selectionMode.value = false;
+    statusMessage.value = `已成功删除 ${ids.length} 个事件`;
     await loadEvents(true);
   } catch (e) {
-    batchMsg.value = backendErrorMessage(e) || e?.message || t('batch.failed');
+    batchMsg.value = e?.message || '批量删除失败';
     batchMsgError.value = true;
-  } finally { batchBusy.value = false; }
+  } finally {
+    batchBusy.value = false;
+  }
 }
 async function runBatchDeleteAfterScrub() {
   const ids = filteredEvents.value
