@@ -177,26 +177,24 @@ def parse_time_anchor(time_text: str):
         "time_kind": "unspecified", "sort_lower": None, "sort_upper": None,
     }
 
-    # 1. 绝对纪年与架空小说历法（星历2045年 / 1098年 / 神武三年）
-    m_era = _RE_ERA_YEAR.search(t)
-    if m_era:
-        yr = int(m_era.group(1))
-        out["year"] = yr; out["year_lower"] = yr; out["year_upper"] = yr
-        out["time_kind"] = "year"
-        out["sort_lower"] = yr * 10.0; out["sort_upper"] = yr * 10.0
+    # 1. 优先匹配年龄锚（如：五岁生日、15岁、二十岁）
+    m_age = _RE_AGE.search(t)
+    if m_age:
+        age = _cn_to_int(m_age.group(1))
+        out["age"] = age; out["age_lower"] = age; out["age_upper"] = age
+        out["time_kind"] = "age"
+        out["sort_lower"] = float(age); out["sort_upper"] = float(age)
         return out
 
-    # 2. 汉字纪年（如 建安三年、光和五年）
-    m_cn_yr = _RE_CN_YEAR.search(t)
-    if m_cn_yr:
-        yr = _cn_to_int(m_cn_yr.group(1))
-        if yr > 0:
-            out["year"] = yr; out["year_lower"] = yr; out["year_upper"] = yr
-            out["time_kind"] = "year"
-            out["sort_lower"] = yr * 10.0; out["sort_upper"] = yr * 10.0
+    # 2. 优先匹配阶段词表（十多岁的少年 / 小时候 / 幼年 / 童年 / 上学年龄）
+    for phase, (lo, hi) in PHASE_RANGES.items():
+        if phase in t:
+            out["age_lower"] = lo; out["age_upper"] = hi
+            out["time_kind"] = "phase"
+            out["sort_lower"] = float(lo); out["sort_upper"] = float(hi)
             return out
 
-    # 3. 相对时间跨度（三年后 / 次年 / 翌年 / 两年训练后 / 数年经历后 / 半年后 / 5天后）
+    # 3. 相对时间跨度与经历（经过X年的训练 / 几年医疗经历后 / 三年后 / 次年 / 翌年 / 半年后 / 5天后）
     if "次年" in t or "翌年" in t or "第二年" in t:
         out["time_kind"] = "period"
         out["sort_lower"] = 1.0 * 10.0
@@ -206,33 +204,48 @@ def parse_time_anchor(time_text: str):
         out["time_kind"] = "literal"
         return out
 
-    # 匹配：两年后 / 经过两年训练和数年医疗经历后 / 两年训练后
+    # 匹配：经过两年的训练 / 两年后 / 积累了好几年的医疗经历之后
     m_rya = _RE_REL_YEAR_AFTER.search(t)
-    if m_rya:
-        delta_y = _cn_to_int(m_rya.group(1)) or 1
-        # 如果句中还包含"数年"或多段经历，累加跨度
-        if "数年" in t and delta_y < 10:
+    if m_rya or "经过" in t or "经历" in t:
+        delta_y = _cn_to_int(m_rya.group(1)) if m_rya else 2
+        delta_y = delta_y or 2
+        if "数年" in t or "好几年" in t or "多年" in t:
             delta_y += 3
         out["time_kind"] = "period"
         out["sort_lower"] = float(delta_y) * 10.0
         out["sort_upper"] = float(delta_y) * 10.0
         return out
 
-    # 匹配单独的"数年后"或"多年后"
-    if "数年后" in t or "多年后" in t or "数年" in t:
+    # 匹配单独的"数年后"或"多年后"或"这些年里"
+    if "数年后" in t or "多年后" in t or "数年" in t or "这些年" in t:
         out["time_kind"] = "period"
         out["sort_lower"] = 30.0
         out["sort_upper"] = 30.0
         return out
 
-    # 4. 年龄锚
-    m_age = _RE_AGE.search(t)
-    if m_age:
-        age = _cn_to_int(m_age.group(1))
-        out["age"] = age; out["age_lower"] = age; out["age_upper"] = age
-        out["time_kind"] = "age"
-        out["sort_lower"] = float(age); out["sort_upper"] = float(age)
-        return out
+    # 4. 绝对纪年与架空小说历法（1085年 / 1098年 / 星历2045年 / 圣历三年）
+    m_era = _RE_ERA_YEAR.search(t)
+    if m_era:
+        yr = int(m_era.group(1))
+        # 只有数字 >= 100 或明确带有历法/时代前缀时才判定为绝对纪年，避免将"两年训练"中的"2"当作绝对年份
+        has_prefix = any(p in t for p in ("公元", "星历", "天元", "神武", "新历", "创世历", "西历", "泰拉历", "圣历", "光和", "元和", "建安", "永徽", "贞观", "开元", "洪武", "万历", "天启", "崇祯"))
+        if yr >= 100 or has_prefix:
+            out["year"] = yr; out["year_lower"] = yr; out["year_upper"] = yr
+            out["time_kind"] = "year"
+            out["sort_lower"] = yr * 10.0; out["sort_upper"] = yr * 10.0
+            return out
+
+    # 5. 汉字纪年（如 建安三年、光和五年）
+    has_cn_prefix = any(p in t for p in ("建安", "光和", "元和", "永徽", "贞观", "开元", "洪武", "万历", "天启", "崇祯", "朝", "年间", "代"))
+    if has_cn_prefix:
+        m_cn_yr = _RE_CN_YEAR.search(t)
+        if m_cn_yr:
+            yr = _cn_to_int(m_cn_yr.group(1))
+            if yr > 0:
+                out["year"] = yr; out["year_lower"] = yr; out["year_upper"] = yr
+                out["time_kind"] = "year"
+                out["sort_lower"] = yr * 10.0; out["sort_upper"] = yr * 10.0
+                return out
 
     # 5. 阶段词表
     for phase, (lo, hi) in PHASE_RANGES.items():

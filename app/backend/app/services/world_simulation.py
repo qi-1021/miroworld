@@ -1459,13 +1459,19 @@ class WorldSimulationService:
             cmd += ["--ipc-dir", ipc_dir]
         if extra_args:
             cmd += extra_args
-        logger.info(f"启动世界模拟子进程: {cmd}")
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
+
         proc = subprocess.Popen(
             cmd,
             cwd=os.path.dirname(script),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding='utf-8',
+            errors='replace',
+            env=env,
         )
         try:
             output, _ = proc.communicate(timeout=3600)
@@ -1484,14 +1490,16 @@ class WorldSimulationService:
     def _get_simulation_python() -> str:
         """获取模拟环境 Python（.venv-simulation 优先）"""
         env_python = os.environ.get('SIMULATION_PYTHON')
-        if env_python:
+        if env_python and os.path.isfile(env_python):
             return env_python
         backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         candidates = [
-            os.path.join(backend_dir, '.venv-simulation/bin/python'),
-            os.path.join(backend_dir, '.venv-simulation/Scripts/python.exe'),
+            os.path.join(backend_dir, '.venv-simulation', 'Scripts', 'python.exe'),
+            os.path.join(backend_dir, '.venv-simulation', 'bin', 'python'),
+            os.path.join(backend_dir, '.venv', 'Scripts', 'python.exe'),
+            os.path.join(backend_dir, '.venv', 'bin', 'python'),
         ]
         for c in candidates:
-            if os.path.exists(c):
+            if os.path.isfile(c):
                 return c
-        return 'python'
+        return sys.executable or 'python'

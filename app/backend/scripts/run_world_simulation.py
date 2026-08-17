@@ -175,6 +175,13 @@ def parse_action(text: str) -> Dict[str, Any]:
                 if priority > best_priority:
                     best_priority = priority
                     target = text_clean[idx + len(kw):].strip("。！？!?，, ")
+                    # 特殊处理：如果是“向/对”引导的复合句，检查其后是否包含具体的对话谓语
+                    if kw in ("向", "对"):
+                        for inner_kw in ("打听", "问", "询问", "说", "汇报", "下达", "商讨", "研讨", "沟通"):
+                            inner_idx = target.find(inner_kw)
+                            if inner_idx != -1:
+                                target = target[inner_idx + len(inner_kw):].strip("。！？!?，, ")
+                                break
                     # 截断次要从句
                     for stop in TARGET_STOPWORDS:
                         stop_idx = target.find(stop)
@@ -663,11 +670,7 @@ class WorldEnv:
                     return f"你已经在【{loc.name}】了，正在开展实地行动"
                 character.location = loc_id
                 return f"你来到了【{loc.name}】"
-            # 兜底：若目标包含当前地点的核心字样，视为在当前地点深入行动
-            curr_loc = self.locations.get(character.location)
-            if curr_loc and target and any(k in target for k in (curr_loc.name[:2], "前哨", "基地", "区域", "冰原")):
-                return f"你在【{curr_loc.name}】展开深入行动"
-            return f"你在【{curr_loc.name if curr_loc else '原地'}】调整行动方向"
+            return f"未能找到地点「{target or '目标地点'}」，你留在原地"
 
         if atype == "talk":
             present = [
@@ -676,9 +679,8 @@ class WorldEnv:
             ]
             if present:
                 names = "、".join(c.name for c in present)
-                return f"你与{names}交谈并协同：{target or '商讨当前行动方案'}"
-            # 若对方不在本地点，输出联络或传达信息
-            return f"你发出讯息与指令：{target or '同步任务进展'}"
+                return f"你与{names}交谈：{target or '商讨当前行动方案'}"
+            return "这里没有可以交谈的对象，你自言自语"
 
         if atype == "explore":
             loc = self.locations.get(character.location)

@@ -91,12 +91,12 @@ def test_normalize_event_sort_non_null():
     assert ev["sort_upper"] is not None
     assert ev["location_name"] == "罗德岛"
     assert ev["location_kind"] == "facility"
-    # 无显式 time_text 时用 seq 兜底
+    # 无显式 time_text 时用 seq 兜底（seq=7 基准为 7000.0）
     ev2 = svc._normalize_event(
         {"summary": "某事件", "time_text": "", "ev_type": "other"},
         "proj_0123456789ab", "story", 0, "llm", 7,
     )
-    assert ev2["sort_lower"] == 7.0
+    assert ev2["sort_lower"] == 7000.0
 
 
 # ---------------------------------------------------------------------------

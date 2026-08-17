@@ -13,7 +13,31 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from typing import Any, Optional
+
+
+def _safe_replace(src: str, dst: str, max_retries: int = 5, retry_delay: float = 0.05) -> None:
+    """跨平台安全原子替换。
+    
+    在 Windows 上，当目标文件被读取方短时句柄锁定（如杀毒软件扫描、并发轮询读取）时，
+    os.replace 会抛出 PermissionError (WinError 5 / 32)。
+    通过短暂指数退避重试可安全成功替换。
+    """
+    for i in range(max_retries):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == max_retries - 1:
+                raise
+            time.sleep(retry_delay * (2 ** i))
+        except OSError as e:
+            # Windows error code 32: ERROR_SHARING_VIOLATION, 5: ERROR_ACCESS_DENIED
+            if getattr(e, 'winerror', None) in (5, 32) and i < max_retries - 1:
+                time.sleep(retry_delay * (2 ** i))
+            else:
+                raise
 
 
 def atomic_write_text(path: str, text: str) -> None:
@@ -29,7 +53,7 @@ def atomic_write_text(path: str, text: str) -> None:
             f.write(text)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp_path, path)
+        _safe_replace(tmp_path, path)
     except Exception:
         try:
             os.unlink(tmp_path)
@@ -76,7 +100,7 @@ def atomic_write_bytes(path: str, data: bytes) -> None:
             f.write(data)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp_path, path)
+        _safe_replace(tmp_path, path)
     except Exception:
         try:
             os.unlink(tmp_path)

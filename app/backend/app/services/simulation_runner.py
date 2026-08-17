@@ -51,14 +51,20 @@ def _get_simulation_python() -> str:
         logger.info(f"使用环境变量指定的模拟 Python: {env_python}")
         return env_python
 
-    # 2. 检查项目目录下的独立模拟环境
+    # 2. 检查项目目录下的独立模拟环境（兼顾 Linux/macOS 与 Windows）
     backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    sim_venv_python = os.path.join(backend_dir, '.venv-simulation', 'bin', 'python')
-    if os.path.isfile(sim_venv_python):
-        logger.info(f"使用独立模拟环境: {sim_venv_python}")
-        return sim_venv_python
+    candidates = [
+        os.path.join(backend_dir, '.venv-simulation', 'Scripts', 'python.exe'),  # Windows
+        os.path.join(backend_dir, '.venv-simulation', 'bin', 'python'),          # POSIX
+        os.path.join(backend_dir, '.venv', 'Scripts', 'python.exe'),             # Windows main venv
+        os.path.join(backend_dir, '.venv', 'bin', 'python'),                     # POSIX main venv
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            logger.info(f"使用模拟运行环境: {p}")
+            return p
 
-    # 3. 回退到当前解释器（可能会因依赖冲突失败）
+    # 3. 回退到当前解释器
     logger.warning("未找到独立模拟环境，使用当前 Python（可能存在依赖冲突）")
     return sys.executable
 
@@ -482,19 +488,23 @@ class SimulationRunner:
                     logger.warning(f"解析项目模型环境失败，沿用 .env: {exc}")
 
             # 设置工作目录为模拟目录（数据库等文件会生成在此）
-            # 使用 start_new_session=True 创建新的进程组，确保可以通过 os.killpg 终止所有子进程
+            # 跨平台进程组创建：Windows 使用 CREATE_NEW_PROCESS_GROUP，Unix 使用 start_new_session
+            popen_kwargs = {
+                "cwd": sim_dir,
+                "stdout": main_log_file,
+                "stderr": subprocess.STDOUT,
+                "text": True,
+                "encoding": 'utf-8',
+                "bufsize": 1,
+                "env": env,
+            }
+            if IS_WINDOWS:
+                popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            else:
+                popen_kwargs["start_new_session"] = True
+
             try:
-                process = subprocess.Popen(
-                    cmd,
-                    cwd=sim_dir,
-                    stdout=main_log_file,
-                    stderr=subprocess.STDOUT,  # stderr 也写入同一个文件
-                    text=True,
-                    encoding='utf-8',  # 显式指定编码
-                    bufsize=1,
-                    env=env,  # 传递带有 UTF-8 设置的环境变量
-                    start_new_session=True,  # 创建新进程组，确保服务器关闭时能终止所有相关进程
-                )
+                process = subprocess.Popen(cmd, **popen_kwargs)
             except Exception:
                 # 启动失败时关闭日志句柄，避免泄漏
                 try:

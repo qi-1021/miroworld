@@ -1486,28 +1486,25 @@ def _normalize_event(raw: Dict[str, Any], project_id: str, source: str,
         sl = anchor.get("sort_lower")
         su = anchor.get("sort_upper")
         tkind = anchor.get("time_kind")
-        if sl is not None and tkind in ("year", "age", "phase"):
-            # 绝对纪年与年龄：以绝对时间为主排序键，叙述序作为微小偏移保证同时间下顺序稳定
-            ev["sort_lower"] = float(sl) * 100.0 + (float(seq) * 0.001)
-            ev["sort_upper"] = float(su if su is not None else sl) * 100.0 + (float(seq) * 0.001)
-        elif sl is not None and tkind == "period":
-            # 相对时间跨度（次年、三年后）：以出现时的自然叙事流 seq 为基准向前平移，绝不沉底或冲顶
-            ev["sort_lower"] = float(seq) * 10.0 + float(sl)
-            ev["sort_upper"] = float(seq) * 10.0 + float(su if su is not None else sl)
+        if sl is not None and tkind == "year" and (ev.get("year") or 0) >= 100:
+            # 明确历史大纪年（如1098年、星历2045年）：以大纪年为主键
+            ev["sort_lower"] = float(sl) * 1000.0 + (float(seq) * 0.01)
+            ev["sort_upper"] = float(su if su is not None else sl) * 1000.0 + (float(seq) * 0.01)
+        elif sl is not None and tkind in ("age", "phase", "period"):
+            # 年龄/阶段/相对跨度：以自然篇章叙事流为主轴，叠加微调偏移，保证严格单调正向流动
+            ev["sort_lower"] = float(seq) * 1000.0 + float(sl)
+            ev["sort_upper"] = float(seq) * 1000.0 + float(su if su is not None else sl)
         else:
-            ev["sort_lower"] = float(seq) * 10.0
-            ev["sort_upper"] = float(seq) * 10.0
+            ev["sort_lower"] = float(seq) * 1000.0
+            ev["sort_upper"] = float(seq) * 1000.0
     else:
-        # 无明确时间表达：严格按源文本叙述流的篇章先后顺序 seq 排序
-        if ev["year"] is not None:
-            ev["sort_lower"] = float(ev["year"]) * 100.0 + (float(seq) * 0.001)
-            ev["sort_upper"] = float(ev["year"]) * 100.0 + (float(seq) * 0.001)
-        elif ev["age"] is not None:
-            ev["sort_lower"] = float(ev["age"]) * 100.0 + (float(seq) * 0.001)
-            ev["sort_upper"] = float(ev["age"]) * 100.0 + (float(seq) * 0.001)
+        # 无明确时间锚：严格按源文本叙述流的篇章先后顺序 seq 排序
+        if ev.get("year") and float(ev["year"]) >= 100:
+            ev["sort_lower"] = float(ev["year"]) * 1000.0 + (float(seq) * 0.01)
+            ev["sort_upper"] = float(ev["year"]) * 1000.0 + (float(seq) * 0.01)
         else:
-            ev["sort_lower"] = float(seq) * 10.0
-            ev["sort_upper"] = float(seq) * 10.0
+            ev["sort_lower"] = float(seq) * 1000.0
+            ev["sort_upper"] = float(seq) * 1000.0
     return ev
 
 
