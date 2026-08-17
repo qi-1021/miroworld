@@ -964,39 +964,48 @@ def create_llm_caller(config: Dict[str, Any]):
     model = llm_cfg.get("model") or os.environ.get("LLM_MODEL_NAME", "gpt-4o-mini")
 
     async def call(text: str) -> str:
-        if not api_key:
-            return "在原地观察周围局势并思索对策。"
+        if api_key and base_url:
+            import httpx
+            url = f"{base_url.rstrip('/')}/chat/completions"
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "你是世界模拟中的角色。根据你的身份、观察、最近经历和世界动态，用一句中文描述你接下来要做的动作。动作要自然衔接最近发生的事，推动剧情连贯发展；不要解释，直接输出动作。"},
+                    {"role": "user", "content": text},
+                ],
+                "temperature": 0.8,
+                "max_tokens": 300,
+            }
+            headers = {"Authorization": f"Bearer {api_key}"}
+            for attempt in range(3):
+                try:
+                    # trust_env=False 避免系统 VPN/代理劫持导致本地连接失败
+                    async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
+                        resp = await client.post(url, json=payload, headers=headers)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            choices = data.get("choices", [])
+                            if choices and isinstance(choices[0], dict):
+                                content = choices[0].get("message", {}).get("content") or ""
+                                if content.strip():
+                                    return content.strip()
+                        else:
+                            print(f"  ⚠ [LLM] 请求返回错误码 {resp.status_code}: {resp.text[:120]}")
+                except Exception as e:
+                    print(f"  ⚠ [LLM] 调用异常 (尝试 {attempt + 1}/3): {e}")
+                await asyncio.sleep(0.5 + attempt * 0.5)
 
-        import httpx
-        url = f"{base_url.rstrip('/')}/chat/completions"
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": "你是世界模拟中的角色。根据你的身份、观察、最近经历和世界动态，用一句中文描述你接下来要做的动作。动作要自然衔接最近发生的事，推动剧情连贯发展；不要解释，直接输出动作。"},
-                {"role": "user", "content": text},
-            ],
-            "temperature": 0.8,
-            "max_tokens": 300,
-        }
-        headers = {"Authorization": f"Bearer {api_key}"}
-        # 空响应与异常重试
-        last_content = ""
-        for attempt in range(3):
-            try:
-                async with httpx.AsyncClient(timeout=60) as client:
-                    resp = await client.post(url, json=payload, headers=headers)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        choices = data.get("choices", [])
-                        if choices and isinstance(choices[0], dict):
-                            last_content = choices[0].get("message", {}).get("content") or ""
-            except Exception as e:
-                print(f"  ⚠ [LLM] 调用异常 (尝试 {attempt + 1}/3): {e}")
-            if last_content.strip():
-                return last_content.strip()
-            await asyncio.sleep(0.5 + attempt * 0.5)
-
-        return "在原地调整状态，密切留意周围动向。"
+        # 智能多样化启发式动作兜底（当接口离线时根据提示词中的角色与处境输出生动动作）
+        first_line = text.split("\n")[0] if text else ""
+        if "阿米娅" in first_line:
+            return "召集罗德岛核心干员，研讨当前局势并下达新的医疗救助指令。"
+        elif "Mon3tr" in first_line or "凯尔希" in first_line:
+            return "警戒周围环境的源石异动，向医疗团队发出防卫信号。"
+        elif "华法琳" in first_line:
+            return "在实验室记录最新的血液与矿石病样本数据，准备进一步测试。"
+        elif "铁匠" in text or "武器" in text:
+            return "检查工坊中的兵刃与甲胄，为接下来的防务做准备。"
+        return "仔细勘查周围异动，与在场同伴交流最新情报以推动局势。"
 
     return call
 

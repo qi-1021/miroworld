@@ -196,7 +196,7 @@ def parse_time_anchor(time_text: str):
             out["sort_lower"] = yr * 10.0; out["sort_upper"] = yr * 10.0
             return out
 
-    # 3. 相对时间跨度（三年后 / 次年 / 翌年 / 半年后 / 5天后）
+    # 3. 相对时间跨度（三年后 / 次年 / 翌年 / 两年训练后 / 数年经历后 / 半年后 / 5天后）
     if "次年" in t or "翌年" in t or "第二年" in t:
         out["time_kind"] = "period"
         out["sort_lower"] = 1.0 * 10.0
@@ -206,12 +206,23 @@ def parse_time_anchor(time_text: str):
         out["time_kind"] = "literal"
         return out
 
+    # 匹配：两年后 / 经过两年训练和数年医疗经历后 / 两年训练后
     m_rya = _RE_REL_YEAR_AFTER.search(t)
     if m_rya:
         delta_y = _cn_to_int(m_rya.group(1)) or 1
+        # 如果句中还包含"数年"或多段经历，累加跨度
+        if "数年" in t and delta_y < 10:
+            delta_y += 3
         out["time_kind"] = "period"
         out["sort_lower"] = float(delta_y) * 10.0
         out["sort_upper"] = float(delta_y) * 10.0
+        return out
+
+    # 匹配单独的"数年后"或"多年后"
+    if "数年后" in t or "多年后" in t or "数年" in t:
+        out["time_kind"] = "period"
+        out["sort_lower"] = 30.0
+        out["sort_upper"] = 30.0
         return out
 
     # 4. 年龄锚
