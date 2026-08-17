@@ -604,12 +604,12 @@
               <option value="">{{ $t('world.allCharacters') }}</option>
               <option v-for="c in graphCharacters" :key="c" :value="c">{{ c }}</option>
             </select>
-            <button class="mini-btn ghost" @click="graphZoom = Math.max(0.5, graphZoom - 0.2)">−</button>
-            <span class="sim-graph-zoom">{{ Math.round(graphZoom * 100) }}%</span>
-            <button class="mini-btn ghost" @click="graphZoom = Math.min(2, graphZoom + 0.2)">+</button>
+            <button class="mini-btn ghost" @click="simGraphZoom = Math.max(0.5, simGraphZoom - 0.2)">−</button>
+            <span class="sim-graph-zoom">{{ Math.round(simGraphZoom * 100) }}%</span>
+            <button class="mini-btn ghost" @click="simGraphZoom = Math.min(2, simGraphZoom + 0.2)">+</button>
             <button class="mini-btn ghost" @click="exportGraph">{{ $t('world.exportGraph') }}</button>
           </div>
-          <div class="sim-graph-zoom-wrap" :style="{ transform: 'scale(' + graphZoom + ')', transformOrigin: 'top left' }">
+          <div class="sim-graph-zoom-wrap" :style="{ transform: 'scale(' + simGraphZoom + ')', transformOrigin: 'top left' }">
             <svg :viewBox="`0 0 ${eventGraphData.width} ${eventGraphData.height}`" class="sim-graph-svg">
               <line
                 v-for="(ed, i) in eventGraphData.edges"
@@ -1046,47 +1046,205 @@
           </div>
         </div>
 
-        <!-- SVG 力导向可视化 -->
-        <div v-if="graphInfo && graphNodes.length" class="graph-viz-wrap">
-          <svg
-            ref="graphSvg"
-            :viewBox="`0 0 ${GV_W} ${GV_H}`"
-            class="graph-svg"
-            @click="selectedGraphNode = null"
-          >
-            <line
-              v-for="(e, i) in graphEdges"
-              :key="'e' + i"
-              :x1="graphNodeX(e.source)"
-              :y1="graphNodeY(e.source)"
-              :x2="graphNodeX(e.target)"
-              :y2="graphNodeY(e.target)"
-              class="graph-edge"
-            />
-            <g
-              v-for="(n, i) in graphNodes"
-              :key="'n' + i"
-              :transform="`translate(${graphNodeX(n.uuid)},${graphNodeY(n.uuid)})`"
-              @click.stop="selectedGraphNode = n"
-            >
-              <circle
-                :r="graphNodeR(n)"
-                class="graph-node"
-                :class="{ selected: selectedGraphNode && selectedGraphNode.uuid === n.uuid }"
-                :style="{ fill: graphNodeColor(n) }"
+        <!-- SVG 地图级交互力导向可视化 -->
+        <div v-if="graphInfo && graphNodes.length" class="graph-viz-wrap" :class="{ fullscreen: isGraphFullscreen }">
+          <!-- 顶部地图工具栏：搜索、缩放、聚焦、全屏 -->
+          <div class="graph-toolbar">
+            <div class="graph-search-box">
+              <span class="search-icon">🔍</span>
+              <input
+                v-model="graphSearchQuery"
+                type="text"
+                class="graph-search-input"
+                placeholder="搜索图谱实体节点 (回车定位)..."
+                @keyup.enter="focusSearchedNode"
               />
-              <text class="graph-node-label" text-anchor="middle" :y="graphNodeR(n) + 14">{{ n.name }}</text>
-            </g>
-          </svg>
+              <button
+                v-if="graphSearchQuery"
+                type="button"
+                class="graph-search-clear"
+                @click="graphSearchQuery = ''; selectedGraphNode = null"
+              >✕</button>
+            </div>
 
-          <div v-if="selectedGraphNode" class="graph-node-info">
-            <div class="graph-node-info-name">{{ selectedGraphNode.name }}</div>
-            <div class="graph-node-info-type">{{ graphNodeType(selectedGraphNode) }}</div>
-            <div v-if="selectedGraphNode.summary" class="graph-node-info-summary">{{ selectedGraphNode.summary }}</div>
-            <div v-if="selectedGraphAttrs.length" class="graph-node-info-attrs">
-              <div v-for="(row, ai) in selectedGraphAttrs" :key="ai" class="attr-row">
-                <span class="attr-k">{{ row[0] }}</span>
-                <span class="attr-v">{{ row[1] }}</span>
+            <div v-if="graphSearchResults.length > 0 && graphSearchQuery.trim()" class="graph-search-dropdown">
+              <div
+                v-for="sn in graphSearchResults.slice(0, 6)"
+                :key="sn.uuid"
+                class="search-result-item"
+                :class="{ active: selectedGraphNode && selectedGraphNode.uuid === sn.uuid }"
+                @click="locateAndSelectNode(sn)"
+              >
+                <span class="sn-dot" :style="{ background: graphNodeColor(sn) }"></span>
+                <span class="sn-name">{{ sn.name }}</span>
+                <span class="sn-type">{{ graphNodeType(sn) }}</span>
+              </div>
+            </div>
+
+            <div class="graph-controls">
+              <span class="graph-zoom-label">{{ Math.round(graphZoom * 100) }}%</span>
+              <button type="button" class="graph-ctrl-btn" title="放大" @click="zoomGraph(0.2)">➕</button>
+              <button type="button" class="graph-ctrl-btn" title="缩小" @click="zoomGraph(-0.2)">➖</button>
+              <button type="button" class="graph-ctrl-btn" title="重置地图视角" @click="resetGraphView">🎯 复位</button>
+              <button type="button" class="graph-ctrl-btn" :title="isGraphFullscreen ? '退出全屏' : '全屏地图'" @click="toggleGraphFullscreen">
+                {{ isGraphFullscreen ? '🗗 退出' : '⛶ 全屏' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- 地图主体画布容器（支持鼠标拖动画布、滚轮缩放、节点高亮关系） -->
+          <div
+            ref="graphCanvasWrap"
+            class="graph-canvas-viewport"
+            :class="{ dragging: isPanningGraph }"
+            @mousedown="startPanGraph"
+            @wheel.prevent="handleGraphWheel"
+          >
+            <svg
+              ref="graphSvg"
+              :viewBox="`0 0 ${GV_W} ${GV_H}`"
+              class="graph-svg"
+            >
+              <defs>
+                <!-- 坐标网格底纹：赋予地图空间感 -->
+                <pattern id="graph-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                  <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(148, 163, 184, 0.08)" stroke-width="1" />
+                  <circle cx="40" cy="40" r="1.2" fill="rgba(148, 163, 184, 0.18)" />
+                </pattern>
+                <!-- 关系连线流动光效 / 箭头 -->
+                <marker id="edge-arrow" viewBox="0 -5 10 10" refX="22" refY="0" markerWidth="6" markerHeight="6" orient="auto">
+                  <path d="M0,-4L10,0L0,4" fill="rgba(148, 163, 184, 0.5)" />
+                </marker>
+                <marker id="edge-arrow-active" viewBox="0 -5 10 10" refX="22" refY="0" markerWidth="7" markerHeight="7" orient="auto">
+                  <path d="M0,-4L10,0L0,4" fill="#a1c50a" />
+                </marker>
+              </defs>
+
+              <!-- 网格背景层 -->
+              <rect width="100%" height="100%" fill="url(#graph-grid)" />
+
+              <!-- 可平移缩放的内容主容器 -->
+              <g :transform="`translate(${graphPan.x}, ${graphPan.y}) scale(${graphZoom})`">
+                <!-- 连线层 -->
+                <g class="graph-edges-layer">
+                  <g v-for="(e, i) in graphEdges" :key="'e' + i" class="edge-group">
+                    <line
+                      :x1="graphNodeX(e.source)"
+                      :y1="graphNodeY(e.source)"
+                      :x2="graphNodeX(e.target)"
+                      :y2="graphNodeY(e.target)"
+                      class="graph-edge"
+                      :class="{
+                        highlight: isEdgeConnected(e),
+                        dimmed: isEdgeDimmed(e)
+                      }"
+                      :marker-end="isEdgeConnected(e) ? 'url(#edge-arrow-active)' : 'url(#edge-arrow)'"
+                    />
+                    <!-- 边关系名称标签（选中关联节点或高亮时清晰可见） -->
+                    <text
+                      v-if="e.fact && (isEdgeConnected(e) || graphZoom >= 1.2)"
+                      :x="(graphNodeX(e.source) + graphNodeX(e.target)) / 2"
+                      :y="(graphNodeY(e.source) + graphNodeY(e.target)) / 2 - 4"
+                      class="graph-edge-label"
+                      :class="{ active: isEdgeConnected(e) }"
+                      text-anchor="middle"
+                    >
+                      {{ e.fact }}
+                    </text>
+                  </g>
+                </g>
+
+                <!-- 节点层 -->
+                <g class="graph-nodes-layer">
+                  <g
+                    v-for="(n, i) in graphNodes"
+                    :key="'n' + i"
+                    :transform="`translate(${graphNodeX(n.uuid)},${graphNodeY(n.uuid)})`"
+                    class="node-group"
+                    :class="{
+                      selected: selectedGraphNode && selectedGraphNode.uuid === n.uuid,
+                      connected: isNodeConnectedToSelected(n.uuid),
+                      dimmed: isNodeDimmed(n.uuid)
+                    }"
+                    @click.stop="toggleSelectGraphNode(n)"
+                    @mousedown.stop="startDragNode(n, $event)"
+                  >
+                    <!-- 选中节点光晕涟漪 -->
+                    <circle
+                      v-if="selectedGraphNode && selectedGraphNode.uuid === n.uuid"
+                      :r="graphNodeR(n) + 10"
+                      class="node-halo"
+                    />
+                    <!-- 节点外圆 -->
+                    <circle
+                      :r="graphNodeR(n)"
+                      class="graph-node"
+                      :style="{ fill: graphNodeColor(n) }"
+                    />
+                    <!-- 节点主体名称 -->
+                    <text
+                      class="graph-node-label"
+                      text-anchor="middle"
+                      :y="graphNodeR(n) + 14"
+                    >
+                      {{ n.name }}
+                    </text>
+                    <!-- 节点类型小标（放大或选中时展示） -->
+                    <text
+                      v-if="graphZoom >= 1.1 || (selectedGraphNode && selectedGraphNode.uuid === n.uuid)"
+                      class="graph-node-sublabel"
+                      text-anchor="middle"
+                      :y="graphNodeR(n) + 25"
+                    >
+                      {{ graphNodeType(n) }}
+                    </text>
+                  </g>
+                </g>
+              </g>
+            </svg>
+
+            <!-- 节点关系分析悬浮面板 -->
+            <div v-if="selectedGraphNode" class="graph-node-info-panel">
+              <div class="panel-head">
+                <div class="panel-title-wrap">
+                  <span class="panel-dot" :style="{ background: graphNodeColor(selectedGraphNode) }"></span>
+                  <span class="panel-title">{{ selectedGraphNode.name }}</span>
+                  <span class="panel-type-badge">{{ graphNodeType(selectedGraphNode) }}</span>
+                </div>
+                <button type="button" class="panel-close-btn" @click="selectedGraphNode = null">✕</button>
+              </div>
+
+              <div v-if="selectedGraphNode.summary" class="panel-summary">
+                {{ selectedGraphNode.summary }}
+              </div>
+
+              <!-- 与其他节点的直接联系网络 -->
+              <div class="panel-relations">
+                <div class="relations-title">
+                  🔗 关联关系 ({{ selectedNodeConnections.length }})
+                </div>
+                <div v-if="!selectedNodeConnections.length" class="empty-relations">
+                  该实体在当前章节尚未建立直接关系边
+                </div>
+                <div v-else class="relations-list">
+                  <div
+                    v-for="(rel, ri) in selectedNodeConnections"
+                    :key="ri"
+                    class="relation-item"
+                    @click="locateAndSelectNode(rel.targetNode)"
+                  >
+                    <span class="rel-predicate">【{{ rel.fact || '关联' }}】</span>
+                    <span class="rel-target-name">👉 {{ rel.targetNode.name }}</span>
+                    <span class="rel-target-type">({{ graphNodeType(rel.targetNode) }})</span>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="selectedGraphAttrs.length" class="panel-attrs">
+                <div v-for="(row, ai) in selectedGraphAttrs" :key="ai" class="panel-attr-row">
+                  <span class="attr-k">{{ row[0] }}:</span>
+                  <span class="attr-v">{{ row[1] }}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1529,7 +1687,7 @@ function toggleRoot(id) {
   collapsedRoots.value = next
 }
 const graphFilterChar = ref('')
-const graphZoom = ref(1)
+const simGraphZoom = ref(1)
 const graphCharacters = computed(() => {
   const set = new Set()
   ;(simEvents.value || []).forEach(e => { if (e.character_name) set.add(e.character_name) })
@@ -1753,26 +1911,215 @@ const selectedGraphAttrs = computed(() => {
   }).slice(0, 12)
 })
 
-// 简易力导向布局（斥力 + 弹簧 + 重力，纯前端计算）
-function layoutGraph(nodes, edges) {
-  const pos = {}
-  nodes.forEach((n, i) => {
-    const angle = (i / nodes.length) * Math.PI * 2
-    pos[n.uuid] = {
-      x: GV_W / 2 + Math.cos(angle) * 170,
-      y: GV_H / 2 + Math.sin(angle) * 130
+// 图谱地图交互状态（平移、缩放、搜索、拖拽、全屏）
+const graphPan = ref({ x: 0, y: 0 })
+const graphZoom = ref(1.0)
+const isPanningGraph = ref(false)
+const isGraphFullscreen = ref(false)
+const graphSearchQuery = ref('')
+const graphCanvasWrap = ref(null)
+let panStart = { x: 0, y: 0, origX: 0, origY: 0 }
+let activeDraggingNode = null
+let dragStartPos = { x: 0, y: 0, nodeOrigX: 0, nodeOrigY: 0 }
+
+// 搜索结果计算
+const graphSearchResults = computed(() => {
+  const q = graphSearchQuery.value.trim().toLowerCase()
+  if (!q || !graphNodes.value.length) return []
+  return graphNodes.value.filter(n => {
+    const nameMatch = (n.name || '').toLowerCase().includes(q)
+    const typeMatch = graphNodeType(n).toLowerCase().includes(q)
+    const summaryMatch = (n.summary || '').toLowerCase().includes(q)
+    return nameMatch || typeMatch || summaryMatch
+  })
+})
+
+// 选中节点的关联连线与邻居节点
+const selectedNodeConnections = computed(() => {
+  const sn = selectedGraphNode.value
+  if (!sn || !graphEdges.value.length) return []
+  const list = []
+  const nodeMap = new Map(graphNodes.value.map(n => [n.uuid, n]))
+  graphEdges.value.forEach(e => {
+    if (e.source === sn.uuid) {
+      const target = nodeMap.get(e.target)
+      if (target) list.push({ edge: e, fact: e.fact, targetNode: target, direction: 'out' })
+    } else if (e.target === sn.uuid) {
+      const target = nodeMap.get(e.source)
+      if (target) list.push({ edge: e, fact: e.fact, targetNode: target, direction: 'in' })
     }
   })
+  return list
+})
+
+// 关联节点集合（用于高亮判定）
+const connectedNodeUuids = computed(() => {
+  const sn = selectedGraphNode.value
+  if (!sn) return new Set()
+  const set = new Set([sn.uuid])
+  selectedNodeConnections.value.forEach(c => set.add(c.targetNode.uuid))
+  return set
+})
+
+function isNodeConnectedToSelected(uuid) {
+  if (!selectedGraphNode.value) return false
+  return connectedNodeUuids.value.has(uuid)
+}
+
+function isNodeDimmed(uuid) {
+  if (!selectedGraphNode.value) return false
+  return !connectedNodeUuids.value.has(uuid)
+}
+
+function isEdgeConnected(e) {
+  const sn = selectedGraphNode.value
+  if (!sn) return false
+  return e.source === sn.uuid || e.target === sn.uuid
+}
+
+function isEdgeDimmed(e) {
+  if (!selectedGraphNode.value) return false
+  return !isEdgeConnected(e)
+}
+
+function toggleSelectGraphNode(n) {
+  if (selectedGraphNode.value && selectedGraphNode.value.uuid === n.uuid) {
+    selectedGraphNode.value = null
+  } else {
+    selectedGraphNode.value = n
+  }
+}
+
+// 聚焦与居中定位指定节点
+function locateAndSelectNode(n) {
+  if (!n) return
+  selectedGraphNode.value = n
+  const p = graphPos.value[n.uuid]
+  if (p) {
+    // 平移画布使目标节点处于画布正中心
+    graphZoom.value = Math.max(graphZoom.value, 1.25)
+    graphPan.value = {
+      x: (GV_W / 2) - p.x * graphZoom.value,
+      y: (GV_H / 2) - p.y * graphZoom.value
+    }
+  }
+}
+
+function focusSearchedNode() {
+  if (graphSearchResults.value.length > 0) {
+    locateAndSelectNode(graphSearchResults.value[0])
+  }
+}
+
+function zoomGraph(delta) {
+  const next = Math.max(0.4, Math.min(3.0, graphZoom.value + delta))
+  graphZoom.value = Math.round(next * 100) / 100
+}
+
+function resetGraphView() {
+  graphZoom.value = 1.0
+  graphPan.value = { x: 0, y: 0 }
+  selectedGraphNode.value = null
+}
+
+function toggleGraphFullscreen() {
+  isGraphFullscreen.value = !isGraphFullscreen.value
+  nextTick(() => {
+    resetGraphView()
+  })
+}
+
+// 地图拖拽 (Pan)
+function startPanGraph(evt) {
+  // 如果点在节点上则不触发画布平移
+  if (evt.target.closest('.node-group') || evt.target.closest('.graph-toolbar') || evt.target.closest('.graph-node-info-panel')) {
+    return
+  }
+  isPanningGraph.value = true
+  panStart = {
+    x: evt.clientX,
+    y: evt.clientY,
+    origX: graphPan.value.x,
+    origY: graphPan.value.y
+  }
+  const onMouseMove = (e) => {
+    if (!isPanningGraph.value) return
+    const dx = e.clientX - panStart.x
+    const dy = e.clientY - panStart.y
+    graphPan.value = {
+      x: Math.round(panStart.origX + dx),
+      y: Math.round(panStart.origY + dy)
+    }
+  }
+  const onMouseUp = () => {
+    isPanningGraph.value = false
+    window.removeEventListener('mousemove', onMouseMove)
+    window.removeEventListener('mouseup', onMouseUp)
+  }
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup', onMouseUp)
+}
+
+// 滚轮缩放 (Zoom on wheel)
+function handleGraphWheel(evt) {
+  const delta = evt.deltaY < 0 ? 0.12 : -0.12
+  zoomGraph(delta)
+}
+
+// 节点拖拽 (Drag Node)
+function startDragNode(n, evt) {
+  activeDraggingNode = n
+  const p = graphPos.value[n.uuid] || { x: GV_W / 2, y: GV_H / 2 }
+  dragStartPos = {
+    x: evt.clientX,
+    y: evt.clientY,
+    nodeOrigX: p.x,
+    nodeOrigY: p.y
+  }
+  const onMouseMove = (e) => {
+    if (!activeDraggingNode) return
+    const dx = (e.clientX - dragStartPos.x) / graphZoom.value
+    const dy = (e.clientY - dragStartPos.y) / graphZoom.value
+    graphPos.value[activeDraggingNode.uuid] = {
+      x: Math.round(dragStartPos.nodeOrigX + dx),
+      y: Math.round(dragStartPos.nodeOrigY + dy)
+    }
+  }
+  const onMouseUp = () => {
+    activeDraggingNode = null
+    window.removeEventListener('mousemove', onMouseMove)
+    window.removeEventListener('mouseup', onMouseUp)
+  }
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup', onMouseUp)
+}
+
+// 优化的全域星图力导向布局（强斥力 + 聚类引力 + 智能防边角聚集）
+function layoutGraph(nodes, edges) {
+  const pos = {}
+  const count = nodes.length || 1
+  // 环状均匀发散初始位置
+  nodes.forEach((n, i) => {
+    const angle = (i / count) * Math.PI * 2
+    const radius = 180 + (i % 3) * 60
+    pos[n.uuid] = {
+      x: GV_W / 2 + Math.cos(angle) * radius,
+      y: GV_H / 2 + Math.sin(angle) * (radius * 0.75)
+    }
+  })
+
   const linkMap = new Map()
   edges.forEach(e => {
-    for (const k of [e.source, e.target]) {
-      if (!linkMap.has(k)) linkMap.set(k, new Set())
-    }
+    if (!linkMap.has(e.source)) linkMap.set(e.source, new Set())
+    if (!linkMap.has(e.target)) linkMap.set(e.target, new Set())
     linkMap.get(e.source).add(e.target)
     linkMap.get(e.target).add(e.source)
   })
-  for (let iter = 0; iter < 260; iter++) {
-    // 斥力
+
+  // 迭代 300 轮退火优化
+  for (let iter = 0; iter < 300; iter++) {
+    const cooling = Math.max(0.1, 1 - (iter / 300))
+    // 1. 节点间非线性斥力（加大基础斥力，防止节点堆叠）
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const a = pos[nodes[i].uuid]
@@ -1780,7 +2127,9 @@ function layoutGraph(nodes, edges) {
         let dx = a.x - b.x
         let dy = a.y - b.y
         let d = Math.sqrt(dx * dx + dy * dy) || 1
-        const force = 3200 / (d * d)
+        // 距离过近时极强排斥
+        const k = 140
+        const force = ((k * k) / d) * cooling * 0.4
         dx /= d
         dy /= d
         a.x += dx * force
@@ -1789,7 +2138,8 @@ function layoutGraph(nodes, edges) {
         b.y -= dy * force
       }
     }
-    // 弹簧（相连节点靠近）
+
+    // 2. 关系边弹簧拉力（有关系的节点聚拢）
     edges.forEach(e => {
       const a = pos[e.source]
       const b = pos[e.target]
@@ -1797,7 +2147,8 @@ function layoutGraph(nodes, edges) {
       let dx = b.x - a.x
       let dy = b.y - a.y
       let d = Math.sqrt(dx * dx + dy * dy) || 1
-      const force = (d - 120) * 0.03
+      const idealLen = 130
+      const force = (d - idealLen) * 0.04 * cooling
       dx /= d
       dy /= d
       a.x += dx * force
@@ -1805,17 +2156,20 @@ function layoutGraph(nodes, edges) {
       b.x -= dx * force
       b.y -= dy * force
     })
-    // 向心重力
+
+    // 3. 向心重力（防止孤立节点无限飘向边界）
     nodes.forEach(n => {
       const p = pos[n.uuid]
-      p.x += (GV_W / 2 - p.x) * 0.012
-      p.y += (GV_H / 2 - p.y) * 0.012
+      p.x += (GV_W / 2 - p.x) * 0.015 * cooling
+      p.y += (GV_H / 2 - p.y) * 0.015 * cooling
     })
   }
+
+  // 边界柔性限制
   nodes.forEach(n => {
     const p = pos[n.uuid]
-    p.x = Math.max(60, Math.min(GV_W - 60, p.x))
-    p.y = Math.max(40, Math.min(GV_H - 40, p.y))
+    p.x = Math.max(80, Math.min(GV_W - 80, p.x))
+    p.y = Math.max(60, Math.min(GV_H - 60, p.y))
   })
   return pos
 }
@@ -5564,101 +5918,392 @@ onUnmounted(() => {
   max-width: 240px;
 }
 .graph-viz-wrap {
-  border: 1px solid #E8E8E8;
-  border-radius: 6px;
-  background: #FBFBFB;
-  padding: 10px;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  background: #0f172a;
   position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.15), 0 8px 10px -6px rgba(15, 23, 42, 0.1);
+  display: flex;
+  flex-direction: column;
+}
+.graph-viz-wrap.fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  border-radius: 0;
+}
+.graph-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
+  z-index: 20;
+}
+.graph-search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  padding: 4px 12px;
+  width: 260px;
+  transition: all 0.2s;
+}
+.graph-search-box:focus-within {
+  border-color: #a1c50a;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 2px rgba(161, 197, 10, 0.2);
+}
+.search-icon {
+  font-size: 12px;
+  opacity: 0.7;
+}
+.graph-search-input {
+  background: transparent;
+  border: none;
+  color: #f8fafc;
+  font-size: 12px;
+  width: 100%;
+  outline: none;
+}
+.graph-search-input::placeholder {
+  color: #94a3b8;
+}
+.graph-search-clear {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.graph-search-dropdown {
+  position: absolute;
+  top: 48px;
+  left: 16px;
+  width: 280px;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  z-index: 30;
+  overflow: hidden;
+}
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.15s;
+}
+.search-result-item:hover, .search-result-item.active {
+  background: rgba(161, 197, 10, 0.15);
+}
+.sn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sn-name {
+  color: #f1f5f9;
+  font-size: 12px;
+  font-weight: 600;
+}
+.sn-type {
+  color: #94a3b8;
+  font-size: 10.5px;
+  margin-left: auto;
+}
+.graph-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.graph-zoom-label {
+  color: #94a3b8;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  min-width: 38px;
+  text-align: right;
+  margin-right: 4px;
+}
+.graph-ctrl-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.graph-ctrl-btn:hover {
+  background: #a1c50a;
+  color: #0f172a;
+  border-color: #a1c50a;
+}
+.graph-canvas-viewport {
+  position: relative;
+  width: 100%;
+  height: 480px;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+}
+.graph-viz-wrap.fullscreen .graph-canvas-viewport {
+  height: calc(100vh - 54px);
+}
+.graph-canvas-viewport.dragging {
+  cursor: grabbing;
 }
 .graph-svg {
   width: 100%;
-  height: auto;
+  height: 100%;
   display: block;
-  cursor: grab;
 }
 .graph-edge {
-  stroke: rgba(148, 163, 184, 0.45);
-  stroke-width: 1.2;
-  transition: stroke 0.2s, stroke-width 0.2s;
+  stroke: rgba(148, 163, 184, 0.35);
+  stroke-width: 1.4;
+  transition: all 0.25s ease;
+}
+.graph-edge.highlight {
+  stroke: #a1c50a;
+  stroke-width: 2.5;
+  stroke-dasharray: 6 3;
+  animation: edge-flow 1s linear infinite;
+  filter: drop-shadow(0 0 6px rgba(161, 197, 10, 0.7));
+}
+.graph-edge.dimmed {
+  stroke: rgba(148, 163, 184, 0.08);
+  stroke-width: 0.8;
+}
+@keyframes edge-flow {
+  from { stroke-dashoffset: 9; }
+  to { stroke-dashoffset: 0; }
+}
+.graph-edge-label {
+  font-size: 10px;
+  fill: #94a3b8;
+  font-weight: 500;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: #0f172a;
+  stroke-width: 2.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.graph-edge-label.active {
+  fill: #e2f47c;
+  font-weight: 700;
+  font-size: 11px;
+}
+.node-group {
+  cursor: pointer;
+  transition: opacity 0.25s ease;
+}
+.node-group.dimmed {
+  opacity: 0.2;
+}
+.node-halo {
+  fill: none;
+  stroke: #a1c50a;
+  stroke-width: 2;
+  opacity: 0.8;
+  animation: halo-pulse 1.8s infinite ease-out;
+}
+@keyframes halo-pulse {
+  0% { r: 16px; opacity: 0.9; }
+  100% { r: 28px; opacity: 0; }
 }
 .graph-node {
-  stroke: #FFFFFF;
+  stroke: rgba(255, 255, 255, 0.9);
   stroke-width: 2;
-  cursor: pointer;
-  opacity: 0.94;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
-  transition: transform 0.2s ease, opacity 0.2s ease, stroke-width 0.2s ease, filter 0.2s ease;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
+  transition: transform 0.2s, stroke-width 0.2s;
 }
-.graph-node:hover {
-  opacity: 1;
-  stroke-width: 2.5;
-  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
-}
-.graph-node.selected {
-  stroke: #a1c50a;
+.node-group:hover .graph-node {
   stroke-width: 3;
-  filter: drop-shadow(0 0 10px rgba(161, 197, 10, 0.8));
-  animation: graph-pulse 1.8s infinite alternate ease-in-out;
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.8));
 }
-@keyframes graph-pulse {
-  0% {
-    filter: drop-shadow(0 0 5px rgba(161, 197, 10, 0.5));
-  }
-  100% {
-    filter: drop-shadow(0 0 12px rgba(161, 197, 10, 0.95));
-  }
+.node-group.selected .graph-node {
+  stroke: #ffffff;
+  stroke-width: 3.5;
+  filter: drop-shadow(0 0 12px rgba(161, 197, 10, 0.9));
+}
+.node-group.connected:not(.selected) .graph-node {
+  stroke: #a1c50a;
+  stroke-width: 2.5;
 }
 .graph-node-label {
   font-size: 11px;
-  font-weight: 600;
-  fill: #1E293B;
-  font-family: 'JetBrains Mono', 'Noto Sans SC', monospace;
+  font-weight: 700;
+  fill: #f8fafc;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   pointer-events: none;
-  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.9), 0 0 4px #FFFFFF;
+  paint-order: stroke;
+  stroke: #0f172a;
+  stroke-width: 3px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
-.graph-node-info {
-  margin-top: 10px;
-  border: 1px solid #E0E0E0;
-  border-radius: 4px;
-  background: #FFF;
-  padding: 12px;
+.graph-node-sublabel {
+  font-size: 9.5px;
+  fill: #a1c50a;
+  font-weight: 600;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: #0f172a;
+  stroke-width: 2.5px;
 }
-.graph-node-info-name {
+.graph-node-info-panel {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 320px;
+  max-height: calc(100% - 32px);
+  background: rgba(30, 41, 59, 0.95);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 14px;
+  color: #f8fafc;
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.45);
+  z-index: 25;
+  overflow-y: auto;
+  animation: fadeInRight 0.2s ease;
+}
+@keyframes fadeInRight {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.panel-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.panel-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.panel-title {
   font-size: 14px;
   font-weight: 700;
-  margin-bottom: 2px;
+  color: #fff;
 }
-.graph-node-info-type {
-  font-size: 11px;
+.panel-type-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(161, 197, 10, 0.2);
   color: #a1c50a;
   font-weight: 600;
-  margin-bottom: 6px;
 }
-.graph-node-info-summary {
+.panel-close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 13px;
+  cursor: pointer;
+}
+.panel-close-btn:hover {
+  color: #fff;
+}
+.panel-summary {
   font-size: 12px;
-  line-height: 1.7;
-  color: #444;
+  line-height: 1.6;
+  color: #cbd5e1;
+  margin-bottom: 10px;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 8px;
+  border-radius: 6px;
+}
+.panel-relations {
+  margin-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+}
+.relations-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #a1c50a;
   margin-bottom: 6px;
 }
-.graph-node-info-attrs {
-  border-top: 1px dashed #EEE;
-  padding-top: 6px;
+.empty-relations {
+  font-size: 11px;
+  color: #64748b;
+  font-style: italic;
+}
+.relations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.relation-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 4px 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.relation-item:hover {
+  background: rgba(161, 197, 10, 0.2);
+  transform: translateX(2px);
+}
+.rel-predicate {
+  color: #38bdf8;
+  font-weight: 600;
+}
+.rel-target-name {
+  color: #f1f5f9;
+  font-weight: 600;
+}
+.rel-target-type {
+  color: #94a3b8;
+  font-size: 10px;
+}
+.panel-attrs {
+  margin-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-.attr-row {
+.panel-attr-row {
   display: flex;
-  gap: 8px;
-  font-size: 11.5px;
+  gap: 6px;
+  font-size: 11px;
 }
-.attr-k {
-  color: #999;
-  min-width: 90px;
-  font-family: 'JetBrains Mono', monospace;
+.panel-attr-row .attr-k {
+  color: #94a3b8;
+  min-width: 60px;
 }
-.attr-v {
-  color: #333;
+.panel-attr-row .attr-v {
+  color: #e2e8f0;
   word-break: break-all;
 }
 
