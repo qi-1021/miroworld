@@ -7,6 +7,10 @@
 [![Node.js: 18+](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org)
 [![Platform: macOS | Windows | Linux](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-orange.svg)]()
 
+<div align="center">
+  <img src="docs/images/overview.png" alt="Miroworld 推演看板与世界图谱全景" width="100%" />
+</div>
+
 ---
 
 ## 🌟 核心特性
