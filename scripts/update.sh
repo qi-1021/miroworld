@@ -71,7 +71,9 @@ fi
 log_step "检查并同步后端 Python 环境依赖..."
 if [ -f "$APP_DIR/backend/requirements.txt" ]; then
     PYTHON_CMD=""
-    if [ -f "$PROJECT_ROOT/.venv/bin/python" ]; then
+    if [ -f "$APP_DIR/backend/.venv/bin/python" ]; then
+        PYTHON_CMD="$APP_DIR/backend/.venv/bin/python"
+    elif [ -f "$PROJECT_ROOT/.venv/bin/python" ]; then
         PYTHON_CMD="$PROJECT_ROOT/.venv/bin/python"
     elif [ -f "$APP_DIR/backend/venv/bin/python" ]; then
         PYTHON_CMD="$APP_DIR/backend/venv/bin/python"
