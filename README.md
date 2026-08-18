@@ -42,9 +42,13 @@ cd mirofish-portable
 scripts\start.bat
 ```
 
-> 💡 **停止服务**：
-> - macOS/Linux: 在启动终端按 `Ctrl+C` 或新开终端执行 `./scripts/stop.sh`（如需停数据库可加 `--all`）。
-> - Windows: 运行 `scripts\stop.bat`（如需停数据库可加 `--all`）。
+> 💡 **日常管理与更新**：
+> - **一键无密更新**：
+>   - macOS/Linux: `./scripts/update.sh`（免 Key 自动从 GitHub 同步最新代码、依赖与前端）
+>   - Windows: 双击 `scripts\update.bat`
+> - **停止服务**：
+>   - macOS/Linux: 在启动终端按 `Ctrl+C` 或新开终端执行 `./scripts/stop.sh`（如需停数据库可加 `--all`）。
+>   - Windows: 运行 `scripts\stop.bat`（如需停数据库可加 `--all`）。
 
 ---
 
