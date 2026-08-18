@@ -6585,3 +6585,72 @@ onUnmounted(() => {
   background: #f8faee;
 }
 </style>
+
+<!-- 全局共享卡片规范（穿透所有模块化子组件） -->
+<style>
+.world-view .step-card {
+  background: rgba(255, 255, 255, 0.45) !important;
+  border-radius: 14px !important;
+  padding: 20px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.68) !important;
+  backdrop-filter: saturate(180%) blur(14px) !important;
+  -webkit-backdrop-filter: saturate(180%) blur(14px) !important;
+  transition: all 0.3s ease !important;
+  margin-bottom: 20px;
+}
+.world-view .step-card .card-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  margin-bottom: 16px !important;
+}
+.world-view .step-card .step-info {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+.world-view .step-card .step-num {
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 18px !important;
+  font-weight: 800 !important;
+  color: #10203a !important;
+  background: rgba(161, 197, 10, 0.18) !important;
+  border: 1px solid rgba(161, 197, 10, 0.35) !important;
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 8px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+}
+.world-view .step-card .step-title {
+  font-weight: 700 !important;
+  font-size: 15px !important;
+  color: #10203a !important;
+  letter-spacing: 0.5px !important;
+}
+.world-view .step-card .badge {
+  font-size: 11px !important;
+  padding: 4px 10px !important;
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+}
+.world-view .step-card .badge.success {
+  background: #E8F5E9 !important;
+  color: #2E7D32 !important;
+  border: 1px solid #C8E6C9 !important;
+}
+.world-view .step-card .badge.processing {
+  background: #a1c50a !important;
+  color: #FFF !important;
+  box-shadow: 0 2px 6px rgba(161, 197, 10, 0.35) !important;
+}
+.world-view .step-card .badge.hint {
+  background: rgba(0, 0, 0, 0.05) !important;
+  color: #536078 !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+</style>
