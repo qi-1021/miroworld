@@ -42,25 +42,52 @@ else
     echo -e "${GREEN}[INFO] GitHub 直连状态良好，使用官方源下载。${NC}"
 fi
 
-# 2. 检查或安装 Git 并拉取代码
+# 2. 检查 Git 或自动降级为原生 ZIP 归档极速解压
 echo -e "${BLUE}[2/5] 正在下载并同步 Miroworld 核心系统源码...${NC}"
-if ! command -v git >/dev/null 2>&1; then
-    echo -e "${RED}[ERROR] 检测到系统未安装 Git。${NC}"
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        echo -e "${YELLOW}请在终端运行: xcode-select --install 安装基础命令行工具后再试。${NC}"
-    else
-        echo -e "${YELLOW}Ubuntu/Debian: sudo apt update && sudo apt install -y git curl${NC}"
-        echo -e "${YELLOW}CentOS/RHEL:   sudo yum install -y git curl${NC}"
-    fi
-    exit 1
-fi
 
-if [ -d "$TARGET_DIR/.git" ]; then
-    echo -e "${GREEN}[INFO] 检测到已存在 $TARGET_DIR 项目目录，正在同步至最新代码...${NC}"
-    cd "$TARGET_DIR"
-    git pull origin main || true
+if command -v git >/dev/null 2>&1; then
+    echo -e "${GREEN}[INFO] 系统已安装 Git，使用 Git 协议同步...${NC}"
+    if [ -d "$TARGET_DIR/.git" ]; then
+        echo -e "${GREEN}[INFO] 检测到已存在 $TARGET_DIR 项目目录，正在同步至最新代码...${NC}"
+        cd "$TARGET_DIR"
+        git pull origin main || true
+    else
+        git clone "$CLONE_URL" "$TARGET_DIR" || git clone "$REPO_PROXY_URL" "$TARGET_DIR"
+        cd "$TARGET_DIR"
+    fi
 else
-    git clone "$CLONE_URL" "$TARGET_DIR" || git clone "$REPO_PROXY_URL" "$TARGET_DIR"
+    echo -e "${YELLOW}[提示] 检测到当前系统未安装 Git，已为您自动启用免 Git 原生 ZIP 极速下载与解压通道...${NC}"
+    ZIP_URL="https://github.com/qi-1021/miroworld/archive/refs/heads/main.zip"
+    PROXY_ZIP_URL="https://ghproxy.net/https://github.com/qi-1021/miroworld/archive/refs/heads/main.zip"
+    ZIP_FILE="miroworld-main.zip"
+    
+    # 优先使用高速镜像通道下载
+    if ! curl -fsSL -m 30 "$PROXY_ZIP_URL" -o "$ZIP_FILE" 2>/dev/null; then
+        echo -e "${YELLOW}[提示] 镜像节点重试，尝试官方直连下载...${NC}"
+        curl -fsSL -m 60 "$ZIP_URL" -o "$ZIP_FILE" || { echo -e "${RED}[ERROR] 源码包下载失败，请检查网络连接。${NC}"; exit 1; }
+    fi
+    
+    # 自动解压
+    echo -e "${BLUE}[STEP] 正在自动解压源码包...${NC}"
+    if command -v unzip >/dev/null 2>&1; then
+        unzip -q -o "$ZIP_FILE"
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 -c "import zipfile; zipfile.ZipFile('$ZIP_FILE').extractall('.')"
+    elif command -v python >/dev/null 2>&1; then
+        python -c "import zipfile; zipfile.ZipFile('$ZIP_FILE').extractall('.')"
+    elif command -v tar >/dev/null 2>&1; then
+        tar -xzf "$ZIP_FILE" 2>/dev/null || unzip -q -o "$ZIP_FILE"
+    else
+        echo -e "${RED}[ERROR] 系统缺少解压工具 (unzip / python)，请安装后再试。${NC}"
+        exit 1
+    fi
+    
+    if [ -d "miroworld-main" ]; then
+        mkdir -p "$TARGET_DIR"
+        cp -R miroworld-main/* "$TARGET_DIR/" 2>/dev/null || cp -r miroworld-main/* "$TARGET_DIR/"
+        rm -rf miroworld-main "$ZIP_FILE"
+    fi
+    echo -e "${GREEN}[INFO] 源码包自动解压释放成功！${NC}"
     cd "$TARGET_DIR"
 fi
 

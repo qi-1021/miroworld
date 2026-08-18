@@ -11,25 +11,34 @@ echo =================================================================
 
 cd /d "%~dp0\.."
 
-:: 1. 检查 git
+:: 1. 检查 git 环境（无 Git 则自动通过 PowerShell 下载最新 ZIP 覆盖更新）
 where git >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-    echo [ERROR] 未找到 git 命令，请先安装 Git for Windows。
-    pause
-    exit /b 1
-)
-
-:: 2. 拉取最新代码
-echo [STEP] 正在从 GitHub 获取最新版本代码...
-git remote set-url origin https://github.com/qi-1021/miroworld.git >nul 2>nul
-git pull origin main
-if %ERRORLEVEL% neq 0 (
-    echo [WARN] 检测到本地修改冲突，尝试暂存更新...
-    git stash
+if %ERRORLEVEL% equ 0 (
+    echo [STEP] 正在通过 Git 极速同步最新版本代码...
+    git remote set-url origin https://github.com/qi-1021/miroworld.git >nul 2>nul
     git pull origin main
-    git stash pop
+    if %ERRORLEVEL% neq 0 (
+        echo [WARN] 检测到本地修改冲突，尝试暂存更新...
+        git stash
+        git pull origin main
+        git stash pop
+    )
+    echo [INFO] 代码已成功同步至最新版本！
+) else (
+    echo [提示] 当前机器未安装 Git，自动启用免 Git 原生 ZIP 极速增量更新通道...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; " ^
+        "$zipFile = 'miroworld-update-temp.zip'; " ^
+        "$proxyZip = 'https://ghproxy.net/https://github.com/qi-1021/miroworld/archive/refs/heads/main.zip'; " ^
+        "$directZip = 'https://github.com/qi-1021/miroworld/archive/refs/heads/main.zip'; " ^
+        "try { Invoke-WebRequest -Uri $proxyZip -OutFile $zipFile -UseBasicParsing -TimeoutSec 30 } catch { Invoke-WebRequest -Uri $directZip -OutFile $zipFile -UseBasicParsing -TimeoutSec 60 }; " ^
+        "$tempDir = 'miroworld-update-temp'; " ^
+        "Expand-Archive -Path $zipFile -DestinationPath $tempDir -Force; " ^
+        "Copy-Item -Path \"$tempDir\miroworld-main\*\" -Destination '.' -Recurse -Force; " ^
+        "Remove-Item -Recurse -Force $tempDir; " ^
+        "Remove-Item -Force $zipFile;"
+    echo [INFO] 源码包已自动同步至最新版本！
 )
-echo [INFO] 代码已成功同步至最新版本！
 
 :: 3. 检查后端依赖
 echo [STEP] 检查并更新后端依赖...

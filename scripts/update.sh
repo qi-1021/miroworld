@@ -33,38 +33,55 @@ echo "================================================================="
 
 cd "$PROJECT_ROOT"
 
-# 1. 检查 git 环境
-if ! command -v git >/dev/null 2>&1; then
-    log_error "未找到 git 命令，请先安装 Git。"
-    exit 1
-fi
-
-# 2. 检查远程分支
+# 1 & 2. 检查 Git 或自动降级为原生 ZIP 覆盖更新
 log_step "正在从 GitHub 获取最新版本代码..."
 
-# 确保 remote 使用 HTTPS 公开地址（免 key）
-CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
-if [[ "$CURRENT_REMOTE" == git@github.com:* ]]; then
-    HTTPS_REMOTE="https://github.com/${CURRENT_REMOTE#git@github.com:}"
-    log_info "检测到 SSH 远程地址，切换为公开免密 HTTPS 地址: $HTTPS_REMOTE"
-    git remote set-url origin "$HTTPS_REMOTE"
-elif [[ -z "$CURRENT_REMOTE" ]]; then
-    git remote add origin "https://github.com/qi-1021/miroworld.git"
-fi
+if command -v git >/dev/null 2>&1; then
+    # 确保 remote 使用 HTTPS 公开地址（免 key）
+    CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
+    if [[ "$CURRENT_REMOTE" == git@github.com:* ]]; then
+        HTTPS_REMOTE="https://github.com/${CURRENT_REMOTE#git@github.com:}"
+        log_info "检测到 SSH 远程地址，切换为公开免密 HTTPS 地址: $HTTPS_REMOTE"
+        git remote set-url origin "$HTTPS_REMOTE"
+    elif [[ -z "$CURRENT_REMOTE" ]]; then
+        git remote add origin "https://github.com/qi-1021/miroworld.git"
+    fi
 
-# 获取当前分支名称
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
-log_info "当前分支: $BRANCH"
+    BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+    log_info "当前分支: $BRANCH"
 
-# 拉取最新代码
-if git pull origin "$BRANCH"; then
-    log_info "✅ 源代码已成功同步至最新版本！"
+    if git pull origin "$BRANCH"; then
+        log_info "✅ 源代码已成功同步至最新版本！"
+    else
+        log_warn "拉取时检测到本地未提交修改，正在尝试 stash 保留并更新..."
+        git stash
+        git pull origin "$BRANCH"
+        git stash pop || true
+        log_info "✅ 代码已合并更新完成。"
+    fi
 else
-    log_warn "拉取时检测到本地未提交修改，正在尝试 stash 保留并更新..."
-    git stash
-    git pull origin "$BRANCH"
-    git stash pop || true
-    log_info "✅ 代码已合并更新完成。"
+    log_warn "检测到当前环境未安装 Git，自动启用免 Git 原生 ZIP 极速增量更新通道..."
+    ZIP_URL="https://github.com/qi-1021/miroworld/archive/refs/heads/main.zip"
+    PROXY_ZIP_URL="https://ghproxy.net/https://github.com/qi-1021/miroworld/archive/refs/heads/main.zip"
+    ZIP_FILE="miroworld-update-temp.zip"
+
+    if ! curl -fsSL -m 30 "$PROXY_ZIP_URL" -o "$ZIP_FILE" 2>/dev/null; then
+        curl -fsSL -m 60 "$ZIP_URL" -o "$ZIP_FILE" || { log_error "更新源码包下载失败，请检查网络"; exit 1; }
+    fi
+
+    if command -v unzip >/dev/null 2>&1; then
+        unzip -q -o "$ZIP_FILE"
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 -c "import zipfile; zipfile.ZipFile('$ZIP_FILE').extractall('.')"
+    elif command -v python >/dev/null 2>&1; then
+        python -c "import zipfile; zipfile.ZipFile('$ZIP_FILE').extractall('.')"
+    fi
+
+    if [ -d "miroworld-main" ]; then
+        cp -R miroworld-main/* "$PROJECT_ROOT/" 2>/dev/null || cp -r miroworld-main/* "$PROJECT_ROOT/"
+        rm -rf miroworld-main "$ZIP_FILE"
+    fi
+    log_info "✅ 源码包已自动同步至最新版本！"
 fi
 
 # 3. 检查并更新后端 Python 依赖
