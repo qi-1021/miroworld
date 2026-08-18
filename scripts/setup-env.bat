@@ -92,8 +92,13 @@ if not exist ".venv-simulation\Scripts\python.exe" (
 )
 
 if exist ".venv-simulation\Scripts\python.exe" (
-    .venv-simulation\Scripts\python.exe -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple >nul 2>nul
-    .venv-simulation\Scripts\python.exe -m pip install -r requirements-oasis.txt -i https://pypi.tuna.tsinghua.edu.cn/simple >nul 2>nul
+    where uv >nul 2>nul
+    if not errorlevel 1 (
+        call uv pip install -r requirements-oasis.txt --python ".venv-simulation\Scripts\python.exe" --index-url https://pypi.tuna.tsinghua.edu.cn/simple >nul 2>nul
+    ) else (
+        .venv-simulation\Scripts\python.exe -m ensurepip >nul 2>nul
+        .venv-simulation\Scripts\python.exe -m pip install -r requirements-oasis.txt -i https://pypi.tuna.tsinghua.edu.cn/simple >nul 2>nul
+    )
     echo [INFO] ✓ OASIS 模拟环境配置就绪！
 )
 
