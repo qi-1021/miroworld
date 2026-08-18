@@ -1444,5 +1444,14 @@
     "confirmDeleteAfter": "确定删除当前时间点之后的 {n} 条事件？此操作不可恢复。",
     "deletedCount": "已删除 {n} 条事件",
     "failed": "批量操作失败"
+  },
+  "fork": {
+    "continueBtn": "继续推演",
+    "continueFromEvent": "从此事件节点继续推演",
+    "forkModalTitle": "从事件节点分叉推演",
+    "targetEvent": "目标基准事件",
+    "whatIfPlaceholder": "提出「如果当时发生了某事」或设定新的推进方向…",
+    "startFork": "开始分叉演进",
+    "cancel": "取消"
   }
 }
