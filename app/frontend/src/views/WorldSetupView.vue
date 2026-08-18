@@ -562,44 +562,15 @@
         </div>
       </div>
 
-      <!-- 设定检索 -->
-      <div v-if="stats" class="step-card step-search">
-        <div class="card-header">
-          <div class="step-info">
-            <span class="step-num">2</span>
-            <span class="step-title">{{ $t('world.searchTitle') }}</span>
-          </div>
-          <div class="step-status">
-            <span class="badge hint">{{ $t('world.searchHint') }}</span>
-          </div>
-        </div>
-
-        <div class="search-row">
-          <input
-            v-model="searchQuery"
-            class="search-input"
-            :placeholder="$t('world.searchPlaceholder')"
-            @keyup.enter="handleSearch"
-          />
-          <button class="search-btn" :disabled="!searchQuery.trim()" @click="handleSearch">
-            {{ searching ? $t('world.searching') : $t('world.searchBtn') }}
-          </button>
-        </div>
-
-        <label class="semantic-toggle">
-          <input v-model="searchSemantic" type="checkbox" class="semantic-check" />
-          <span class="semantic-mark"></span>
-          <span class="semantic-label">{{ $t('world.semanticLabel') }}</span>
-        </label>
-
-        <div v-if="searchResults.length" class="search-results">
-          <div v-for="r in searchResults" :key="r.chunk_id" class="search-item">
-            <span class="search-src" :class="r.source">{{ r.source === 'background' ? $t('world.sourceBg') : $t('world.sourceStory') }}</span>
-            <span class="search-text">{{ r.text }}</span>
-            <span class="search-score">{{ $t('world.relevance', { score: r.score }) }}</span>
-          </div>
-        </div>
-      </div>
+      <!-- 设定检索（模块化组件） -->
+      <WorldSearchPanel
+        v-if="stats"
+        v-model:searchQuery="searchQuery"
+        v-model:searchSemantic="searchSemantic"
+        :searching="searching"
+        :search-results="searchResults"
+        @search="handleSearch"
+      />
 
       <!-- 世界图谱（GraphRAG · Neo4j） -->
       <div v-if="stats" class="step-card step-graph">
@@ -692,69 +663,20 @@
         <TimelineView :project-id="projectId" />
       </div>
 
-      <!-- 内置项目助手 -->
-      <div v-if="assistantOpen" class="assistant-modal-mask" @click.self="assistantOpen = false">
-        <div class="assistant-modal">
-          <div class="assistant-head">
-            <span class="assistant-title">{{ $t('assistant.title') }}</span>
-            <button class="assistant-close" @click="assistantOpen = false">×</button>
-          </div>
-          <div class="assistant-body">
-            <p class="assistant-hint">{{ $t('assistant.hint') }}</p>
-            <div class="assistant-quick">
-              <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickStatus')">📋 {{ $t('assistant.quickStatus') }}</button>
-              <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickGraph')">🕸️ {{ $t('assistant.quickGraph') }}</button>
-              <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickExtract')">📜 {{ $t('assistant.quickExtract') }}</button>
-              <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickTree')">🌳 {{ $t('assistant.quickTree') }}</button>
-              <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickWorldlineSummary')">📊 {{ $t('assistant.quickWorldlineSummary') }}</button>
-              <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickSim')">🌍 {{ $t('assistant.quickSim') }}</button>
-              <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickCharacters')">👥 {{ $t('assistant.quickCharacters') }}</button>
-              <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickReport')">📄 {{ $t('assistant.quickReport') }}</button>
-              <button class="mini-btn" :disabled="assistantAsking" @click="quickAsk('assistant.quickExport')">💾 {{ $t('assistant.quickExport') }}</button>
-            </div>
-            <textarea
-              v-model="assistantQuestion"
-              rows="3"
-              class="assistant-input"
-              :placeholder="$t('assistant.placeholder')"
-            ></textarea>
-            <div class="assistant-actions">
-              <button
-                class="action-btn"
-                :disabled="assistantAsking || !assistantQuestion.trim()"
-                @click="askAssistantNow"
-              >
-                {{ assistantAsking ? $t('assistant.asking') : $t('assistant.ask') }}
-              </button>
-            </div>
-            <div v-if="assistantAsking" class="assistant-running">
-              <span class="spinner-sm"></span> {{ $t('assistant.executing') }}
-            </div>
-            <div v-if="assistantAnswer" class="assistant-answer">{{ assistantAnswer }}</div>
-            <div v-if="assistantMsg" class="msg-line" :class="{ error: assistantMsgError }">{{ assistantMsg }}</div>
-            <details class="agent-tools">
-              <summary>{{ $t('assistant.toolList') }} ({{ Object.keys(agentTools).length }})</summary>
-              <div class="agent-tools-grid">
-                <div v-for="(tool, name) in agentTools" :key="name" class="agent-tool-item">
-                  <span class="agent-tool-name">{{ name }}</span>
-                  <span class="agent-tool-desc">{{ tool.description }}</span>
-                </div>
-              </div>
-            </details>
-            <div class="agent-tasks">
-              <div class="agent-tasks-title">{{ $t('assistant.taskList') }}</div>
-              <div v-if="agentTasks.length" class="agent-tasks-list">
-                <div v-for="task in agentTasks" :key="task.task_id" class="agent-task-item">
-                  <span class="agent-task-action">{{ task.action }}</span>
-                  <span class="agent-task-status" :class="task.status">{{ task.status }}</span>
-                  <span class="agent-task-time">{{ task.created_at }}</span>
-                </div>
-              </div>
-              <div v-else class="empty-note">{{ $t('assistant.taskEmpty') }}</div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <!-- 内置项目助手（模块化组件） -->
+      <WorldAssistantModal
+        :visible="assistantOpen"
+        v-model:question="assistantQuestion"
+        :asking="assistantAsking"
+        :answer="assistantAnswer"
+        :msg="assistantMsg"
+        :msg-error="assistantMsgError"
+        :tools="agentTools"
+        :tasks="agentTasks"
+        @close="assistantOpen = false"
+        @ask="askAssistantNow"
+        @quick-ask="quickAsk"
+      />
 
       <!-- 事件详情抽屉 -->
       <div v-if="selectedEventDetail" class="assistant-modal-mask" @click.self="selectedEventDetail = null">
@@ -888,6 +810,8 @@ import WorldGraphConsole from '../components/world-setup/WorldGraphConsole.vue'
 import WorldGraphCanvas from '../components/world-setup/WorldGraphCanvas.vue'
 import WorldBiblePanel from '../components/world-setup/WorldBiblePanel.vue'
 import WorldConflictReportPanel from '../components/world-setup/WorldConflictReportPanel.vue'
+import WorldSearchPanel from '../components/world-setup/WorldSearchPanel.vue'
+import WorldAssistantModal from '../components/world-setup/WorldAssistantModal.vue'
 
 const showDirectorModal = ref(false)
 const directorSchedules = ref([])
