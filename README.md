@@ -47,27 +47,27 @@ irm https://ghproxy.net/https://raw.githubusercontent.com/qi-1021/miroworld/main
 
 ## 🚀 启动与日常运行
 
-安装完成后，直接进入目录即可一键启动（会自动检测 Python、Node、Java 与 Neo4j）：
+安装完成后，直接进入目录即可一键启动（会自动检测并补齐 Python、Node、Java 与 Neo4j）：
 
 ### 🍎 macOS / Linux 启动
 ```bash
 cd miroworld
-./scripts/start.sh
+./start.sh
 ```
 
 ### 🪟 Windows 启动
 ```cmd
 cd miroworld
-scripts\start.bat
+start.bat
 ```
 
-> 💡 **日常管理与更新**：
-> - **一键无密更新**（自动免 Key 拉取 GitHub 最新版本并重新构建）：
->   - macOS/Linux: `./scripts/update.sh`
->   - Windows: 双击 `scripts\update.bat`
+> 💡 **日常管理与更新（根目录直接运行）**：
+> - **一键无密更新**（自动免 Key 拉取 GitHub 最新代码并重新构建）：
+>   - macOS/Linux: `./update.sh`
+>   - Windows: 双击 `update.bat`
 > - **停止服务**：
->   - macOS/Linux: 在终端按 `Ctrl+C` 或运行 `./scripts/stop.sh`（加 `--all` 停止 Neo4j）
->   - Windows: 运行 `scripts\stop.bat`（加 `--all` 停止 Neo4j）
+>   - macOS/Linux: 在终端按 `Ctrl+C` 或运行 `./stop.sh`（加 `--all` 停止 Neo4j）
+>   - Windows: 双击 `stop.bat`（加 `--all` 停止 Neo4j）
 
 ---
 

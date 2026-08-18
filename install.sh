@@ -66,7 +66,7 @@ fi
 
 # 3. 赋予脚本执行权限
 echo -e "${BLUE}[3/5] 配置脚本运行权限与环境探针...${NC}"
-chmod +x scripts/*.sh 2>/dev/null || true
+chmod +x *.sh scripts/*.sh 2>/dev/null || true
 
 # 4. 执行全自动环境就绪与静默安装
 echo -e "${BLUE}[4/5] 正在全自动配置 Python 依赖、Node.js 前端与 Neo4j 数据库组件...${NC}"
@@ -82,7 +82,7 @@ echo -e "${GREEN}===============================================================
 echo -e "  🎉 恭喜！Miroworld 已全部安装配置就绪！"
 echo -e "=====================================================================${NC}"
 echo -e "👉 ${YELLOW}进入项目目录并一键启动服务：${NC}"
-echo -e "   ${CYAN}cd $TARGET_DIR && ./scripts/start.sh${NC}"
+echo -e "   ${CYAN}cd $TARGET_DIR && ./start.sh${NC}"
 echo ""
 echo -e "🌐 ${YELLOW}启动后浏览器直接访问：${NC}"
 echo -e "   - 🎨 前端工作台: ${CYAN}http://localhost:3000${NC}"

@@ -52,6 +52,6 @@ Write-Host "`n==================================================================
 Write-Host "  🎉 恭喜！Miroworld 已在当前机器全部配置就绪！" -ForegroundColor Green
 Write-Host "=====================================================================" -ForegroundColor Green
 Write-Host "👉 运行启动服务：" -ForegroundColor Yellow
-Write-Host "   cd $targetDir ; .\scripts\start.bat" -ForegroundColor Cyan
+Write-Host "   cd $targetDir ; .\start.bat" -ForegroundColor Cyan
 Write-Host "`n🌐 启动后浏览器访问：http://localhost:3000" -ForegroundColor Yellow
 Write-Host "=====================================================================" -ForegroundColor Green
