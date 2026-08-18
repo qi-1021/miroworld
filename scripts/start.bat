@@ -257,13 +257,46 @@ cd /d "%APP_DIR%"
 REM 检查并安装前端依赖
 if not exist "frontend\node_modules" (
     echo [INFO] 安装前端依赖...
-    call npm run setup
+    cd /d "%APP_DIR%\frontend"
+    call npm config set registry https://registry.npmmirror.com >nul 2>nul
+    call npm install --no-audit --no-fund
+    call npm run build
+    cd /d "%APP_DIR%"
 )
 
-REM 检查并安装后端依赖
-if not exist "backend\.venv" (
-    echo [INFO] 安装后端依赖...
-    call npm run setup:backend
+REM 检查并安装主后端虚拟环境与 Flask/Graphiti 依赖
+set NEED_BACKEND_INSTALL=0
+if not exist "backend\.venv\Scripts\python.exe" set NEED_BACKEND_INSTALL=1
+if exist "backend\.venv\Scripts\python.exe" (
+    backend\.venv\Scripts\python.exe -c "import flask, graphiti_core" >nul 2>nul
+    if errorlevel 1 set NEED_BACKEND_INSTALL=1
+)
+
+if "!NEED_BACKEND_INSTALL!"=="1" (
+    echo [INFO] 正在全自动安装主后端 Python 核心依赖 (Flask / Graphiti / OpenAI)...
+    cd /d "%APP_DIR%\backend"
+    where uv >nul 2>nul
+    if not errorlevel 1 (
+        call uv sync --extra graphiti --extra dev
+    )
+    if not exist ".venv\Scripts\python.exe" (
+        where uv >nul 2>nul
+        if not errorlevel 1 (
+            call uv venv .venv
+        ) else (
+            python -m venv .venv
+        )
+    )
+    if exist ".venv\Scripts\python.exe" (
+        where uv >nul 2>nul
+        if not errorlevel 1 (
+            call uv pip install -r requirements.txt --python .venv\Scripts\python.exe --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+        ) else (
+            .venv\Scripts\python.exe -m ensurepip >nul 2>nul
+            .venv\Scripts\python.exe -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+        )
+    )
+    cd /d "%APP_DIR%"
 )
 
 REM 创建模拟环境（OASIS 与 Graphiti 依赖隔离）
