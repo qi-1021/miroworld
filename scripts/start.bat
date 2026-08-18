@@ -268,35 +268,31 @@ if not exist "frontend\node_modules" (
 
 REM 检查并安装主后端虚拟环境与 Flask/Graphiti 依赖
 set NEED_BACKEND_INSTALL=0
-if not exist "backend\.venv\Scripts\python.exe" set NEED_BACKEND_INSTALL=1
-if exist "backend\.venv\Scripts\python.exe" (
-    backend\.venv\Scripts\python.exe -c "import flask, graphiti_core" >nul 2>nul
+if not exist "%APP_DIR%\backend\.venv\Scripts\python.exe" set NEED_BACKEND_INSTALL=1
+if exist "%APP_DIR%\backend\.venv\Scripts\python.exe" (
+    "%APP_DIR%\backend\.venv\Scripts\python.exe" -c "import flask" >nul 2>nul
     if errorlevel 1 set NEED_BACKEND_INSTALL=1
 )
 
 if "!NEED_BACKEND_INSTALL!"=="1" (
-    echo [INFO] 正在全自动安装主后端 Python 核心依赖 (Flask / Graphiti / OpenAI)...
+    echo [INFO] 正在全自动安装主后端核心依赖 Flask, OpenAI, Graphiti...
     cd /d "%APP_DIR%\backend"
+    
+    if not exist "%APP_DIR%\backend\.venv\Scripts\python.exe" (
+        where uv >nul 2>nul
+        if not errorlevel 1 (
+            call uv venv "%APP_DIR%\backend\.venv"
+        ) else (
+            python -m venv "%APP_DIR%\backend\.venv"
+        )
+    )
+    
     where uv >nul 2>nul
     if not errorlevel 1 (
-        call uv sync --extra graphiti --extra dev
-    )
-    if not exist ".venv\Scripts\python.exe" (
-        where uv >nul 2>nul
-        if not errorlevel 1 (
-            call uv venv .venv
-        ) else (
-            python -m venv .venv
-        )
-    )
-    if exist ".venv\Scripts\python.exe" (
-        where uv >nul 2>nul
-        if not errorlevel 1 (
-            call uv pip install -r requirements.txt --python .venv\Scripts\python.exe --index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
-        ) else (
-            .venv\Scripts\python.exe -m ensurepip >nul 2>nul
-            .venv\Scripts\python.exe -m pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
-        )
+        call uv pip install flask flask-cors openai PyMuPDF charset-normalizer chardet python-dotenv pydantic zep-cloud==3.13.0 graphiti-core --python "%APP_DIR%\backend\.venv\Scripts\python.exe" --index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
+    ) else (
+        "%APP_DIR%\backend\.venv\Scripts\python.exe" -m ensurepip >nul 2>nul
+        "%APP_DIR%\backend\.venv\Scripts\python.exe" -m pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
     )
     cd /d "%APP_DIR%"
 )
