@@ -89,51 +89,14 @@ start.bat
 Miroworld 采用分工协作架构，将模型分为 **主对话/决策 (Primary)**、**沙盘推演 (Simulation)**、**图谱抽取 (Graphiti LLM)** 与 **向量检索 (Embedding)** 4 类角色。
 
 打开系统后点击右下角 **「模型设置」** 即可添加连接，推荐配置如下：
-
-### 方案 A：🚀 高性价比与极速首选（国内直连推荐 · 深度求索 / 硅基流动）
-
-| 角色分工 | 推荐模型 | 接口协议 | 推荐服务商 | 优势特点 |
-| :--- | :--- | :--- | :--- | :--- |
-| **主模型 / 决策** | `deepseek-chat` (V3) | OpenAI Compatible | DeepSeek 官方 / 硅基流动 | 逻辑严密、世界观把握精准、超高性价比 |
-| **多智能体推演** | `deepseek-chat` / `Qwen/Qwen2.5-72B-Instruct` | OpenAI Compatible | 硅基流动 / 阿里云百炼 | 角色扮演鲜明、并发推理速度极快 |
-| **图谱抽取构建** | `deepseek-chat` / `glm-4-flash` | OpenAI Compatible | 智谱 AI / 深度求索 | JSON 遵循能力强，实体与关系提炼精准 |
-| **向量嵌入检索** | `BAAI/bge-m3` | OpenAI Compatible (Embeddings) | 硅基流动 / 本地 Ollama | 中文语义多语言召回最优、轻量无压力 |
-
-> 💡 **硅基流动 (SiliconFlow) 快速配置模板**：
-> - **API 基础端点**：`https://api.siliconflow.cn/v1`
-> - **API Key**：填写您在硅基流动控制台生成的 `sk-...`
-> - **推荐模型**：`deepseek-ai/DeepSeek-V3`、`Qwen/Qwen2.5-72B-Instruct`、`BAAI/bge-m3`
-
----
-
-### 方案 B：👑 顶级推演与宏大叙事（国际旗舰推荐）
-
-| 角色分工 | 推荐模型 | 接口协议 | 优势特点 |
-| :--- | :--- | :--- | :--- |
-| **主模型 / 决策** | `claude-3-5-sonnet-20241022` / `gpt-4o` | OpenAI / Anthropic 兼容 | 复杂因果推理与长篇小说剧情张力顶级 |
-| **多智能体推演** | `claude-3-5-haiku-20241022` / `gpt-4o-mini` | OpenAI 兼容 | 兼顾极速响应与丰富的角色对话灵动性 |
-| **图谱抽取构建** | `gpt-4o-mini` | OpenAI 兼容 | 严格遵循结构化 Schema，建图无死锁 |
-| **向量嵌入检索** | `text-embedding-3-small` / `text-embedding-3-large` | OpenAI Embeddings | 国际公认高维度文本语义匹配标准 |
-
----
-
-### 方案 C：🔒 100% 纯本地离线私有化（Ollama / vLLM）
-
-适合追求**零成本、完全离线、绝不外传数据**的创作者：
-
-1. 本地启动 [Ollama](https://ollama.ai) 并拉取模型：
-   ```bash
-   ollama run qwen2.5:14b
-   ollama pull bge-m3
-   ```
-2. 在前端「模型设置」➔「添加连接」：
-   - **连接名称**：`Ollama Local`
-   - **端点 (Endpoint)**：`http://localhost:11434/v1`
-   - **API Key**：任意填写或留空
-   - **绑定模型**：LLM 设为 `qwen2.5:14b`，Embedding 设为 `bge-m3`
-
----
-
+主模型：
+①Opencode go/mimo-v2.5
+②DeepSeek-v4-flash-0731（无论来源为何）  
+③gpt-5.6-luna（如果你很有钱）
+④自建模型或其他性价比模型（建议智商在qwen 3.6-27b之上，否则可能会出现各种无法解决的问题）
+向量模型：
+硅基流动:BAAI/bge-m3(完全免费的，效果好的，不接受任何反驳）
+所有模型的接入方式，请自行询问身边的AI，豆包都会帮你解决这个问题。
 ## 🧭 世界推演核心工作流
 
 ```mermaid
