@@ -47,31 +47,27 @@ if errorlevel 1 (
 )
 
 REM 3. 安装主后端虚拟环境 (.venv)
-echo [STEP 1/3] 正在全自动构建主后端运行环境 (Graphiti + 核心框架)...
+echo [STEP 1/2] 正在全自动构建主后端运行环境 (Graphiti + 核心框架)...
 cd /d "%BACKEND_DIR%"
 
-set MAIN_ENV_OK=0
-where uv >nul 2>nul
-if not errorlevel 1 (
-    echo [INFO] 使用 uv 极速同步主依赖环境...
-    call uv sync --extra graphiti --extra dev
-    if not errorlevel 1 set MAIN_ENV_OK=1
+if not exist ".venv\Scripts\python.exe" (
+    where uv >nul 2>nul
+    if not errorlevel 1 (
+        call uv venv .venv
+    ) else (
+        python -m venv .venv
+    )
 )
 
-if "!MAIN_ENV_OK!"=="0" (
-    echo [提示] 切换为标准 pip 容灾安装主依赖...
-    if not exist ".venv\Scripts\python.exe" (
-        where uv >nul 2>nul
-        if not errorlevel 1 (
-            uv venv .venv
-        ) else (
-            python -m venv .venv
-        )
-    )
-    if exist ".venv\Scripts\python.exe" (
-        .venv\Scripts\python.exe -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple >nul 2>nul
-        .venv\Scripts\python.exe -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
-        if not errorlevel 1 set MAIN_ENV_OK=1
+if exist ".venv\Scripts\python.exe" (
+    where uv >nul 2>nul
+    if not errorlevel 1 (
+        echo [INFO] 使用 uv 极速安装主核心依赖...
+        call uv pip install -r requirements.txt --python .venv\Scripts\python.exe --index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
+    ) else (
+        echo [INFO] 使用 pip 安装主核心依赖...
+        .venv\Scripts\python.exe -m ensurepip >nul 2>nul
+        .venv\Scripts\python.exe -m pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
     )
 )
 

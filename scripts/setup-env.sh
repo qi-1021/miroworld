@@ -28,30 +28,25 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 # 2. 检查主后端环境
-echo "[1/3] 正在全自动构建主后端运行环境 (Graphiti + 核心框架)..."
+echo "[1/2] 正在全自动构建主后端运行环境 (Graphiti + 核心框架)..."
 cd "$BACKEND_DIR"
 
-MAIN_ENV_OK=0
-if command -v uv >/dev/null 2>&1; then
-    echo "[INFO] 使用 uv 极速同步主依赖环境..."
-    if uv sync --extra graphiti --extra dev; then
-        MAIN_ENV_OK=1
+if [ ! -f ".venv/bin/python" ]; then
+    if command -v uv >/dev/null 2>&1; then
+        uv venv .venv
+    else
+        python3 -m venv .venv || python -m venv .venv
     fi
 fi
 
-if [ "$MAIN_ENV_OK" -eq 0 ]; then
-    echo "[提示] 切换为标准 pip 容灾安装主依赖..."
-    if [ ! -f ".venv/bin/python" ]; then
-        if command -v uv >/dev/null 2>&1; then
-            uv venv .venv
-        else
-            python3 -m venv .venv || python -m venv .venv
-        fi
-    fi
-    if [ -f ".venv/bin/python" ]; then
-        .venv/bin/python -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple >/dev/null 2>&1 || true
-        .venv/bin/python -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
-        MAIN_ENV_OK=1
+if [ -f ".venv/bin/python" ]; then
+    if command -v uv >/dev/null 2>&1; then
+        echo "[INFO] 使用 uv 极速安装主核心依赖..."
+        uv pip install -r requirements.txt --python .venv/bin/python --index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
+    else
+        echo "[INFO] 使用 pip 安装主核心依赖..."
+        .venv/bin/python -m ensurepip >/dev/null 2>&1 || true
+        .venv/bin/python -m pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
     fi
 fi
 
