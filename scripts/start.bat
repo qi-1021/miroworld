@@ -289,10 +289,10 @@ if "!NEED_BACKEND_INSTALL!"=="1" (
     
     where uv >nul 2>nul
     if not errorlevel 1 (
-        call uv pip install flask flask-cors openai PyMuPDF charset-normalizer chardet python-dotenv pydantic zep-cloud==3.13.0 graphiti-core --python "%APP_DIR%\backend\.venv\Scripts\python.exe" --index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
+        call uv pip install -r "%APP_DIR%\backend\requirements.txt" --python "%APP_DIR%\backend\.venv\Scripts\python.exe" --index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
     ) else (
         "%APP_DIR%\backend\.venv\Scripts\python.exe" -m ensurepip >nul 2>nul
-        "%APP_DIR%\backend\.venv\Scripts\python.exe" -m pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
+        "%APP_DIR%\backend\.venv\Scripts\python.exe" -m pip install -r "%APP_DIR%\backend\requirements.txt" -i https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
     )
     cd /d "%APP_DIR%"
 )
