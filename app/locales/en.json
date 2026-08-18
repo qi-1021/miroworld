@@ -1443,5 +1443,29 @@
     "confirmDeleteAfter": "Delete {n} events after the current time point? This cannot be undone.",
     "deletedCount": "Deleted {n} events",
     "failed": "Batch operation failed"
+  },
+  "fork": {
+    "branchBase": "Mainline",
+    "branchN": "Branch {n}",
+    "forkBadge": "Branch",
+    "continueBtn": "Continue Simulation",
+    "continueFromEvent": "Continue simulation from this event",
+    "forkBtn": "Fork Branch",
+    "forkDialogTitle": "Fork a Parallel Worldline Here",
+    "forkModalTitle": "Fork Branch from Event",
+    "targetEvent": "Target Baseline Event",
+    "whatIfPlaceholder": "Propose \"What if something different happened\" or a new direction…",
+    "forkGoalLabel": "What-If Goal",
+    "horizon": "Simulation Horizon",
+    "forkSubmit": "Launch Fork Simulation",
+    "forkRunning": "Simulating…",
+    "continueGoalDefault": "Continue evolving according to the situation of \"{name}\"",
+    "forkStarted": "Fork simulation task submitted",
+    "forkDoneCount": "Fork simulation completed, {n} parallel events added",
+    "forkFailed": "Fork simulation failed",
+    "interrupted": "Simulation interrupted",
+    "forkTimeout": "Fork simulation timed out",
+    "startFork": "Start Fork Simulation",
+    "cancel": "Cancel"
   }
 }

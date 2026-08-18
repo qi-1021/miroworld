@@ -1446,11 +1446,26 @@
     "failed": "批量操作失败"
   },
   "fork": {
+    "branchBase": "主线",
+    "branchN": "分支 {n}",
+    "forkBadge": "分支",
     "continueBtn": "继续推演",
     "continueFromEvent": "从此事件节点继续推演",
+    "forkBtn": "分叉推演",
+    "forkDialogTitle": "在此节点发起平行分叉推演",
     "forkModalTitle": "从事件节点分叉推演",
     "targetEvent": "目标基准事件",
     "whatIfPlaceholder": "提出「如果当时发生了某事」或设定新的推进方向…",
+    "forkGoalLabel": "假设演进目标（What-If 变数）",
+    "horizon": "推演深度轮数",
+    "forkSubmit": "启动分叉演算",
+    "forkRunning": "推演演算中…",
+    "continueGoalDefault": "顺承“{name}”的局势走向继续演化",
+    "forkStarted": "分叉推演任务已提交",
+    "forkDoneCount": "分叉推演完成，新增 {n} 条平行世界线事件",
+    "forkFailed": "分叉推演失败",
+    "interrupted": "推演被中断",
+    "forkTimeout": "分叉推演超时",
     "startFork": "开始分叉演进",
     "cancel": "取消"
   }
