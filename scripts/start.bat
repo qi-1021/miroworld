@@ -153,7 +153,7 @@ if not errorlevel 1 (
     exit /b 1
 )
 
-REM 清理上次残留（避免端口占用导致启动失败）
+REM 清理上次残留（避免端口占用与虚拟盘符堆积）
 echo [INFO] 清理上次运行残留...
 for %%p in (3000 5001) do (
     for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%%p" ^| findstr "LISTENING"') do (
@@ -162,12 +162,19 @@ for %%p in (3000 5001) do (
 )
 powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*run_world_simulation*' -or $_.CommandLine -like '*run_parallel_simulation*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" >nul 2>nul
 
+REM 扫描并释放属于本项目的旧虚拟盘符，避免重复累计创建
+for %%d in (Z Y X W V U T S R Q P) do (
+    if exist "%%d:\scripts\start.bat" (
+        subst %%d: /d >nul 2>nul
+    )
+)
+
 echo.
 echo [INFO] 检查与启动 Neo4j 知识图谱数据库...
 
 REM ---- 中文/特殊路径自动适配 (Windows subst 虚拟盘符自愈) ----
 REM Neo4j JVM 与 Log4j 无法正确解析含非 ASCII（中文用户名如成昊翰）或空格的路径
-REM 解决方案：通过 Windows subst 挂载一个纯 ASCII 独立虚拟盘符（例如 Z:），让 Neo4j 在纯英文路径下运行
+REM 解决方案：通过 Windows subst 挂载一个纯 ASCII 独立虚拟盘符（优先固定使用 Z:），让 Neo4j 在纯英文路径下运行
 set REAL_PROJECT_ROOT=%PROJECT_ROOT%
 set SAFE_PROJECT_ROOT=%PROJECT_ROOT%
 
@@ -175,7 +182,8 @@ REM 检测路径是否包含非 ASCII 字符或空格
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "if ('%PROJECT_ROOT%' -match '[^\x00-\x7F]| ') { exit 10 } else { exit 0 }"
 if errorlevel 10 (
-    echo [INFO] 检测到项目路径包含中文或空格，正在自动建立纯英文虚拟磁盘映射以保障 Neo4j 稳定运行...
+    echo [INFO] 检测到项目路径包含中文或空格，正在自动建立纯英文虚拟磁盘映射...
+    set "MAPPED_DRIVE="
     for %%d in (Z Y X W V U T S R Q P) do (
         if not defined MAPPED_DRIVE (
             if not exist "%%d:\" (
