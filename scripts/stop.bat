@@ -35,6 +35,13 @@ call :kill_by_marker run_parallel_simulation
 call :kill_by_marker run_reddit_simulation
 call :kill_by_marker run_twitter_simulation
 
+REM 清理虚拟磁盘映射
+for %%d in (Z Y X W V U T S R Q P) do (
+    if exist "%%d:\scripts\start.bat" (
+        subst %%d: /d >nul 2>nul
+    )
+)
+
 echo [INFO] 停止完成。
 echo [INFO] 日志目录: app\backend\logs\（start-backend.log / start-frontend.log，可删除）
 endlocal

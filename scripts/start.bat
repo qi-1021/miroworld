@@ -158,6 +158,35 @@ call "%SCRIPT_DIR%stop.bat" >nul 2>nul
 echo.
 echo [INFO] 检查与启动 Neo4j 知识图谱数据库...
 
+REM ---- 中文/特殊路径自动适配 (Windows subst 虚拟盘符自愈) ----
+REM Neo4j JVM 与 Log4j 无法正确解析含非 ASCII（中文用户名如成昊翰）或空格的路径
+REM 解决方案：通过 Windows subst 挂载一个纯 ASCII 独立虚拟盘符（例如 Z:），让 Neo4j 在纯英文路径下运行
+set REAL_PROJECT_ROOT=%PROJECT_ROOT%
+set SAFE_PROJECT_ROOT=%PROJECT_ROOT%
+
+REM 检测路径是否包含非 ASCII 字符或空格
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "if ('%PROJECT_ROOT%' -match '[^\x00-\x7F]| ') { exit 10 } else { exit 0 }"
+if errorlevel 10 (
+    echo [INFO] 检测到项目路径包含中文或空格，正在自动建立纯英文虚拟磁盘映射以保障 Neo4j 稳定运行...
+    set MAPPED_DRIVE=
+    for %%d in (Z Y X W V U T S R Q P) do (
+        if not exist "%%d:\" (
+            subst %%d: "%PROJECT_ROOT%" >nul 2>nul
+            if exist "%%d:\scripts\start.bat" (
+                set "MAPPED_DRIVE=%%d:"
+                set "SAFE_PROJECT_ROOT=%%d:"
+                echo [INFO] ✓ 已成功映射虚拟运行盘: !MAPPED_DRIVE!
+                goto :drive_mapped
+            )
+        )
+    )
+    :drive_mapped
+    if not "!MAPPED_DRIVE!"=="" (
+        set "NEO4J_DIR=!SAFE_PROJECT_ROOT!\neo4j"
+    )
+)
+
 REM 兼容两种安装布局：neo4j\neo4j（安装脚本默认）或 neo4j\neo4j-program（已有便携部署）
 set NEO4J_HOME=%NEO4J_DIR%\neo4j
 if not exist "%NEO4J_HOME%\bin\neo4j.bat" (
@@ -177,6 +206,16 @@ if not exist "%NEO4J_HOME%\bin\neo4j.bat" (
         exit /b 1
     )
     echo [INFO] ✓ Neo4j 便携版自动安装就绪
+)
+
+REM 确保核心子目录（logs, conf, data, run, import）预先存在
+if not exist "%NEO4J_HOME%\logs" mkdir "%NEO4J_HOME%\logs" >nul 2>nul
+if not exist "%NEO4J_HOME%\conf" mkdir "%NEO4J_HOME%\conf" >nul 2>nul
+if not exist "%NEO4J_HOME%\data" mkdir "%NEO4J_HOME%\data" >nul 2>nul
+if not exist "%NEO4J_HOME%\run" mkdir "%NEO4J_HOME%\run" >nul 2>nul
+if not exist "%NEO4J_HOME%\conf\neo4j.conf" (
+    echo dbms.security.auth_enabled=true > "%NEO4J_HOME%\conf\neo4j.conf"
+    echo dbms.default_listen_address=0.0.0.0 >> "%NEO4J_HOME%\conf\neo4j.conf"
 )
 
 REM 数据目录跟随便携文件夹（存在持久化数据时使用）
