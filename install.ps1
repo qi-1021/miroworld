@@ -28,9 +28,10 @@ $proxyZipUrl = "https://ghproxy.net/https://github.com/qi-1021/miroworld/archive
 if ($hasGit) {
     Write-Host "[INFO] 检测到系统已安装 Git，使用 Git 协议同步..." -ForegroundColor Green
     if (Test-Path "$targetDir\.git") {
-        Write-Host "[INFO] 检测到已存在 $targetDir 目录，正在同步至最新..." -ForegroundColor Green
+        Write-Host "[INFO] 检测到已存在 $targetDir 目录，正在强制同步至 GitHub 最新版本..." -ForegroundColor Green
         Set-Location $targetDir
-        git pull origin main
+        git fetch origin main | Out-Null
+        git reset --hard origin/main | Out-Null
     } else {
         try {
             git clone $repoUrl $targetDir
@@ -80,10 +81,10 @@ if ($hasGit) {
     }
 }
 
-# 3. 运行环境配置脚本
-Write-Host "[3/4] 正在全自动配置 Python 依赖、Node.js 前端环境与 Neo4j 数据库..." -ForegroundColor Blue
-if (Test-Path "scripts\setup-env.bat") {
-    & cmd.exe /c "scripts\setup-env.bat"
+# 3. 运行环境配置与启动服务
+Write-Host "[3/4] 正在拉起环境自愈与全套服务 (Neo4j / Python / Node.js)..." -ForegroundColor Blue
+if (Test-Path "start.bat") {
+    & cmd.exe /c "start.bat"
 }
 
 # 4. 完成
