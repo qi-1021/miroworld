@@ -311,8 +311,8 @@ const props = defineProps({
 
 defineEmits(['open-interview'])
 
-const GV_W = 1400
-const GV_H = 800
+const GV_W = 3000
+const GV_H = 1800
 const graphPos = ref({})
 const selectedGraphNode = ref(null)
 const sourceFilter = ref('all')
@@ -645,11 +645,12 @@ function layoutGraph(nodes, edges) {
       pos[n.uuid] = { x: existingPos[n.uuid].x, y: existingPos[n.uuid].y }
     } else {
       hasNewNodes = true
-      const r = Math.sqrt(i + 1) * 55 + 90
+      // 扩散分布半径扩大 2.2 倍，使星图自然舒展成宏大的宇宙星系
+      const r = Math.sqrt(i + 1) * 125 + 180
       const theta = i * goldenAngle
       pos[n.uuid] = {
-        x: GV_W / 2 + Math.cos(theta) * (r * 1.1),
-        y: GV_H / 2 + Math.sin(theta) * (r * 0.8)
+        x: GV_W / 2 + Math.cos(theta) * (r * 1.25),
+        y: GV_H / 2 + Math.sin(theta) * (r * 0.95)
       }
     }
   })
@@ -658,7 +659,7 @@ function layoutGraph(nodes, edges) {
     return pos
   }
 
-  const maxIters = count > 150 ? 8 : count > 60 ? 15 : 25
+  const maxIters = count > 150 ? 12 : count > 60 ? 20 : 35
   for (let iter = 0; iter < maxIters; iter++) {
     const cooling = Math.max(0.05, 1 - (iter / maxIters))
     const step = count > 120 ? 2 : 1
@@ -672,9 +673,10 @@ function layoutGraph(nodes, edges) {
         let dx = a.x - b.x
         let dy = a.y - b.y
         let d = Math.sqrt(dx * dx + dy * dy) || 1
-        const minDist = 80
+        // 节点排斥距离扩大至 180px，彻底避免节点和连线挤在一起
+        const minDist = 180
         if (d < minDist * 2) {
-          const force = (Math.pow(minDist * 2 - d, 2) / 120) * cooling
+          const force = (Math.pow(minDist * 2 - d, 2) / 180) * cooling
           dx /= d
           dy /= d
           a.x += dx * force
@@ -692,8 +694,9 @@ function layoutGraph(nodes, edges) {
         let dx = b.x - a.x
         let dy = b.y - a.y
         const d = Math.sqrt(dx * dx + dy * dy) || 1
-        const targetLen = 140
-        const force = ((d - targetLen) / 15) * cooling
+        // 连线弹簧理想长度拉开至 260px，赋予连线文字充足的伸展空间
+        const targetLen = 260
+        const force = ((d - targetLen) / 20) * cooling
         dx /= d
         dy /= d
         a.x += dx * force
@@ -707,8 +710,8 @@ function layoutGraph(nodes, edges) {
   nodes.forEach(n => {
     const p = pos[n.uuid]
     if (p) {
-      p.x = Math.max(80, Math.min(GV_W - 80, p.x))
-      p.y = Math.max(60, Math.min(GV_H - 60, p.y))
+      p.x = Math.max(140, Math.min(GV_W - 140, p.x))
+      p.y = Math.max(120, Math.min(GV_H - 120, p.y))
     }
   })
   return pos
