@@ -29,5 +29,7 @@ python-dotenv>=1.0.0
 httpx>=0.25.0
 requests>=2.31.0
 
-# 数据验证
+# ============= 数据验证与开发测试 =============
 pydantic>=2.0.0
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
