@@ -297,44 +297,6 @@ if "!NEED_BACKEND_INSTALL!"=="1" (
     cd /d "%APP_DIR%"
 )
 
-REM 创建模拟环境（OASIS 与 Graphiti 依赖隔离）
-if not exist "backend\.venv-simulation\Scripts\python.exe" (
-    echo [INFO] 创建模拟环境...
-    cd /d "%APP_DIR%\backend"
-    where uv >nul 2>nul
-    if not errorlevel 1 (
-        call uv venv .venv-simulation
-    ) else (
-        python -m venv .venv-simulation
-    )
-)
-if not exist "backend\.venv-simulation\Scripts\python.exe" (
-    echo [ERROR] 模拟环境创建失败
-    pause
-    exit /b 1
-)
-
-echo [INFO] 检查/安装 OASIS 模拟依赖 (支持国内多源高速通道)...
-set OASIS_OK=0
-where uv >nul 2>nul
-if not errorlevel 1 (
-    call uv pip install -r "%APP_DIR%\backend\requirements-oasis.txt" --python "%APP_DIR%\backend\.venv-simulation\Scripts\python.exe" --index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
-    if not errorlevel 1 set OASIS_OK=1
-)
-
-if "!OASIS_OK!"=="0" (
-    "%APP_DIR%\backend\.venv-simulation\Scripts\python.exe" -m ensurepip >nul 2>nul
-    "%APP_DIR%\backend\.venv-simulation\Scripts\python.exe" -m pip install -r "%APP_DIR%\backend\requirements-oasis.txt" -i https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
-    if not errorlevel 1 set OASIS_OK=1
-)
-
-if "!OASIS_OK!"=="1" (
-    echo [INFO] ✓ OASIS 模拟环境配置就绪！
-) else (
-    echo [WARN] OASIS 模拟依赖安装失败（此依赖仅用于旧版社媒推演分支，不影响核心世界推演与知识图谱主系统）
-)
-cd /d "%APP_DIR%"
-
 REM 初始化模型配置（导入旧 .env、检查模型库状态）
 if exist "%SCRIPT_DIR%init-models.bat" (
     echo [INFO] 初始化模型配置...
