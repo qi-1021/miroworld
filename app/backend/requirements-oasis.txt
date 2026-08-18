@@ -1,6 +1,0 @@
-# OASIS 社交媒体模拟环境依赖（与 Graphiti 主环境隔离）
-# 原因：camel-oasis 锁定 neo4j==5.23.0，而 graphiti-core 需要 neo4j>=5.26，
-# 两个后端不能共存在同一个 Python 环境。
-camel-oasis>=0.2.0
-camel-ai>=0.2.0
-zep-cloud>=3.0.0
