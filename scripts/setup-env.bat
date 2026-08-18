@@ -82,30 +82,14 @@ if not exist ".venv\Scripts\python.exe" (
 )
 echo [INFO] ✓ 主后端运行环境已配置就绪！
 
-REM 4. 构建 OASIS 隔离模拟环境 (.venv-simulation)
-echo [STEP 2/3] 正在构建 OASIS 隔离模拟环境 (.venv-simulation)...
-if not exist ".venv-simulation\Scripts\python.exe" (
-    where uv >nul 2>nul
-    if not errorlevel 1 (
-        call uv venv .venv-simulation >nul 2>nul
-    ) else (
-        python -m venv .venv-simulation >nul 2>nul
-    )
+REM 清理可能遗留的损坏 .venv-simulation 目录
+if exist ".venv-simulation" (
+    echo [INFO] 清理历史遗留模拟环境缓存...
+    rmdir /s /q ".venv-simulation" >nul 2>nul
 )
 
-if exist ".venv-simulation\Scripts\python.exe" (
-    where uv >nul 2>nul
-    if not errorlevel 1 (
-        call uv pip install -r requirements-oasis.txt --python ".venv-simulation\Scripts\python.exe" --index-url https://pypi.tuna.tsinghua.edu.cn/simple >nul 2>nul
-    ) else (
-        .venv-simulation\Scripts\python.exe -m ensurepip >nul 2>nul
-        .venv-simulation\Scripts\python.exe -m pip install -r requirements-oasis.txt -i https://pypi.tuna.tsinghua.edu.cn/simple >nul 2>nul
-    )
-    echo [INFO] ✓ OASIS 模拟环境配置就绪！
-)
-
-REM 5. 检查并准备 Node.js 环境与前端静态包构建
-echo [STEP 3/3] 检查前端 Node.js 与静态包构建...
+REM 4. 检查并准备 Node.js 环境与前端静态包构建
+echo [STEP 2/2] 检查前端 Node.js 与静态包构建...
 where node >nul 2>nul
 if errorlevel 1 (
     echo [INFO] 未检测到 Node.js，正在通过国内镜像自动下载 Node.js 便携版...

@@ -61,24 +61,13 @@ if [ ! -f ".venv/bin/python" ]; then
 fi
 echo "[INFO] ✓ 主后端运行环境配置就绪！"
 
-# 3. 构建 OASIS 隔离模拟环境 (.venv-simulation)
-echo "[2/3] 正在构建 OASIS 隔离模拟环境 (.venv-simulation)..."
-if [ ! -f ".venv-simulation/bin/python" ]; then
-    if command -v uv >/dev/null 2>&1; then
-        uv venv .venv-simulation >/dev/null 2>&1 || true
-    else
-        python3 -m venv .venv-simulation >/dev/null 2>&1 || true
-    fi
+# 清理可能遗留的损坏 .venv-simulation 目录
+if [ -d ".venv-simulation" ]; then
+    rm -rf ".venv-simulation" >/dev/null 2>&1 || true
 fi
 
-if [ -f ".venv-simulation/bin/python" ]; then
-    .venv-simulation/bin/python -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple >/dev/null 2>&1 || true
-    .venv-simulation/bin/python -m pip install -r requirements-oasis.txt -i https://pypi.tuna.tsinghua.edu.cn/simple >/dev/null 2>&1 || true
-    echo "[INFO] ✓ OASIS 模拟环境配置就绪！"
-fi
-
-# 4. 构建前端生产包
-echo "[3/3] 检查前端 Node.js 与静态包构建..."
+# 3. 构建前端生产包
+echo "[2/2] 检查前端 Node.js 与静态包构建..."
 if command -v npm >/dev/null 2>&1; then
     cd "$PROJECT_ROOT/app/frontend"
     if [ -f "package.json" ]; then

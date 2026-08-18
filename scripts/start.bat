@@ -266,6 +266,11 @@ if not exist "frontend\node_modules" (
     cd /d "%APP_DIR%"
 )
 
+REM 清理历史遗留的损坏模拟环境（若存在）
+if exist "%APP_DIR%\backend\.venv-simulation" (
+    rmdir /s /q "%APP_DIR%\backend\.venv-simulation" >nul 2>nul
+)
+
 REM 检查并安装主后端虚拟环境与 Flask/Graphiti 依赖
 set NEED_BACKEND_INSTALL=0
 if not exist "%APP_DIR%\backend\.venv\Scripts\python.exe" set NEED_BACKEND_INSTALL=1
