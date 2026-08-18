@@ -139,10 +139,8 @@ class Config:
 
     @classmethod
     def validate(cls):
-        """验证必要配置"""
+        """验证必要配置（基础服务可用性）"""
         errors = []
-        if not cls.LLM_API_KEY:
-            errors.append("LLM_API_KEY 未配置")
         # 根据后端类型验证配置
         if cls.ZEP_BACKEND == 'cloud':
             if not cls.ZEP_API_KEY:
