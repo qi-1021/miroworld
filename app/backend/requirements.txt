@@ -23,9 +23,11 @@ PyMuPDF>=1.24.0
 charset-normalizer>=3.0.0
 chardet>=5.0.0
 
-# ============= 工具库 =============
+# ============= 工具库与网络 =============
 # 环境变量加载
 python-dotenv>=1.0.0
+httpx>=0.25.0
+requests>=2.31.0
 
 # 数据验证
 pydantic>=2.0.0
