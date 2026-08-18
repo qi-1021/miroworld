@@ -287,7 +287,7 @@ echo [INFO] 检查/安装 OASIS 模拟依赖 (支持国内清华源高速通道)
 set OASIS_OK=0
 where uv >nul 2>nul
 if not errorlevel 1 (
-    call uv pip install -r "%APP_DIR%\backend\requirements-oasis.txt" --python "%APP_DIR%\backend\.venv-simulation\Scripts\python.exe" --index-url https://pypi.tuna.tsinghua.edu.cn/simple >nul 2>nul
+    call uv pip install -r "%APP_DIR%\backend\requirements-oasis.txt" --python "%APP_DIR%\backend\.venv-simulation\Scripts\python.exe" --index-url https://pypi.tuna.tsinghua.edu.cn/simple
     if not errorlevel 1 set OASIS_OK=1
 )
 
@@ -297,8 +297,10 @@ if "!OASIS_OK!"=="0" (
     if not errorlevel 1 set OASIS_OK=1
 )
 
-if "!OASIS_OK!"=="0" (
-    echo [WARN] OASIS 模拟可选依赖未全部安装完成（不影响主引擎与图谱推演）
+if "!OASIS_OK!"=="1" (
+    echo [INFO] ✓ OASIS 模拟环境配置就绪！
+) else (
+    echo [WARN] OASIS 模拟依赖安装失败（此依赖仅用于旧版社媒推演分支，不影响核心世界推演与知识图谱主系统）
 )
 cd /d "%APP_DIR%"
 
