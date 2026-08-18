@@ -1237,17 +1237,32 @@
                       }"
                       :marker-end="isEdgeConnected(e) ? 'url(#edge-arrow-active)' : 'url(#edge-arrow)'"
                     />
-                    <!-- 边关系名称标签（选中关联节点或高亮时清晰可见） -->
-                    <text
-                      v-if="e.fact && (isEdgeConnected(e) || graphZoom >= 1.2)"
-                      :x="(graphNodeX(e.source) + graphNodeX(e.target)) / 2"
-                      :y="(graphNodeY(e.source) + graphNodeY(e.target)) / 2 - 4"
-                      class="graph-edge-label"
-                      :class="{ active: isEdgeConnected(e) }"
-                      text-anchor="middle"
+                    <!-- 边关系名称标签（带有半透明背景框与完整事实悬浮提示，杜绝文字堆叠重合） -->
+                    <g
+                      v-if="e.fact && (isEdgeConnected(e) || graphZoom >= 1.15)"
+                      class="edge-label-badge"
                     >
-                      {{ e.fact }}
-                    </text>
+                      <!-- 标签背景胶囊气泡，防止与连线或多条关系发生字体重叠 -->
+                      <rect
+                        :x="(graphNodeX(e.source) + graphNodeX(e.target)) / 2 - (e.fact.length * 5.5 + 6)"
+                        :y="(graphNodeY(e.source) + graphNodeY(e.target)) / 2 - 11"
+                        :width="e.fact.length * 11 + 12"
+                        height="18"
+                        rx="9"
+                        class="edge-label-bg"
+                        :class="{ active: isEdgeConnected(e) }"
+                      />
+                      <text
+                        :x="(graphNodeX(e.source) + graphNodeX(e.target)) / 2"
+                        :y="(graphNodeY(e.source) + graphNodeY(e.target)) / 2 + 2"
+                        class="graph-edge-label"
+                        :class="{ active: isEdgeConnected(e) }"
+                        text-anchor="middle"
+                      >
+                        {{ e.fact }}
+                      </text>
+                      <title>{{ e.full_fact || e.fact }}</title>
+                    </g>
                   </g>
                 </g>
 
@@ -1359,9 +1374,14 @@
                     class="relation-item"
                     @click="locateAndSelectNode(rel.targetNode)"
                   >
-                    <span class="rel-predicate">【{{ rel.fact || '关联' }}】</span>
-                    <span class="rel-target-name">👉 {{ rel.targetNode.name }}</span>
-                    <span class="rel-target-type">({{ graphNodeType(rel.targetNode) }})</span>
+                    <div class="rel-item-header">
+                      <span class="rel-predicate">【{{ rel.fact || '关联' }}】</span>
+                      <span class="rel-target-name">👉 {{ rel.targetNode.name }}</span>
+                      <span class="rel-target-type">({{ graphNodeType(rel.targetNode) }})</span>
+                    </div>
+                    <div v-if="rel.full_fact && rel.full_fact !== rel.fact" class="rel-full-text">
+                      {{ rel.full_fact }}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2035,14 +2055,54 @@ const graphMsgError = ref(false)
 const selectedGraphNode = ref(null)
 let graphPollTimer = null
 
+// 智能提炼高度精炼的关系谓词（将 20~50 字的长句提炼为 2~4 字核心动宾标签，杜绝图谱连线文字堆叠）
+function cleanEdgeFact(raw) {
+  if (!raw || typeof raw !== 'string') return '关联'
+  let s = raw.trim()
+  // 1. 去除常见长句前缀与引号
+  s = s.replace(/^[“"']|[”"']$/g, '').trim()
+  
+  // 2. 核心关系动词高优先级命中
+  const PREDICATE_PATTERNS = [
+    { reg: /(?:隶属|从属|归属|属于|是.*的成员|加入)/i, label: '隶属于' },
+    { reg: /(?:出生|成长|定居|来自)/i, label: '出生于' },
+    { reg: /(?:驻扎|派驻|驻守|工作于|位于|地处)/i, label: '驻扎于' },
+    { reg: /(?:师承|跟随|指导|教导|学习)/i, label: '师承' },
+    { reg: /(?:持有|拥有|控制|佩戴|保管|使用)/i, label: '持有' },
+    { reg: /(?:对立|敌对|冲突|开战|作战|交战|反抗)/i, label: '对立于' },
+    { reg: /(?:覆灭|毁灭|消灭|摧毁|击败)/i, label: '覆灭' },
+    { reg: /(?:结盟|同盟|合作|援助|救助)/i, label: '结盟' },
+    { reg: /(?:领导|指挥|统率|管辖)/i, label: '领导' },
+    { reg: /(?:影响|改变|塑造|波及)/i, label: '影响' },
+    { reg: /(?:创造|建立|创立|研发|制造)/i, label: '创立' },
+    { reg: /(?:连接|通往|穿梭)/i, label: '连接' },
+    { reg: /(?:亲属|父母|子女|兄弟|姐妹|母亲|父亲|孩子)/i, label: '亲属' }
+  ]
+  for (const p of PREDICATE_PATTERNS) {
+    if (p.reg.test(s)) return p.label
+  }
+
+  // 3. 提取主体谓词短语（去除助词并严格限制字数）
+  s = s.replace(/^(在|从|由|被|与|和|对|向|关于|因为|由于)/, '')
+  if (s.length > 6) {
+    // 截取前 4~5 个核心字符
+    s = s.slice(0, 5)
+  }
+  return s || '关联'
+}
+
 const graphNodes = computed(() => (graphInfo.value && graphInfo.value.nodes) || [])
 const graphEdges = computed(() => {
   if (!graphInfo.value || !graphInfo.value.edges) return []
-  return graphInfo.value.edges.map(e => ({
-    source: e.source_node_uuid,
-    target: e.target_node_uuid,
-    fact: e.fact || e.name || ''
-  }))
+  return graphInfo.value.edges.map(e => {
+    const rawFact = e.fact || e.name || ''
+    return {
+      source: e.source_node_uuid,
+      target: e.target_node_uuid,
+      fact: cleanEdgeFact(rawFact), // 精简后的短标签（用于连线呈现）
+      full_fact: rawFact            // 完整叙述（用于侧边面板与气泡展示）
+    }
+  })
 })
 
 const GRAPH_COLORS = [
@@ -2213,10 +2273,10 @@ const selectedNodeConnections = computed(() => {
   graphEdges.value.forEach(e => {
     if (e.source === sn.uuid) {
       const target = nodeMap.get(e.target)
-      if (target) list.push({ edge: e, fact: e.fact, targetNode: target, direction: 'out' })
+      if (target) list.push({ edge: e, fact: e.fact, full_fact: e.full_fact, targetNode: target, direction: 'out' })
     } else if (e.target === sn.uuid) {
       const target = nodeMap.get(e.source)
-      if (target) list.push({ edge: e, fact: e.fact, targetNode: target, direction: 'in' })
+      if (target) list.push({ edge: e, fact: e.fact, full_fact: e.full_fact, targetNode: target, direction: 'in' })
     }
   })
   return list
@@ -6601,21 +6661,35 @@ onUnmounted(() => {
   from { stroke-dashoffset: 9; }
   to { stroke-dashoffset: 0; }
 }
+.edge-label-badge {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.edge-label-bg {
+  fill: rgba(15, 23, 42, 0.88);
+  stroke: rgba(148, 163, 184, 0.28);
+  stroke-width: 1px;
+  backdrop-filter: blur(4px);
+  transition: all 0.2s ease;
+}
+.edge-label-bg.active {
+  fill: rgba(15, 23, 42, 0.96);
+  stroke: #a1c50a;
+  stroke-width: 1.5px;
+  filter: drop-shadow(0 0 6px rgba(161, 197, 10, 0.4));
+}
 .graph-edge-label {
-  font-size: 10px;
+  font-size: 9.5px;
   fill: #94a3b8;
-  font-weight: 500;
+  font-weight: 600;
   pointer-events: none;
-  paint-order: stroke;
-  stroke: #0f172a;
-  stroke-width: 2.5px;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: 0.2px;
 }
 .graph-edge-label.active {
   fill: #e2f47c;
   font-weight: 700;
-  font-size: 11px;
+  font-size: 10.5px;
 }
 .graph-legend-bar {
   display: flex;
@@ -6845,18 +6919,34 @@ onUnmounted(() => {
 }
 .relation-item {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  padding: 4px 6px;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
   background: rgba(255, 255, 255, 0.04);
+  border-left: 2px solid rgba(56, 189, 248, 0.5);
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.15s;
 }
 .relation-item:hover {
-  background: rgba(161, 197, 10, 0.2);
+  background: rgba(161, 197, 10, 0.15);
+  border-left-color: #a1c50a;
   transform: translateX(2px);
+}
+.rel-item-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.rel-full-text {
+  font-size: 10px;
+  color: #94a3b8;
+  line-height: 1.4;
+  background: rgba(15, 23, 42, 0.4);
+  padding: 4px 6px;
+  border-radius: 3px;
+  margin-top: 2px;
 }
 .rel-predicate {
   color: #38bdf8;
