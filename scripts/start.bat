@@ -21,9 +21,11 @@ echo    Miroworld 可移植部署启动脚本 (Windows)
 echo ================================================
 echo.
 
-REM 设置国内镜像自动加速环境变量（清华源/华为源/npmmirror）
-if "%UV_INDEX_URL%"=="" set UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-if "%PIP_INDEX_URL%"=="" set PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+REM 设置国内多镜像自动加速与容灾备选（阿里云 / 清华大学 / 华为云 / 腾讯云 / 中科大）
+if "%UV_INDEX_URL%"=="" set UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+if "%UV_EXTRA_INDEX_URL%"=="" set UV_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple https://mirrors.huaweicloud.com/repository/pypi/simple/ https://mirrors.cloud.tencent.com/pypi/simple/ https://pypi.mirrors.ustc.edu.cn/simple/
+if "%PIP_INDEX_URL%"=="" set PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+if "%PIP_EXTRA_INDEX_URL%"=="" set PIP_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple https://mirrors.huaweicloud.com/repository/pypi/simple/ https://mirrors.cloud.tencent.com/pypi/simple/ https://pypi.mirrors.ustc.edu.cn/simple/
 if "%NPM_CONFIG_REGISTRY%"=="" set NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 
 REM 检查与自动准备依赖
@@ -290,10 +292,10 @@ if "!NEED_BACKEND_INSTALL!"=="1" (
     if exist ".venv\Scripts\python.exe" (
         where uv >nul 2>nul
         if not errorlevel 1 (
-            call uv pip install -r requirements.txt --python .venv\Scripts\python.exe --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+            call uv pip install -r requirements.txt --python .venv\Scripts\python.exe --index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
         ) else (
             .venv\Scripts\python.exe -m ensurepip >nul 2>nul
-            .venv\Scripts\python.exe -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+            .venv\Scripts\python.exe -m pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
         )
     )
     cd /d "%APP_DIR%"
@@ -316,17 +318,17 @@ if not exist "backend\.venv-simulation\Scripts\python.exe" (
     exit /b 1
 )
 
-echo [INFO] 检查/安装 OASIS 模拟依赖 (支持国内清华源高速通道)...
+echo [INFO] 检查/安装 OASIS 模拟依赖 (支持国内多源高速通道)...
 set OASIS_OK=0
 where uv >nul 2>nul
 if not errorlevel 1 (
-    call uv pip install -r "%APP_DIR%\backend\requirements-oasis.txt" --python "%APP_DIR%\backend\.venv-simulation\Scripts\python.exe" --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+    call uv pip install -r "%APP_DIR%\backend\requirements-oasis.txt" --python "%APP_DIR%\backend\.venv-simulation\Scripts\python.exe" --index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
     if not errorlevel 1 set OASIS_OK=1
 )
 
 if "!OASIS_OK!"=="0" (
     "%APP_DIR%\backend\.venv-simulation\Scripts\python.exe" -m ensurepip >nul 2>nul
-    "%APP_DIR%\backend\.venv-simulation\Scripts\python.exe" -m pip install -r "%APP_DIR%\backend\requirements-oasis.txt" -i https://pypi.tuna.tsinghua.edu.cn/simple
+    "%APP_DIR%\backend\.venv-simulation\Scripts\python.exe" -m pip install -r "%APP_DIR%\backend\requirements-oasis.txt" -i https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/
     if not errorlevel 1 set OASIS_OK=1
 )
 

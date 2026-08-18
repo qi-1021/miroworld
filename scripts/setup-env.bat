@@ -18,9 +18,11 @@ echo =================================================================
 echo        Miroworld 运行环境一键全自动配置 (Windows)
 echo =================================================================
 
-REM 0. 设置国内镜像加速
-if "%UV_INDEX_URL%"=="" set UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-if "%PIP_INDEX_URL%"=="" set PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+REM 0. 设置国内多镜像自动加速与容灾备选（阿里云 / 清华大学 / 华为云 / 腾讯云 / 中科大）
+if "%UV_INDEX_URL%"=="" set UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+if "%UV_EXTRA_INDEX_URL%"=="" set UV_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple https://mirrors.huaweicloud.com/repository/pypi/simple/ https://mirrors.cloud.tencent.com/pypi/simple/ https://pypi.mirrors.ustc.edu.cn/simple/
+if "%PIP_INDEX_URL%"=="" set PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+if "%PIP_EXTRA_INDEX_URL%"=="" set PIP_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple https://mirrors.huaweicloud.com/repository/pypi/simple/ https://mirrors.cloud.tencent.com/pypi/simple/ https://pypi.mirrors.ustc.edu.cn/simple/
 
 REM 1. 检查并准备 uv
 where uv >nul 2>nul
