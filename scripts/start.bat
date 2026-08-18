@@ -97,17 +97,56 @@ if not errorlevel 1 (
 REM 4. 检查/自动准备 Java (Neo4j 所需 JVM)
 where java >nul 2>nul
 if errorlevel 1 (
+    if exist "%PROJECT_ROOT%\.jdk\bin\java.exe" (
+        set "JAVA_HOME=%PROJECT_ROOT%\.jdk"
+        set "PATH=%PROJECT_ROOT%\.jdk\bin;!PATH!"
+    )
+)
+where java >nul 2>nul
+if errorlevel 1 (
     echo [INFO] 未检测到 Java，正在尝试自动准备 OpenJDK 17...
     where winget >nul 2>nul
     if not errorlevel 1 (
         winget install -e --id EclipseAdoptium.Temurin.17.JRE --accept-source-agreements --accept-package-agreements >nul 2>nul
+    )
+    where java >nul 2>nul
+    if errorlevel 1 (
+        echo [INFO] 正在通过国内镜像自动下载 OpenJDK 17 便携版...
+        powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+            "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; " ^
+            "$jdkZip = 'jdk-17-win-x64.zip'; " ^
+            "$jdkDir = '%PROJECT_ROOT%\.jdk'; " ^
+            "if (-not (Test-Path $jdkDir)) { " ^
+            "  $urls = @('https://mirrors.tuna.tsinghua.edu.cn/Adoptium/17/jre/x64/windows/OpenJDK17U-jre_x64_windows_hotspot_17.0.12_7.zip', " ^
+            "            'https://mirrors.huaweicloud.com/openjdk/17.0.2/openjdk-17.0.2_windows-x64_bin.zip', " ^
+            "            'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12%%2B7/OpenJDK17U-jre_x64_windows_hotspot_17.0.12_7.zip'); " ^
+            "  $downloaded = $false; " ^
+            "  foreach ($u in $urls) { " ^
+            "    try { " ^
+            "      Write-Host \"尝试下载 Java JRE: $u\"; " ^
+            "      Invoke-WebRequest -Uri $u -OutFile $jdkZip -UseBasicParsing -TimeoutSec 120; " ^
+            "      if ((Test-Path $jdkZip) -and ((Get-Item $jdkZip).Length -gt 10000000)) { $downloaded = $true; break; } " ^
+            "    } catch { if (Test-Path $jdkZip) { Remove-Item $jdkZip -Force } } " ^
+            "  }; " ^
+            "  if ($downloaded) { " ^
+            "    Expand-Archive -Path $jdkZip -DestinationPath '%PROJECT_ROOT%\.jdk-temp' -Force; " ^
+            "    $extracted = Get-ChildItem '%PROJECT_ROOT%\.jdk-temp' | Where-Object { $_.PSIsContainer } | Select-Object -First 1; " ^
+            "    Move-Item $extracted.FullName $jdkDir; " ^
+            "    Remove-Item -Recurse -Force '%PROJECT_ROOT%\.jdk-temp' -ErrorAction SilentlyContinue; " ^
+            "    Remove-Item -Force $jdkZip -ErrorAction SilentlyContinue; " ^
+            "  } " ^
+            "}"
+        if exist "%PROJECT_ROOT%\.jdk\bin\java.exe" (
+            set "JAVA_HOME=%PROJECT_ROOT%\.jdk"
+            set "PATH=%PROJECT_ROOT%\.jdk\bin;!PATH!"
+        )
     )
 )
 where java >nul 2>nul
 if not errorlevel 1 (
     echo [INFO] ✓ Java 已就绪
 ) else (
-    echo [ERROR] Java 17+ 自动准备失败。Neo4j 需要 JVM，请访问 https://adoptium.net 安装 Java 17+
+    echo [ERROR] Java 17+ 自动准备失败。Neo4j 需要 JVM，请访问 https://adoptium.net 安装 Java 17+ 后重新运行
     pause
     exit /b 1
 )
