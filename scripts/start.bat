@@ -397,15 +397,17 @@ if "%READY2%"=="0" (
 echo [INFO] ✓ 前端就绪 (http://localhost:3000)
 
 echo.
-echo [INFO] 所有服务已就绪！
-echo [INFO] 前端:   http://localhost:3000
-echo [INFO] 后端:   http://localhost:5001
-echo [INFO] Neo4j:  http://localhost:7474 (neo4j/password)
-echo [INFO] 模型设置: 打开前端后点击右下角「模型设置」
-echo [INFO] 日志（失败/异常时查看）:
-echo [INFO]   后端: powershell -NoProfile -Command "Get-Content -Wait '%BACKEND_LOG%'"
-echo [INFO]   前端: powershell -NoProfile -Command "Get-Content -Wait '%FRONTEND_LOG%'"
-echo [INFO] 停止服务: 运行 scripts\stop.bat（可加 --all 连 Neo4j 一起停）
+echo =================================================================
+echo  🎉 Miroworld 所有服务已成功启动！
+echo  - 前端界面:   http://localhost:3000 (已自动在浏览器打开)
+echo  - 后端服务:   http://localhost:5001
+echo  - Neo4j 图库: http://localhost:7474 (neo4j/password)
+echo  - 停止服务:   双击 stop.bat (加 --all 连图数据库一起停止)
+echo =================================================================
 echo.
 
-pause
+REM 自动唤起默认浏览器访问前端
+start http://localhost:3000
+
+echo 按任意键可关闭此命令行监控窗口（后台服务仍将持续运行）...
+pause >nul
