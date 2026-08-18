@@ -572,11 +572,22 @@
         @search="handleSearch"
       />
 
+      <!-- 时间线 -->
+      <div v-if="stats" ref="timelineSection" class="step-card step-timeline">
+        <div class="card-header">
+          <div class="step-info">
+            <span class="step-num">2</span>
+            <span class="step-title">{{ $t('timeline.tab') }}</span>
+          </div>
+        </div>
+        <TimelineView :project-id="projectId" />
+      </div>
+
       <!-- 世界图谱（GraphRAG · Neo4j） -->
       <div v-if="stats" class="step-card step-graph">
         <div class="card-header">
           <div class="step-info">
-            <span class="step-num">2</span>
+            <span class="step-num" style="background: rgba(99, 102, 241, 0.18); border-color: rgba(99, 102, 241, 0.4); color: #4338ca;">🕸️</span>
             <span class="step-title">{{ $t('world.graphTitle') }}</span>
           </div>
           <div class="step-status">
@@ -650,17 +661,6 @@
           @open-interview="openInterviewWithNode"
         />
         <div v-else-if="graphInfo" class="empty-note">{{ $t('world.graphEmpty') }}</div>
-      </div>
-
-      <!-- 时间线 -->
-      <div v-if="stats" ref="timelineSection" class="step-card step-timeline">
-        <div class="card-header">
-          <div class="step-info">
-            <span class="step-num">2</span>
-            <span class="step-title">{{ $t('timeline.tab') }}</span>
-          </div>
-        </div>
-        <TimelineView :project-id="projectId" />
       </div>
 
       <!-- 内置项目助手（模块化组件） -->

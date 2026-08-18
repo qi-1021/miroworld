@@ -2,7 +2,7 @@
   <div class="step-card step-conflict">
     <div class="card-header">
       <div class="step-info">
-        <span class="step-num">2</span>
+        <span class="step-num" style="background: rgba(245, 158, 11, 0.18); border-color: rgba(245, 158, 11, 0.4); color: #b45309;">⚔️</span>
         <span class="step-title">{{ $t('world.conflictTitle') }}</span>
       </div>
       <div class="step-status">
