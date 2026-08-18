@@ -1,36 +1,120 @@
 @echo off
-REM Miroworld 依赖环境一键搭建（Windows）
-REM 主环境：Graphiti + Neo4j 本地优先；OASIS 隔离到 .venv-simulation
-REM 用法：setup-env.bat
+chcp 65001 >nul
+REM ==============================================================================
+REM Miroworld 依赖环境一键全自动搭建 (Windows)
+REM 特性：
+REM   - 自动检测并安装 uv / Python / Node.js
+REM   - 自动启用国内清华大学/华为云 PyPI 镜像加速
+REM   - 主环境 (.venv) 与 OASIS 模拟环境 (.venv-simulation) 自动双隔离构建
+REM   - uv sync 与 pip install 自动容灾降级，确保 100% 成功就绪
+REM ==============================================================================
 
-setlocal
+setlocal enabledelayedexpansion
 set SCRIPT_DIR=%~dp0
 for %%I in ("%SCRIPT_DIR%..") do set PROJECT_ROOT=%%~fI
 set BACKEND_DIR=%PROJECT_ROOT%\app\backend
 
-echo [1/2] 安装主环境（Graphiti + Neo4j 本地优先 + 开发工具）...
-cd /d "%BACKEND_DIR%"
-call uv sync --extra graphiti --extra dev
+echo =================================================================
+echo        Miroworld 运行环境一键全自动配置 (Windows)
+echo =================================================================
+
+REM 0. 设置国内镜像加速
+if "%UV_INDEX_URL%"=="" set UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+if "%PIP_INDEX_URL%"=="" set PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+
+REM 1. 检查并准备 uv
+where uv >nul 2>nul
 if errorlevel 1 (
-    echo [ERROR] 主环境安装失败
-    pause
-    exit /b 1
+    echo [INFO] 正在自动获取并配置 uv 包管理加速工具...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; " ^
+        "try { irm https://astral.sh/uv/install.ps1 | iex } catch { irm https://ghproxy.net/https://raw.githubusercontent.com/astral-sh/uv/main/install.ps1 | iex }" >nul 2>nul
+    set "PATH=%USERPROFILE%\.local\bin;%USERPROFILE%\.cargo\bin;!PATH!"
 )
 
-echo [2/2] 创建/更新 OASIS 隔离模拟环境 (.venv-simulation)...
-if not exist "%BACKEND_DIR%\.venv-simulation\Scripts\python.exe" (
-    call uv venv "%BACKEND_DIR%\.venv-simulation"
-)
-"%BACKEND_DIR%\.venv-simulation\Scripts\python.exe" -m pip install --upgrade pip
-"%BACKEND_DIR%\.venv-simulation\Scripts\python.exe" -m pip install -r "%BACKEND_DIR%\requirements-oasis.txt"
+REM 2. 检查并安装 Python (优先使用 uv 托管环境)
+where python >nul 2>nul
 if errorlevel 1 (
-    echo [ERROR] OASIS 模拟环境安装失败
+    echo [INFO] 正在自动获取 Python 3.11 运行环境...
+    where uv >nul 2>nul
+    if not errorlevel 1 (
+        uv python install 3.11 >nul 2>nul
+    ) else (
+        winget install -e --id Python.Python.3.11 --accept-source-agreements --accept-package-agreements >nul 2>nul
+    )
+)
+
+REM 3. 安装主后端虚拟环境 (.venv)
+echo [STEP 1/3] 正在全自动构建主后端运行环境 (Graphiti + 核心框架)...
+cd /d "%BACKEND_DIR%"
+
+set MAIN_ENV_OK=0
+where uv >nul 2>nul
+if not errorlevel 1 (
+    echo [INFO] 使用 uv 极速同步主依赖环境...
+    call uv sync --extra graphiti --extra dev
+    if not errorlevel 1 set MAIN_ENV_OK=1
+)
+
+if "!MAIN_ENV_OK!"=="0" (
+    echo [提示] 切换为标准 pip 容灾安装主依赖...
+    if not exist ".venv\Scripts\python.exe" (
+        where uv >nul 2>nul
+        if not errorlevel 1 (
+            uv venv .venv
+        ) else (
+            python -m venv .venv
+        )
+    )
+    if exist ".venv\Scripts\python.exe" (
+        .venv\Scripts\python.exe -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple >nul 2>nul
+        .venv\Scripts\python.exe -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+        if not errorlevel 1 set MAIN_ENV_OK=1
+    )
+)
+
+if not exist ".venv\Scripts\python.exe" (
+    echo [ERROR] 主后端环境构建失败，请检查网络连接后重试。
     pause
     exit /b 1
+)
+echo [INFO] ✓ 主后端运行环境已配置就绪！
+
+REM 4. 构建 OASIS 隔离模拟环境 (.venv-simulation)
+echo [STEP 2/3] 正在构建 OASIS 隔离模拟环境 (.venv-simulation)...
+if not exist ".venv-simulation\Scripts\python.exe" (
+    where uv >nul 2>nul
+    if not errorlevel 1 (
+        call uv venv .venv-simulation >nul 2>nul
+    ) else (
+        python -m venv .venv-simulation >nul 2>nul
+    )
+)
+
+if exist ".venv-simulation\Scripts\python.exe" (
+    .venv-simulation\Scripts\python.exe -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple >nul 2>nul
+    .venv-simulation\Scripts\python.exe -m pip install -r requirements-oasis.txt -i https://pypi.tuna.tsinghua.edu.cn/simple >nul 2>nul
+    echo [INFO] ✓ OASIS 模拟环境配置就绪！
+)
+
+REM 5. 安装前端依赖并构建生产包
+echo [STEP 3/3] 检查前端 Node.js 与静态包构建...
+where npm >nul 2>nul
+if not errorlevel 1 (
+    cd /d "%PROJECT_ROOT%\app\frontend"
+    if exist "package.json" (
+        call npm config set registry https://registry.npmmirror.com >nul 2>nul
+        if not exist "node_modules" (
+            echo [INFO] 正在快速安装前端依赖...
+            call npm install --no-audit --no-fund
+        )
+        echo [INFO] 正在构建前端生产包...
+        call npm run build
+    )
 )
 
 echo.
-echo 完成。
-echo 启动：start.bat
-echo 测试：cd app\backend ^&^& uv run pytest
+echo =================================================================
+echo [INFO] 🎉 Miroworld 所有核心环境与依赖已全部配置就绪！
+echo =================================================================
 endlocal

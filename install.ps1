@@ -83,7 +83,7 @@ if ($hasGit) {
 # 3. 运行环境配置脚本
 Write-Host "[3/4] 正在全自动配置 Python 依赖、Node.js 前端环境与 Neo4j 数据库..." -ForegroundColor Blue
 if (Test-Path "scripts\setup-env.bat") {
-    Start-Process -FilePath "cmd.exe" -ArgumentList "/c scripts\setup-env.bat" -Wait -NoNewWindow
+    & cmd.exe /c "scripts\setup-env.bat"
 }
 
 # 4. 完成
