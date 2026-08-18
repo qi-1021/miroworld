@@ -97,8 +97,26 @@ if exist ".venv-simulation\Scripts\python.exe" (
     echo [INFO] ✓ OASIS 模拟环境配置就绪！
 )
 
-REM 5. 安装前端依赖并构建生产包
+REM 5. 检查并准备 Node.js 环境与前端静态包构建
 echo [STEP 3/3] 检查前端 Node.js 与静态包构建...
+where node >nul 2>nul
+if errorlevel 1 (
+    echo [INFO] 未检测到 Node.js，正在通过国内镜像自动下载 Node.js 便携版...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; " ^
+        "$nodeZip = 'node-v20-win-x64.zip'; " ^
+        "$nodeDir = '%PROJECT_ROOT%\.node'; " ^
+        "if (-not (Test-Path $nodeDir)) { " ^
+        "  try { Invoke-WebRequest -Uri 'https://npmmirror.com/mirrors/node/v20.18.0/node-v20.18.0-win-x64.zip' -OutFile $nodeZip -UseBasicParsing -TimeoutSec 60 } " ^
+        "  catch { Invoke-WebRequest -Uri 'https://nodejs.org/dist/v20.18.0/node-v20.18.0-win-x64.zip' -OutFile $nodeZip -UseBasicParsing -TimeoutSec 60 }; " ^
+        "  Expand-Archive -Path $nodeZip -DestinationPath '%PROJECT_ROOT%\.node-temp' -Force; " ^
+        "  Move-Item '%PROJECT_ROOT%\.node-temp\node-v20.18.0-win-x64' $nodeDir; " ^
+        "  Remove-Item -Recurse -Force '%PROJECT_ROOT%\.node-temp' -ErrorAction SilentlyContinue; " ^
+        "  Remove-Item -Force $nodeZip -ErrorAction SilentlyContinue; " ^
+        "}"
+    set "PATH=C:\Program Files\nodejs;%PROJECT_ROOT%\.node;!PATH!"
+)
+
 where npm >nul 2>nul
 if not errorlevel 1 (
     cd /d "%PROJECT_ROOT%\app\frontend"

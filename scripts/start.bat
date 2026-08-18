@@ -64,14 +64,32 @@ REM 3. 检查/自动准备 Node.js
 where node >nul 2>nul
 if errorlevel 1 (
     echo [INFO] 未检测到 Node.js，正在尝试自动安装 Node.js LTS...
-    winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements >nul 2>nul
-    set "PATH=C:\Program Files\nodejs;!PATH!"
+    where winget >nul 2>nul
+    if not errorlevel 1 (
+        winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements >nul 2>nul
+    )
+    if not exist "C:\Program Files\nodejs\node.exe" (
+        echo [INFO] 正在通过国内镜像自动下载 Node.js 便携版...
+        powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+            "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; " ^
+            "$nodeZip = 'node-v20-win-x64.zip'; " ^
+            "$nodeDir = '%PROJECT_ROOT%\.node'; " ^
+            "if (-not (Test-Path $nodeDir)) { " ^
+            "  try { Invoke-WebRequest -Uri 'https://npmmirror.com/mirrors/node/v20.18.0/node-v20.18.0-win-x64.zip' -OutFile $nodeZip -UseBasicParsing -TimeoutSec 60 } " ^
+            "  catch { Invoke-WebRequest -Uri 'https://nodejs.org/dist/v20.18.0/node-v20.18.0-win-x64.zip' -OutFile $nodeZip -UseBasicParsing -TimeoutSec 60 }; " ^
+            "  Expand-Archive -Path $nodeZip -DestinationPath '%PROJECT_ROOT%\.node-temp' -Force; " ^
+            "  Move-Item '%PROJECT_ROOT%\.node-temp\node-v20.18.0-win-x64' $nodeDir; " ^
+            "  Remove-Item -Recurse -Force '%PROJECT_ROOT%\.node-temp' -ErrorAction SilentlyContinue; " ^
+            "  Remove-Item -Force $nodeZip -ErrorAction SilentlyContinue; " ^
+            "}"
+    )
+    set "PATH=C:\Program Files\nodejs;%PROJECT_ROOT%\.node;!PATH!"
 )
 where node >nul 2>nul
 if not errorlevel 1 (
     for /f "tokens=*" %%i in ('node --version 2^>nul') do echo [INFO] ✓ Node.js %%i
 ) else (
-    echo [ERROR] Node.js 自动准备失败。请访问 https://nodejs.org 安装 Node.js (>=18.0) 后重新运行
+    echo [ERROR] Node.js 自动准备失败。请访问 https://nodejs.org 安装 Node.js 18+ 后重新运行
     pause
     exit /b 1
 )
@@ -80,7 +98,10 @@ REM 4. 检查/自动准备 Java (Neo4j 所需 JVM)
 where java >nul 2>nul
 if errorlevel 1 (
     echo [INFO] 未检测到 Java，正在尝试自动准备 OpenJDK 17...
-    winget install -e --id EclipseAdoptium.Temurin.17.JRE --accept-source-agreements --accept-package-agreements >nul 2>nul
+    where winget >nul 2>nul
+    if not errorlevel 1 (
+        winget install -e --id EclipseAdoptium.Temurin.17.JRE --accept-source-agreements --accept-package-agreements >nul 2>nul
+    )
 )
 where java >nul 2>nul
 if not errorlevel 1 (
