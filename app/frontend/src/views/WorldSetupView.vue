@@ -3688,21 +3688,37 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
 }
+.step-card .step-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  font-weight: 800;
+  color: #10203a;
+  background: rgba(161, 197, 10, 0.18);
+  border: 1px solid rgba(161, 197, 10, 0.35);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
 .step-title {
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: 700;
+  font-size: 15px;
+  color: #10203a;
   letter-spacing: 0.5px;
 }
 .badge {
-  font-size: 10px;
-  padding: 4px 8px;
-  border-radius: 4px;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
   font-weight: 600;
   text-transform: uppercase;
 }
-.badge.success { background: #E8F5E9; color: #2E7D32; }
-.badge.processing { background: #a1c50a; color: #FFF; }
-.badge.hint { background: #F5F5F5; color: #666; }
+.badge.success { background: #E8F5E9; color: #2E7D32; border: 1px solid #C8E6C9; }
+.badge.processing { background: #a1c50a; color: #FFF; box-shadow: 0 2px 6px rgba(161, 197, 10, 0.35); }
+.badge.hint { background: rgba(0, 0, 0, 0.05); color: #536078; border: 1px solid rgba(0, 0, 0, 0.08); }
 
 /* 输入区 */
 .input-grid {

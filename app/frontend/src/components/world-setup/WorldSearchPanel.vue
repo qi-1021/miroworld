@@ -2,7 +2,7 @@
   <div class="step-card step-search">
     <div class="card-header">
       <div class="step-info">
-        <span class="step-num">2</span>
+        <span class="step-num">4</span>
         <span class="step-title">{{ $t('world.searchTitle') }}</span>
       </div>
       <div class="step-status">
