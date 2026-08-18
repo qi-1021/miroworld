@@ -153,7 +153,12 @@ if not errorlevel 1 (
 
 REM 清理上次残留（避免端口占用导致启动失败）
 echo [INFO] 清理上次运行残留...
-call "%SCRIPT_DIR%stop.bat" >nul 2>nul
+for %%p in (3000 5001) do (
+    for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%%p" ^| findstr "LISTENING"') do (
+        taskkill /F /PID %%a /T >nul 2>nul
+    )
+)
+powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*run_world_simulation*' -or $_.CommandLine -like '*run_parallel_simulation*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" >nul 2>nul
 
 echo.
 echo [INFO] 检查与启动 Neo4j 知识图谱数据库...
@@ -169,20 +174,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "if ('%PROJECT_ROOT%' -match '[^\x00-\x7F]| ') { exit 10 } else { exit 0 }"
 if errorlevel 10 (
     echo [INFO] 检测到项目路径包含中文或空格，正在自动建立纯英文虚拟磁盘映射以保障 Neo4j 稳定运行...
-    set MAPPED_DRIVE=
     for %%d in (Z Y X W V U T S R Q P) do (
-        if not exist "%%d:\" (
-            subst %%d: "%PROJECT_ROOT%" >nul 2>nul
-            if exist "%%d:\scripts\start.bat" (
-                set "MAPPED_DRIVE=%%d:"
-                set "SAFE_PROJECT_ROOT=%%d:"
-                echo [INFO] ✓ 已成功映射虚拟运行盘: !MAPPED_DRIVE!
-                goto :drive_mapped
+        if not defined MAPPED_DRIVE (
+            if not exist "%%d:\" (
+                subst %%d: "%PROJECT_ROOT%" >nul 2>nul
+                if exist "%%d:\scripts\start.bat" (
+                    set "MAPPED_DRIVE=%%d:"
+                    set "SAFE_PROJECT_ROOT=%%d:"
+                    echo [INFO] ✓ 已成功映射虚拟运行盘: %%d:
+                )
             )
         )
     )
-    :drive_mapped
-    if not "!MAPPED_DRIVE!"=="" (
+    if defined MAPPED_DRIVE (
         set "NEO4J_DIR=!SAFE_PROJECT_ROOT!\neo4j"
     )
 )
