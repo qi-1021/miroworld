@@ -41,11 +41,18 @@ if %ERRORLEVEL% equ 0 (
 )
 
 :: 3. 检查后端依赖
-echo [STEP] 检查并更新后端依赖...
-if exist ".venv\Scripts\python.exe" (
-    .venv\Scripts\python.exe -m pip install -r app\backend\requirements.txt -q --disable-pip-version-check
-) else if exist "app\backend\venv\Scripts\python.exe" (
-    app\backend\venv\Scripts\python.exe -m pip install -r app\backend\requirements.txt -q --disable-pip-version-check
+echo [STEP] 检查并更新后端依赖 (启用国内镜像加速)...
+if exist "app\backend\.venv-simulation" (
+    rmdir /s /q "app\backend\.venv-simulation" >nul 2>nul
+)
+
+if exist "app\backend\.venv\Scripts\python.exe" (
+    where uv >nul 2>nul
+    if %ERRORLEVEL% equ 0 (
+        call uv pip install -r app\backend\requirements.txt --python app\backend\.venv\Scripts\python.exe --index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/ >nul 2>nul
+    ) else (
+        app\backend\.venv\Scripts\python.exe -m pip install -r app\backend\requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/ -q --disable-pip-version-check
+    )
 )
 
 :: 4. 构建前端

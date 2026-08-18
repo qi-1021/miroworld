@@ -85,7 +85,11 @@ else
 fi
 
 # 3. 检查并更新后端 Python 依赖
-log_step "检查并同步后端 Python 环境依赖..."
+log_step "检查并同步后端 Python 环境依赖 (国内镜像加速)..."
+if [ -d "$APP_DIR/backend/.venv-simulation" ]; then
+    rm -rf "$APP_DIR/backend/.venv-simulation" >/dev/null 2>&1 || true
+fi
+
 if [ -f "$APP_DIR/backend/requirements.txt" ]; then
     PYTHON_CMD=""
     if [ -f "$APP_DIR/backend/.venv/bin/python" ]; then
@@ -100,7 +104,11 @@ if [ -f "$APP_DIR/backend/requirements.txt" ]; then
 
     if [ -n "$PYTHON_CMD" ]; then
         log_info "使用 Python: $($PYTHON_CMD --version 2>&1)"
-        $PYTHON_CMD -m pip install -r "$APP_DIR/backend/requirements.txt" -q --disable-pip-version-check || log_warn "Python 依赖增量安装跳过或已是最新"
+        if command -v uv >/dev/null 2>&1; then
+            uv pip install -r "$APP_DIR/backend/requirements.txt" --python "$PYTHON_CMD" --index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/ >/dev/null 2>&1 || true
+        else
+            $PYTHON_CMD -m pip install -r "$APP_DIR/backend/requirements.txt" -i https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://mirrors.huaweicloud.com/repository/pypi/simple/ -q --disable-pip-version-check || log_warn "Python 依赖增量安装跳过或已是最新"
+        fi
     else
         log_warn "未检测到独立虚拟环境，若后端运行异常请运行 scripts/setup-env.sh"
     fi
