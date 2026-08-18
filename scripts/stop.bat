@@ -8,8 +8,6 @@ REM
 REM 说明：通过命令行特征（mirofish/run.py/vite/npm run dev 等）识别本项目进程，
 REM 避免误杀占用同端口的无关程序。
 
-setlocal enabledelayedexpansion
-
 set STOP_NEO4J=0
 set FORCE_ALL=0
 for %%a in (%*) do (
@@ -44,8 +42,7 @@ for %%d in (Z Y X W V U T S R Q P) do (
 
 echo [INFO] 停止完成。
 echo [INFO] 日志目录: app\backend\logs\（start-backend.log / start-frontend.log，可删除）
-endlocal
-exit /b 0
+goto :main_exit
 
 REM ==== 子程序：按端口停止监听进程；仅终止命令行含本项目特征的进程 ====
 :stop_listening_port
@@ -113,3 +110,6 @@ for /f "tokens=1,2 delims==" %%A in ('type "%tmpfile%" ^| findstr /i "!marker!"'
 )
 del /q "%tmpfile%" >nul 2>nul
 goto :eof
+
+:main_exit
+exit /b 0
