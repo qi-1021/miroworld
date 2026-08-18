@@ -105,7 +105,98 @@
         @render-merged="({ conflict, source }) => renderCorrectionMerged(conflict, source)"
       />
 
-      <!-- 世界模拟（独立模式） -->
+      <!-- 时间线（Step 2 核心） -->
+      <div v-if="stats" ref="timelineSection" class="step-card step-timeline">
+        <div class="card-header">
+          <div class="step-info">
+            <span class="step-num">2</span>
+            <span class="step-title">{{ $t('timeline.tab') }}</span>
+          </div>
+        </div>
+        <TimelineView :project-id="projectId" />
+      </div>
+
+      <!-- 世界图谱（GraphRAG · Neo4j） -->
+      <div v-if="stats" class="step-card step-graph">
+        <div class="card-header">
+          <div class="step-info">
+            <span class="step-num" style="background: rgba(99, 102, 241, 0.18); border-color: rgba(99, 102, 241, 0.4); color: #4338ca;">🕸️</span>
+            <span class="step-title">{{ $t('world.graphTitle') }}</span>
+          </div>
+          <div class="step-status">
+            <span v-if="graphBuilding" class="badge processing">{{ $t('world.graphBuilding') }}</span>
+            <span v-else-if="graphInfo && graphInfo.node_count" class="badge success">{{ $t('world.graphCount', { nodes: graphInfo.node_count, edges: graphInfo.edge_count }) }}</span>
+            <span v-else class="badge hint">{{ $t('world.graphHint') }}</span>
+          </div>
+        </div>
+
+        <p class="description">
+          {{ $t('world.graphDesc') }}
+        </p>
+
+        <div class="graph-actions" style="position: relative; z-index: 10;">
+          <button
+            class="action-btn"
+            :disabled="graphBuilding"
+            style="cursor: pointer; pointer-events: auto;"
+            @click="handleBuildGraph"
+          >
+            <span v-if="graphBuilding" class="spinner-sm"></span>
+            {{ graphBuilding ? (graphProgressMsg || $t('world.graphBuilding')) : graphInfo ? $t('world.graphRebuild') : $t('world.graphBuild') }}
+          </button>
+          <button
+            v-if="graphBuilding"
+            type="button"
+            class="action-btn btn-danger-ghost"
+            title="随时取消当前构建（已提取的批次数据与断点均会完好保留）"
+            @click="cancelGraphBuild"
+          >
+            ⏹ 取消构建 (保留已完成批次)
+          </button>
+          <button
+            type="button"
+            class="mini-btn ghost"
+            style="cursor: pointer; pointer-events: auto;"
+            title="随时点击强制重置图谱状态机并恢复所有按钮可操作性"
+            @click="resetGraphBuildStatus"
+          >
+            🔄 强制重置状态
+          </button>
+          <button
+            class="action-btn btn-ghost"
+            :disabled="refillEdgesRunning || !graphInfo || !graphInfo.node_count || graphBuilding"
+            @click="handleRefillEdges"
+          >
+            <span v-if="refillEdgesRunning" class="spinner-sm"></span>
+            {{ refillEdgesRunning ? $t('world.refillEdgesRunning') : $t('world.refillEdges') }}
+          </button>
+          <span v-if="graphMsg" class="msg-line" :class="{ error: graphMsgError }">{{ graphMsg }}</span>
+          <div v-if="graphBuilding" class="graph-progress">
+            <div class="graph-progress-bar">
+              <div class="graph-progress-fill" :style="{ width: (graphProgress || 0) + '%' }"></div>
+            </div>
+            <span class="graph-progress-text">{{ graphProgressMsg || $t('world.graphBuilding') }}</span>
+          </div>
+          <!-- 实时过程控制台与详细步骤日志 & LLM 对话明细（独立模块化组件） -->
+          <WorldGraphConsole
+            :building="graphBuilding"
+            :logs="graphTaskLogs"
+            :exchanges="graphTaskExchanges"
+          />
+        </div>
+
+        <!-- SVG 地图级交互力导向可视化（独立模块化组件） -->
+        <WorldGraphCanvas
+          v-if="graphInfo && graphNodes.length"
+          :graph-info="graphInfo"
+          :graph-building="graphBuilding"
+          :characters="characters"
+          @open-interview="openInterviewWithNode"
+        />
+        <div v-else-if="graphInfo" class="empty-note">{{ $t('world.graphEmpty') }}</div>
+      </div>
+
+      <!-- 世界模拟（独立模式 · Step 3） -->
       <div v-if="stats" ref="simSection" class="step-card step-sim">
         <div class="card-header">
           <div class="step-info">
@@ -562,7 +653,7 @@
         </div>
       </div>
 
-      <!-- 设定检索（模块化组件） -->
+      <!-- 设定检索（Step 4 · 独立模块化组件） -->
       <WorldSearchPanel
         v-if="stats"
         v-model:searchQuery="searchQuery"
@@ -571,97 +662,6 @@
         :search-results="searchResults"
         @search="handleSearch"
       />
-
-      <!-- 时间线 -->
-      <div v-if="stats" ref="timelineSection" class="step-card step-timeline">
-        <div class="card-header">
-          <div class="step-info">
-            <span class="step-num">2</span>
-            <span class="step-title">{{ $t('timeline.tab') }}</span>
-          </div>
-        </div>
-        <TimelineView :project-id="projectId" />
-      </div>
-
-      <!-- 世界图谱（GraphRAG · Neo4j） -->
-      <div v-if="stats" class="step-card step-graph">
-        <div class="card-header">
-          <div class="step-info">
-            <span class="step-num" style="background: rgba(99, 102, 241, 0.18); border-color: rgba(99, 102, 241, 0.4); color: #4338ca;">🕸️</span>
-            <span class="step-title">{{ $t('world.graphTitle') }}</span>
-          </div>
-          <div class="step-status">
-            <span v-if="graphBuilding" class="badge processing">{{ $t('world.graphBuilding') }}</span>
-            <span v-else-if="graphInfo && graphInfo.node_count" class="badge success">{{ $t('world.graphCount', { nodes: graphInfo.node_count, edges: graphInfo.edge_count }) }}</span>
-            <span v-else class="badge hint">{{ $t('world.graphHint') }}</span>
-          </div>
-        </div>
-
-        <p class="description">
-          {{ $t('world.graphDesc') }}
-        </p>
-
-        <div class="graph-actions" style="position: relative; z-index: 10;">
-          <button
-            class="action-btn"
-            :disabled="graphBuilding"
-            style="cursor: pointer; pointer-events: auto;"
-            @click="handleBuildGraph"
-          >
-            <span v-if="graphBuilding" class="spinner-sm"></span>
-            {{ graphBuilding ? (graphProgressMsg || $t('world.graphBuilding')) : graphInfo ? $t('world.graphRebuild') : $t('world.graphBuild') }}
-          </button>
-          <button
-            v-if="graphBuilding"
-            type="button"
-            class="action-btn btn-danger-ghost"
-            title="随时取消当前构建（已提取的批次数据与断点均会完好保留）"
-            @click="cancelGraphBuild"
-          >
-            ⏹ 取消构建 (保留已完成批次)
-          </button>
-          <button
-            type="button"
-            class="mini-btn ghost"
-            style="cursor: pointer; pointer-events: auto;"
-            title="随时点击强制重置图谱状态机并恢复所有按钮可操作性"
-            @click="resetGraphBuildStatus"
-          >
-            🔄 强制重置状态
-          </button>
-          <button
-            class="action-btn btn-ghost"
-            :disabled="refillEdgesRunning || !graphInfo || !graphInfo.node_count || graphBuilding"
-            @click="handleRefillEdges"
-          >
-            <span v-if="refillEdgesRunning" class="spinner-sm"></span>
-            {{ refillEdgesRunning ? $t('world.refillEdgesRunning') : $t('world.refillEdges') }}
-          </button>
-          <span v-if="graphMsg" class="msg-line" :class="{ error: graphMsgError }">{{ graphMsg }}</span>
-          <div v-if="graphBuilding" class="graph-progress">
-            <div class="graph-progress-bar">
-              <div class="graph-progress-fill" :style="{ width: (graphProgress || 0) + '%' }"></div>
-            </div>
-            <span class="graph-progress-text">{{ graphProgressMsg || $t('world.graphBuilding') }}</span>
-          </div>
-          <!-- 实时过程控制台与详细步骤日志 & LLM 对话明细（独立模块化组件） -->
-          <WorldGraphConsole
-            :building="graphBuilding"
-            :logs="graphTaskLogs"
-            :exchanges="graphTaskExchanges"
-          />
-        </div>
-
-        <!-- SVG 地图级交互力导向可视化（独立模块化组件） -->
-        <WorldGraphCanvas
-          v-if="graphInfo && graphNodes.length"
-          :graph-info="graphInfo"
-          :graph-building="graphBuilding"
-          :characters="characters"
-          @open-interview="openInterviewWithNode"
-        />
-        <div v-else-if="graphInfo" class="empty-note">{{ $t('world.graphEmpty') }}</div>
-      </div>
 
       <!-- 内置项目助手（模块化组件） -->
       <WorldAssistantModal
@@ -3597,18 +3597,8 @@ onUnmounted(() => {
   position: relative;
 }
 
-/* Miro World 新 5 步：视觉排序 = 世界设定 → 时间线与图谱 → 世界模拟 */
-.world-body > .step-card { order: 10; }
-.step-input { order: 1; }
-.step-timeline { order: 2; }
-.step-graph { order: 3; }
-.step-conflict { order: 4; }
-.step-search { order: 5; }
-.step-sim { order: 6; }
-
 /* 新手引导 */
 .world-guide {
-  order: 0;
   display: flex;
   align-items: center;
   gap: 14px;
