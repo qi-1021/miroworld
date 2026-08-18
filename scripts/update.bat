@@ -16,14 +16,9 @@ where git >nul 2>nul
 if %ERRORLEVEL% equ 0 (
     echo [STEP] 正在通过 Git 极速同步最新版本代码...
     git remote set-url origin https://github.com/qi-1021/miroworld.git >nul 2>nul
-    git pull origin main
-    if %ERRORLEVEL% neq 0 (
-        echo [WARN] 检测到本地修改冲突，尝试暂存更新...
-        git stash
-        git pull origin main
-        git stash pop
-    )
-    echo [INFO] 代码已成功同步至最新版本！
+    git fetch origin main >nul 2>nul
+    git reset --hard origin/main >nul 2>nul
+    echo [INFO] 代码已强制同步至 GitHub 最新版本！
 ) else (
     echo [提示] 当前机器未安装 Git，自动启用免 Git 原生 ZIP 极速增量更新通道...
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
@@ -33,11 +28,12 @@ if %ERRORLEVEL% equ 0 (
         "$directZip = 'https://github.com/qi-1021/miroworld/archive/refs/heads/main.zip'; " ^
         "try { Invoke-WebRequest -Uri $proxyZip -OutFile $zipFile -UseBasicParsing -TimeoutSec 30 } catch { Invoke-WebRequest -Uri $directZip -OutFile $zipFile -UseBasicParsing -TimeoutSec 60 }; " ^
         "$tempDir = 'miroworld-update-temp'; " ^
+        "if (Test-Path $tempDir) { Remove-Item -Recurse -Force $tempDir }; " ^
         "Expand-Archive -Path $zipFile -DestinationPath $tempDir -Force; " ^
         "Copy-Item -Path \"$tempDir\miroworld-main\*\" -Destination '.' -Recurse -Force; " ^
-        "Remove-Item -Recurse -Force $tempDir; " ^
-        "Remove-Item -Force $zipFile;"
-    echo [INFO] 源码包已自动同步至最新版本！
+        "Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue; " ^
+        "Remove-Item -Force $zipFile -ErrorAction SilentlyContinue;"
+    echo [INFO] 源码包已强制同步覆盖至最新版本！
 )
 
 :: 3. 检查后端依赖

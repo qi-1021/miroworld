@@ -153,7 +153,7 @@ if not errorlevel 1 (
     exit /b 1
 )
 
-REM 清理上次残留（避免端口占用与虚拟盘符堆积）
+REM 清理上次残留（避免端口占用、虚拟盘符堆积与旧环境冲突）
 echo [INFO] 清理上次运行残留...
 for %%p in (3000 5001) do (
     for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%%p" ^| findstr "LISTENING"') do (
@@ -161,6 +161,14 @@ for %%p in (3000 5001) do (
     )
 )
 powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*run_world_simulation*' -or $_.CommandLine -like '*run_parallel_simulation*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" >nul 2>nul
+
+REM 强制彻底清理可能遗留的旧模拟环境
+if exist "%APP_DIR%\backend\.venv-simulation" (
+    rmdir /s /q "%APP_DIR%\backend\.venv-simulation" >nul 2>nul
+)
+if exist "%PROJECT_ROOT%\.venv-simulation" (
+    rmdir /s /q "%PROJECT_ROOT%\.venv-simulation" >nul 2>nul
+)
 
 REM 扫描并释放属于本项目的旧虚拟盘符，避免重复累计创建
 for %%d in (Z Y X W V U T S R Q P) do (
