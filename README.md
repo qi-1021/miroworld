@@ -21,34 +21,53 @@
 
 ---
 
-## 🚀 极速启动（傻瓜式一键就绪）
+## ⚡ 一行命令极速安装（单脚本傻瓜式拉取并自动配置）
 
-脚本会自动检测系统环境；**若缺失 Python、Node、Java 或 Neo4j，将全自动后台下载配置**，无需手动前往官网下载安装包。
+无需提前克隆代码，打开终端/PowerShell 直接粘贴执行即可完成全套拉取与环境静默安装：
 
-### 🍎 macOS / Linux 用户
+### 🍎 macOS / Linux 用户（一行命令）
 ```bash
-# 1. 进入项目根目录
-cd mirofish-portable
+# 官方通道
+curl -fsSL https://raw.githubusercontent.com/qi-1021/miroworld/main/install.sh | bash
 
-# 2. 赋予脚本执行权限并启动（直接双击或终端运行）
-chmod +x scripts/*.sh
+# 或者：国内网络高速镜像通道
+curl -fsSL https://ghproxy.net/https://raw.githubusercontent.com/qi-1021/miroworld/main/install.sh | bash
+```
+
+### 🪟 Windows 用户（PowerShell 一行命令）
+```powershell
+# 官方通道
+irm https://raw.githubusercontent.com/qi-1021/miroworld/main/install.ps1 | iex
+
+# 或者：国内网络高速镜像通道
+irm https://ghproxy.net/https://raw.githubusercontent.com/qi-1021/miroworld/main/install.ps1 | iex
+```
+
+---
+
+## 🚀 启动与日常运行
+
+安装完成后，直接进入目录即可一键启动（会自动检测 Python、Node、Java 与 Neo4j）：
+
+### 🍎 macOS / Linux 启动
+```bash
+cd miroworld
 ./scripts/start.sh
 ```
 
-### 🪟 Windows 用户
+### 🪟 Windows 启动
 ```cmd
-REM 进入项目目录，直接双击运行 start.bat 即可
-cd mirofish-portable
+cd miroworld
 scripts\start.bat
 ```
 
 > 💡 **日常管理与更新**：
-> - **一键无密更新**：
->   - macOS/Linux: `./scripts/update.sh`（免 Key 自动从 GitHub 同步最新代码、依赖与前端）
+> - **一键无密更新**（自动免 Key 拉取 GitHub 最新版本并重新构建）：
+>   - macOS/Linux: `./scripts/update.sh`
 >   - Windows: 双击 `scripts\update.bat`
 > - **停止服务**：
->   - macOS/Linux: 在启动终端按 `Ctrl+C` 或新开终端执行 `./scripts/stop.sh`（如需停数据库可加 `--all`）。
->   - Windows: 运行 `scripts\stop.bat`（如需停数据库可加 `--all`）。
+>   - macOS/Linux: 在终端按 `Ctrl+C` 或运行 `./scripts/stop.sh`（加 `--all` 停止 Neo4j）
+>   - Windows: 运行 `scripts\stop.bat`（加 `--all` 停止 Neo4j）
 
 ---
 
