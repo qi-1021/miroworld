@@ -1,0 +1,124 @@
+name: "🐛 Bug 报告"
+description: "提交一个可复现的缺陷（对应教程第 9 章模板）"
+title: "[Bug] "
+labels: ["bug"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > 感谢反馈！带日志的 Issue 优先级最高。若能用 `scripts/smoke.sh` 复现，请直接贴 smoke 日志。
+        > 详细教程见 [docs/TUTORIAL.md 第 9 章](../docs/TUTORIAL.md#9-如何提交反馈让你提的-issue-一次就被看懂)。
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: "所属模块"
+      description: "选择最相关的模块"
+      options:
+        - "安装/启动 (install/start)"
+        - "世界设定库 (World Bible)"
+        - "时间线 (Timeline)"
+        - "知识图谱 (Graph)"
+        - "世界模拟 (Simulation)"
+        - "模型设置 (Models)"
+        - "前端/样式"
+        - "CLI / API"
+        - "文档"
+        - "其他"
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: "版本 (VERSION 文件内容)"
+      description: "执行 `cat VERSION` 粘贴结果"
+      placeholder: "例如：v0.3.2 或 commit cd412ea"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: "操作系统"
+      options:
+        - "macOS"
+        - "Windows 10"
+        - "Windows 11"
+        - "Linux"
+        - "其他（请在下方说明）"
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: install_method
+    attributes:
+      label: "安装方式"
+      placeholder: "例如：install.sh / install.ps1 / 手动克隆"
+    validations:
+      required: false
+
+  - type: input
+    id: versions_detail
+    attributes:
+      label: "Node / Python 版本"
+      description: "`node -v` 与 `python --version` 输出"
+      placeholder: "Node v20.x / Python 3.11.x"
+    validations:
+      required: false
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: "复现步骤"
+      description: "按顺序写清每一步，3 步以内最好"
+      placeholder: |
+        1. cd miroworld && ./start.sh
+        2. 在世界设定库上传 xxx.txt 并保存
+        3. 点击“抽取时间线”后报错
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "期望 vs 实际"
+      placeholder: |
+        期望：应显示 12 个事件
+        实际：只显示 3 个，且控制台报错 ...
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "关键日志（务必贴）"
+      description: "含 `http://localhost:5001/api/health` 返回、终端最后 30 行、app/backend/logs 相关片段"
+      placeholder: |
+        粘贴日志，敏感 key 请打码
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: snapshot
+    attributes:
+      label: "可复现的最小数据/快照"
+      description: "脱敏后的背景/正文片段或 *.miroworld.json（可选，私密数据请勿上传）"
+      placeholder: "有则贴网盘链接或说明“可私发”"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "自检"
+      options:
+        - label: "已阅读 docs/TUTORIAL.md 第 8-9 章"
+        - label: "已尝试 docs/TROUBLESHOOTING.md 对应条目"
+        - label: "日志中已打码 API Key / 私密路径"

@@ -1,0 +1,60 @@
+name: "❓ 提问 / 求助"
+description: "使用中遇到疑问，先在这问"
+title: "[Question] "
+labels: ["question"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > 先看 [docs/TUTORIAL.md](../docs/TUTORIAL.md) 与 [docs/TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)，很多问题已有答案。仍未解决再提交本表单。
+
+  - type: dropdown
+    id: env
+    attributes:
+      label: "环境"
+      options:
+        - "macOS"
+        - "Windows 10"
+        - "Windows 11"
+        - "Linux"
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: "版本 (cat VERSION)"
+      placeholder: "例如：commit 50ab8f9"
+    validations:
+      required: false
+
+  - type: textarea
+    id: question
+    attributes:
+      label: "问题描述"
+      placeholder: |
+        例如：按教程第 7 章用手机访问 http://192.168.1.42:3000 一直超时，已确认同一 Wi-Fi...
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: "已尝试的步骤"
+      placeholder: |
+        - 已看 TROUBLESHOOTING 端口占用一节
+        - 已执行 curl http://localhost:5001/api/health 返回 ...
+      render: markdown
+    validations:
+      required: false
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "期望得到什么帮助"
+      render: markdown
+    validations:
+      required: true

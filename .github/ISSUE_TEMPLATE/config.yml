@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "📖 使用教程"
+    url: "https://github.com/qi-1021/miroworld/blob/main/docs/TUTORIAL.md"
+    about: "先看教程第 8-9 章，很多问题已有答案"
+  - name: "💬 讨论区 (Discussions)"
+    url: "https://github.com/qi-1021/miroworld/discussions"
+    about: "不确定是 Bug 还是用法问题，先去讨论区问"
