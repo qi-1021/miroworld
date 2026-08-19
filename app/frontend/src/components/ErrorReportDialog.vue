@@ -201,6 +201,10 @@ async function generate() {
     })
     reportPath.value = response.data?.report_path || ''
     step.value = 'success'
+    // 已随报告提交的错误不再保留，避免同一批旧错误重复出现在后续每份报告里
+    if (typeof window.clearFrontendErrors === 'function') {
+      window.clearFrontendErrors()
+    }
   } catch (err) {
     console.error('Failed to generate support report:', err)
     step.value = 'error'

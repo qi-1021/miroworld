@@ -44,6 +44,7 @@ export GRAPHITI_MAX_CONCURRENCY="${GRAPHITI_MAX_CONCURRENCY:-2}"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # 函数：打印带颜色的信息
@@ -57,6 +58,35 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# ------------------------------------------------------------------------------
+# 启动失败/健康检查未通过时的兜底自检
+# 自动运行 mirofish doctor，把具体故障项与修复建议直接展示给用户，
+# 并提示一键生成错误报告的命令 —— 非技术用户不必看懂日志也能求助。
+# 全程容错：doctor 自身不可用时只提示日志位置，绝不影响主流程退出码。
+# ------------------------------------------------------------------------------
+run_doctor_fallback() {
+    local py=""
+    if [ -x "$PROJECT_ROOT/app/backend/.venv/bin/python" ]; then
+        py="$PROJECT_ROOT/app/backend/.venv/bin/python"
+    elif command -v python3 >/dev/null 2>&1; then
+        py="python3"
+    fi
+
+    local cli="$PROJECT_ROOT/app/backend/scripts/mirofish_cli.py"
+    echo ""
+    if [ -n "$py" ] && [ -f "$cli" ]; then
+        echo -e "${BLUE}正在自动体检，定位具体问题…${NC}"
+        "$py" "$cli" doctor 2>/dev/null || true
+    fi
+    echo ""
+    echo -e "${YELLOW}仍未解决？请把错误报告发给维护者（微信/邮件均可）：${NC}"
+    if [ -n "$py" ] && [ -f "$cli" ]; then
+        echo -e "  ${GREEN}$py $cli report${NC}"
+    fi
+    echo -e "  日志目录：${GREEN}$PROJECT_ROOT/logs${NC} 与 ${GREEN}$PROJECT_ROOT/app/backend/logs${NC}"
+    echo ""
 }
 
 # 端口是否在监听
@@ -439,6 +469,9 @@ start_app() {
             log_info "✓ 后端健康检查通过（GET /health → 200）"
         else
             log_warn "后端健康检查未通过（GET /health → HTTP ${http_code}），请查看日志 $BACKEND_LOG"
+            # 兜底自检：健康检查没过时自动跑一遍 doctor，把具体问题和修复建议直接摆给用户，
+            # 免得非技术用户面对一行 HTTP 码不知所措。
+            run_doctor_fallback
         fi
     fi
 
@@ -559,6 +592,6 @@ main() {
 }
 
 # 错误处理
-trap 'echo -e "${RED}[ERROR]${NC} 启动失败，清理资源..."; kill $(jobs -p) 2>/dev/null || true; exit 1' ERR
+trap 'echo -e "${RED}[ERROR]${NC} 启动失败，清理资源..."; kill $(jobs -p) 2>/dev/null || true; run_doctor_fallback; exit 1' ERR
 
 main "$@"

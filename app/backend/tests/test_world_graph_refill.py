@@ -97,6 +97,7 @@ def _run(client, texts, monkeypatch):
 
 def test_refill_success(monkeypatch):
     client = _FakeClient()
+    mode_before = Config.GRAPHITI_EDGE_MODE
     result = _run(client, ["e1", "e2", "e3"], monkeypatch)
     assert result["total"] == 3 and result["refilled"] == 3 and result["failed"] == 0
     # 每条都携带 always + 小块参数（环境切换在客户端内部完成）
@@ -104,15 +105,16 @@ def test_refill_success(monkeypatch):
         kw["edge_mode"] == "always" and kw["max_nodes"] == 4
         for _, kw in client.calls
     )
-    # 调用方线程从未改写全局配置
-    assert Config.GRAPHITI_EDGE_MODE == 'skip'
+    # 调用方线程从未改写全局配置（对比调用前后，不硬编码默认值，避免默认值变更误报）
+    assert Config.GRAPHITI_EDGE_MODE == mode_before
 
 
 def test_refill_all_fail_degrades(monkeypatch):
     client = _FakeClient(fail=True)
+    mode_before = Config.GRAPHITI_EDGE_MODE
     result = _run(client, ["e1", "e2"], monkeypatch)
     assert result["total"] == 2 and result["refilled"] == 0 and result["failed"] == 2
-    assert Config.GRAPHITI_EDGE_MODE == 'skip'
+    assert Config.GRAPHITI_EDGE_MODE == mode_before
 
 
 def test_refill_bounded_retry(monkeypatch):

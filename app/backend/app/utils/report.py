@@ -38,6 +38,10 @@ PathLike = Union[str, Path]
 
 # 每个日志文件最多收集的字节数（默认 200KB，只取尾部）
 DEFAULT_MAX_LOG_BYTES = 200 * 1024
+# 最多收集的日志文件个数（按最近修改时间优先，避免轮转日志堆积）
+DEFAULT_MAX_LOG_FILES = 12
+# 所有日志合计上限（默认 3MB，保证报告包可通过微信/邮件正常发送）
+DEFAULT_MAX_TOTAL_LOG_BYTES = 3 * 1024 * 1024
 # 失败任务日志尾部最多保留的行数
 TASK_LOG_TAIL_LINES = 50
 
@@ -154,36 +158,93 @@ def _read_tail(path: Path, max_bytes: int) -> str:
 
 
 def collect_logs(log_dir: Optional[PathLike] = None,
-                 max_bytes_per_file: int = DEFAULT_MAX_LOG_BYTES) -> list[dict]:
+                 max_bytes_per_file: int = DEFAULT_MAX_LOG_BYTES,
+                 max_files: int = DEFAULT_MAX_LOG_FILES,
+                 max_total_bytes: int = DEFAULT_MAX_TOTAL_LOG_BYTES) -> list[dict]:
     """收集日志文件尾部内容。
 
-    扫描 log_dir（默认 app/backend/logs）下所有 *.log 文件，
-    并额外包含 install.log（若存在于项目根目录或日志目录）。
+    收集范围：
+    - log_dir（默认 app/backend/logs）下所有 *.log
+    - 项目根 logs/ 下所有 *.log（安装/更新脚本写入的 install.log、update.log）
+    - install.log 的历史位置兜底
+
+    为控制报告体积：按最近修改时间取前 max_files 个文件，且所有日志合计
+    不超过 max_total_bytes；被省略的文件数量会写入一条说明。
     返回 [{name, content}]；不可读文件自动跳过。
     """
     log_dir = Path(log_dir) if log_dir else Path(LOG_DIR)
+    project_root = BACKEND_DIR.parents[1]
 
-    files: list[Path] = []
+    candidates: list[Path] = []
     if log_dir.is_dir():
-        files.extend(sorted(log_dir.glob("*.log")))
+        candidates.extend(log_dir.glob("*.log"))
 
-    # install.log：项目根目录 / app 根目录 / 日志目录 三处候选
-    for cand in (BACKEND_DIR.parents[1] / "install.log",
-                 BACKEND_DIR.parent / "install.log",
-                 log_dir / "install.log"):
-        if cand.is_file() and cand not in files:
-            files.append(cand)
+    # 安装/更新脚本的日志写在项目根 logs/（install.log、update.log）
+    for extra_dir in (project_root / "logs", BACKEND_DIR.parent / "logs"):
+        if extra_dir.is_dir():
+            candidates.extend(extra_dir.glob("*.log"))
+
+    # install.log 的历史位置兜底
+    for cand in (project_root / "install.log", BACKEND_DIR.parent / "install.log"):
+        if cand.is_file():
+            candidates.append(cand)
+
+    # 按真实路径去重，再按最近修改时间倒序，只取前 max_files 个
+    seen: set = set()
+    unique: list[Path] = []
+    for f in candidates:
+        if not f.is_file():
+            continue
+        try:
+            key = f.resolve()
+        except Exception:
+            key = f
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(f)
+
+    def _mtime(p: Path) -> float:
+        try:
+            return p.stat().st_mtime
+        except Exception:
+            return 0.0
+
+    unique.sort(key=_mtime, reverse=True)
+    omitted = max(0, len(unique) - max_files)
+    unique = unique[:max_files]
+
+    # 同名文件（如根 logs/install.log 与 backend/logs/install.log）加父目录前缀避免覆盖
+    name_counts: dict[str, int] = {}
+    for f in unique:
+        name_counts[f.name] = name_counts.get(f.name, 0) + 1
 
     result: list[dict] = []
-    for f in files:
+    total = 0
+    for f in unique:
+        budget = min(max_bytes_per_file, max(0, max_total_bytes - total))
+        if budget <= 0:
+            omitted += 1
+            continue
         try:
-            result.append({
-                "name": f.name,
-                "content": _read_tail(f, max_bytes_per_file),
-            })
+            content = _read_tail(f, budget)
         except Exception:
             # 不可读文件跳过，不影响整体报告
             continue
+        total += len(content.encode("utf-8", errors="ignore"))
+        name = f.name if name_counts.get(f.name, 0) <= 1 else f"{f.parent.name}__{f.name}"
+        result.append({"name": name, "content": content})
+
+    if omitted:
+        result.append({
+            "name": "_OMITTED.txt",
+            "content": (
+                f"为控制报告体积，另有 {omitted} 个日志文件未收集。\n"
+                f"单文件上限 {max_bytes_per_file // 1024} KB，"
+                f"合计上限 {max_total_bytes // 1024} KB。\n"
+                f"如需完整日志，请联系维护者说明情况。"
+            ),
+        })
     return result
 
 
@@ -245,12 +306,18 @@ def _format_task_failures(failures: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 
 def _default_output_dir() -> Path:
-    """默认输出目录：macOS/Windows 桌面，其他系统用用户主目录。"""
-    if sys.platform == "darwin":
-        return Path.home() / "Desktop"
+    """默认输出目录：优先用户桌面，桌面不存在时回退到用户主目录。
+
+    Linux 桌面环境同样常见 ~/Desktop，存在就用，避免报告落在主目录里找不到。
+    """
     if sys.platform == "win32":
-        return Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Desktop"
-    return Path.home()
+        base = Path(os.environ.get("USERPROFILE", str(Path.home())))
+    else:
+        base = Path.home()
+    desktop = base / "Desktop"
+    if desktop.is_dir():
+        return desktop
+    return base
 
 
 _README_TEXT = """Miroworld 错误报告
@@ -260,11 +327,12 @@ _README_TEXT = """Miroworld 错误报告
 本文件包是 Miroworld 自动生成的错误报告，用于帮助维护者定位您遇到的问题。
 
 包含什么？
-- system-info.txt：您的系统信息（操作系统、Python/Node 版本、磁盘空间等）
-- logs/：后端运行日志（每个文件只包含最近一部分）
+- system-info.txt：您的系统信息（操作系统、主机名、Python/Node 版本、磁盘空间等）
+- logs/：后端运行日志，以及安装/更新日志（每个文件只包含最近一部分）
 - task-failures.txt：最近失败的后台任务记录
 - frontend-errors.txt：前端页面报错（如有）
 - description.txt：您填写的问题描述（如有）
+- _OMITTED.txt：因体积上限而未收集的日志数量说明（如有）
 
 如何发送给维护者？
 1. 将本压缩包（miroworld-report-*.zip）通过微信、邮件等方式发送给维护者；
@@ -272,9 +340,10 @@ _README_TEXT = """Miroworld 错误报告
 3. 如果方便，请附上问题发生的大致时间，方便维护者对照日志。
 
 隐私说明
-- 本报告只包含系统信息与运行日志，不包含任何 API 密钥、密码等敏感信息；
+- 本报告只包含系统信息与运行日志，不包含 API 密钥、密码等敏感信息；
 - 报告中的密钥类内容会被自动打码（显示为 [REDACTED]）；
-- 请勿在发送前自行修改报告内容。
+- 报告包含主机名与磁盘剩余空间，用于判断环境问题，如不希望提供可自行删除该文件；
+- 请勿在发送前自行修改报告的其他内容。
 """
 
 

@@ -106,15 +106,47 @@ def create_app(config_class=Config):
             logger.warning(f"通用任务持久化初始化失败（忽略）: {e}")
 
     # 请求日志中间件（敏感字段打码后再记录，避免密钥进入日志并被错误报告收集）
+    #
+    # 高频轮询端点不写请求/响应日志：前端每 1~2 秒轮询一次任务状态与健康检查，
+    # 实测这些请求占单日日志行数的 60%，会把日志撑到 8MB+ 并连带撑大错误报告。
+    # 需要完整抓包排查时，设 MIROWORLD_LOG_VERBOSE_POLL=1 即可恢复记录。
+    _POLL_PATH_MARKERS = (
+        '/health',
+        '/task/',
+        '/status',
+        '/api/timeline/status',
+        '/api/graph/status',
+    )
+    _log_poll = (os.environ.get('MIROWORLD_LOG_VERBOSE_POLL') or '').strip() in ('1', 'true', 'True')
+    # 请求/响应体最长记录字符数，避免单条巨型 JSON 刷爆日志
+    _BODY_LOG_LIMIT = 2000
+
+    def _is_poll_request() -> bool:
+        if _log_poll:
+            return False
+        path = request.path or ''
+        return any(marker in path for marker in _POLL_PATH_MARKERS)
+
+    def _clip(payload) -> str:
+        """把任意结构转成字符串并限长，避免单条巨型 JSON 刷爆日志。"""
+        s = str(payload)
+        if len(s) <= _BODY_LOG_LIMIT:
+            return s
+        return f"{s[:_BODY_LOG_LIMIT]}...(已截断，原长度 {len(s)} 字符)"
+
     @app.before_request
     def log_request():
+        if _is_poll_request():
+            return
         logger = get_logger('mirofish.request')
         logger.debug(f"请求: {request.method} {request.path}")
         if request.content_type and 'json' in request.content_type:
-            logger.debug(f"请求体: {_redact_secrets(request.get_json(silent=True))}")
+            logger.debug(f"请求体: {_clip(_redact_secrets(request.get_json(silent=True)))}")
 
     @app.after_request
     def log_response(response):
+        if _is_poll_request():
+            return response
         logger = get_logger('mirofish.request')
         logger.debug(f"响应: {response.status_code}")
         # 响应体同样打码后再记录；已 gzip 压缩的先解压再解析，失败则跳过（不影响主流程）
@@ -127,7 +159,7 @@ def create_app(config_class=Config):
                 else:
                     body = response.get_json(silent=True)
             if body is not None:
-                logger.debug(f"响应体: {_redact_secrets(body)}")
+                logger.debug(f"响应体: {_clip(_redact_secrets(body))}")
         except Exception:
             pass
         return response

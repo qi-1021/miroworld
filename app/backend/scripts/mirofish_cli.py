@@ -479,6 +479,308 @@ def cmd_report(args) -> dict:
     return result
 
 
+# ---------------------------------------------------------------------------
+# 运维辅助命令：version / logs / config / clean / update
+# 面向内测：让非技术用户和远程协助的维护者都能不看文档就拿到关键信息。
+# ---------------------------------------------------------------------------
+
+def _project_root() -> Path:
+    """项目根目录（app/backend 上溯两级）。"""
+    return BACKEND_DIR.parents[1]
+
+
+def _read_version_file() -> str:
+    vf = _project_root() / "VERSION"
+    try:
+        return vf.read_text(encoding="utf-8").strip()
+    except Exception:
+        return ""
+
+
+def cmd_version(args) -> dict:
+    """显示本地版本、Git 提交，并可选检查远端是否有更新。"""
+    root = _project_root()
+    local_version = _read_version_file() or "未知"
+
+    def _git(*a: str) -> str:
+        try:
+            out = subprocess.run(["git", *a], cwd=str(root), capture_output=True,
+                                 text=True, timeout=10)
+            return (out.stdout or "").strip() if out.returncode == 0 else ""
+        except Exception:
+            return ""
+
+    commit = _git("rev-parse", "--short", "HEAD")
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+    result: dict = {
+        "version": local_version,
+        "commit": commit or "未知（非 Git 安装）",
+        "branch": branch or "未知",
+        "project_root": str(root),
+        "update_available": None,
+    }
+
+    if getattr(args, "check", False):
+        # 优先用 Git 比对本地与远端 HEAD；无 Git 时回退比对远端 VERSION 文件
+        if commit and branch:
+            remote = _git("ls-remote", "origin", f"refs/heads/{branch}")
+            remote_head = remote.split()[0] if remote else ""
+            local_head = _git("rev-parse", "HEAD")
+            if remote_head and local_head:
+                result["remote_commit"] = remote_head[:7]
+                if remote_head == local_head:
+                    result["update_available"] = False
+                    result["sync_state"] = "已是最新"
+                else:
+                    # 区分「远端有新提交」与「本地领先未推送」，否则会把本地领先
+                    # 误报成"有新版本可更新"
+                    _git("fetch", "origin", branch)
+                    behind = _git("rev-list", "--count", f"HEAD..origin/{branch}")
+                    ahead = _git("rev-list", "--count", f"origin/{branch}..HEAD")
+                    n_behind = int(behind) if behind.isdigit() else 0
+                    n_ahead = int(ahead) if ahead.isdigit() else 0
+                    result["commits_behind"] = n_behind
+                    result["commits_ahead"] = n_ahead
+                    result["update_available"] = n_behind > 0
+                    if n_behind and n_ahead:
+                        result["sync_state"] = f"已分叉（落后 {n_behind}、领先 {n_ahead}）"
+                    elif n_behind:
+                        result["sync_state"] = f"有新版本（落后 {n_behind} 个提交）"
+                    elif n_ahead:
+                        result["sync_state"] = f"本地领先 {n_ahead} 个提交（无需更新）"
+                    else:
+                        result["sync_state"] = "无法判断，建议手动检查"
+            else:
+                result["check_error"] = "无法获取远端版本（网络或代理问题）"
+        else:
+            try:
+                import urllib.request
+                url = "https://ghproxy.net/https://github.com/qi-1021/miroworld/raw/main/VERSION"
+                with urllib.request.urlopen(url, timeout=15) as resp:
+                    remote_version = resp.read().decode("utf-8").strip()
+                result["remote_version"] = remote_version
+                result["update_available"] = (remote_version != local_version)
+            except Exception as e:
+                result["check_error"] = f"无法获取远端版本：{e}"
+    return result
+
+
+def cmd_logs(args) -> dict:
+    """查看最近日志，免去用户自己找文件路径。
+
+    默认列出所有日志文件；--tail N 打印最新日志的最后 N 行；
+    --name 指定文件；--errors 只看 WARNING/ERROR 行。
+    """
+    root = _project_root()
+    candidates: list[Path] = []
+    for d in (BACKEND_DIR / "logs", root / "logs"):
+        if d.is_dir():
+            candidates.extend(d.glob("*.log"))
+
+    if not candidates:
+        return {"files": [], "message": "暂无日志文件（服务可能尚未启动过）"}
+
+    files_info = []
+    for f in sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            st = f.stat()
+            files_info.append({
+                "name": f.name,
+                "path": str(f),
+                "size_kb": round(st.st_size / 1024, 1),
+                "modified": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            })
+        except Exception:
+            continue
+
+    tail_n = int(getattr(args, "tail", 0) or 0)
+    if tail_n <= 0:
+        return {"files": files_info}
+
+    # 选定目标文件：--name 优先，否则取最近修改的
+    want = (getattr(args, "name", "") or "").strip()
+    target: Optional[Path] = None
+    if want:
+        for f in candidates:
+            if f.name == want:
+                target = f
+                break
+        if target is None:
+            raise ValueError(f"未找到日志文件：{want}（可先运行 mirofish logs 查看可用文件）")
+    else:
+        target = Path(files_info[0]["path"])
+
+    try:
+        with open(target, "r", encoding="utf-8", errors="replace") as fh:
+            lines = fh.readlines()
+    except Exception as e:
+        raise ValueError(f"读取日志失败：{e}") from e
+
+    if getattr(args, "errors", False):
+        lines = [ln for ln in lines if ("ERROR" in ln or "WARNING" in ln or "Traceback" in ln)]
+
+    tail = [ln.rstrip("\n") for ln in lines[-tail_n:]]
+
+    # 日志可能含密钥（历史版本曾把请求体写进 DEBUG），统一打码后再展示
+    try:
+        from app.utils.report import sanitize_text
+        tail = [sanitize_text(ln) for ln in tail]
+    except Exception:
+        pass
+
+    return {"files": files_info, "target": str(target), "lines": tail,
+            "only_errors": bool(getattr(args, "errors", False))}
+
+
+def cmd_config(args) -> dict:
+    """显示当前生效的环境配置与关键文件位置（不输出任何密钥内容）。"""
+    root = _project_root()
+    env_config_path = root / "app" / "data" / "env-config.json"
+    env_config: dict = {}
+    if env_config_path.is_file():
+        try:
+            env_config = json.loads(env_config_path.read_text(encoding="utf-8"))
+        except Exception:
+            env_config = {"_error": "env-config.json 解析失败"}
+
+    env_file = root / "app" / ".env"
+    registry = root / "app" / "data" / "model-config" / "registry.json"
+
+    # 只报告"是否已配置"，绝不回显密钥本身
+    api_key_set = False
+    if env_file.is_file():
+        try:
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                if line.strip().startswith("LLM_API_KEY="):
+                    val = line.split("=", 1)[1].strip()
+                    api_key_set = bool(val) and "your_api_key" not in val
+                    break
+        except Exception:
+            pass
+
+    model_count = 0
+    if registry.is_file():
+        try:
+            data = json.loads(registry.read_text(encoding="utf-8"))
+            conns = data.get("connections") or data.get("models") or []
+            model_count = len(conns) if isinstance(conns, list) else len(conns.keys())
+        except Exception:
+            model_count = 0
+
+    return {
+        "project_root": str(root),
+        "portable_note": "便携模式：程序运行在当前目录，可整体拷贝到 U 盘使用",
+        "detected_env": env_config,
+        "paths": {
+            "env_file": str(env_file) + ("" if env_file.is_file() else "（不存在）"),
+            "env_config": str(env_config_path) + ("" if env_config_path.is_file() else "（不存在）"),
+            "model_registry": str(registry) + ("" if registry.is_file() else "（不存在）"),
+            "backend_logs": str(BACKEND_DIR / "logs"),
+            "script_logs": str(root / "logs"),
+            "data_dir": str(BACKEND_DIR / "data"),
+        },
+        "llm_api_key_configured": api_key_set,
+        "model_connections": model_count,
+        "log_level": os.environ.get("MIROWORLD_LOG_LEVEL", "INFO（默认）"),
+    }
+
+
+def cmd_clean(args) -> dict:
+    """清理缓存与陈旧产物：Python 字节码缓存、pytest 缓存、过旧日志。
+
+    默认只做预演（dry-run），加 --yes 才真正删除，避免误删。
+    陈旧的 __pycache__ 会让报错指向错误的历史路径，实测已造成过误导。
+    """
+    root = _project_root()
+    days = int(getattr(args, "older_than_days", 7) or 7)
+    do_it = bool(getattr(args, "yes", False))
+
+    targets: list[dict] = []
+
+    # 1. __pycache__ / .pyc（排除虚拟环境与 node_modules）
+    for p in root.rglob("__pycache__"):
+        s = str(p)
+        if "/.venv" in s or "node_modules" in s:
+            continue
+        targets.append({"type": "pycache", "path": s})
+
+    # 2. pytest 缓存
+    for p in root.rglob(".pytest_cache"):
+        if "node_modules" in str(p):
+            continue
+        targets.append({"type": "pytest_cache", "path": str(p)})
+
+    # 3. 过旧日志（默认 7 天前；轮转备份 .log.N 一并计入）
+    cutoff = time.time() - days * 86400
+    for d in (BACKEND_DIR / "logs", root / "logs"):
+        if not d.is_dir():
+            continue
+        for f in list(d.glob("*.log")) + list(d.glob("*.log.*")):
+            try:
+                if f.stat().st_mtime < cutoff:
+                    targets.append({"type": "old_log", "path": str(f),
+                                    "size_kb": round(f.stat().st_size / 1024, 1)})
+            except Exception:
+                continue
+
+    removed: list[str] = []
+    failed: list[str] = []
+    if do_it:
+        for t in targets:
+            p = Path(t["path"])
+            try:
+                if p.is_dir():
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    p.unlink(missing_ok=True)
+                removed.append(t["path"])
+            except Exception:
+                failed.append(t["path"])
+
+    return {
+        "dry_run": not do_it,
+        "older_than_days": days,
+        "found": len(targets),
+        "targets": targets if not do_it else [],
+        "removed": removed,
+        "failed": failed,
+        "hint": ("以上为预演结果，加 --yes 才会真正删除"
+                 if not do_it else f"已清理 {len(removed)} 项"),
+    }
+
+
+def cmd_update(args) -> dict:
+    """从 CLI 触发更新脚本（内部仍走 scripts/update.sh，逻辑不重复实现）。"""
+    root = _project_root()
+    script = root / "scripts" / ("update.bat" if os.name == "nt" else "update.sh")
+    if not script.is_file():
+        raise ValueError(f"未找到更新脚本：{script}")
+
+    cmd = [str(script)] if os.name == "nt" else ["bash", str(script)]
+    if getattr(args, "check_only", False):
+        # 只检查不执行：复用 version --check 的判断，避免两套逻辑各说各话
+        class _A:
+            check = True
+        info = cmd_version(_A())
+        return {"mode": "check-only", **info}
+
+    print("正在执行更新脚本，输出如下：", file=sys.stderr)
+    try:
+        proc = subprocess.run(cmd, cwd=str(root), text=True, timeout=1800)
+    except subprocess.TimeoutExpired:
+        raise ValueError("更新超时（30 分钟），请检查网络后重试")
+    except Exception as e:
+        raise ValueError(f"执行更新脚本失败：{e}") from e
+
+    if proc.returncode != 0:
+        raise ValueError(
+            f"更新脚本返回非零退出码 {proc.returncode}，"
+            f"详情见 {root / 'logs' / 'update.log'}"
+        )
+    return {"exit_code": proc.returncode, "version": _read_version_file() or "未知",
+            "log": str(root / "logs" / "update.log")}
+
+
 def cmd_health(args) -> dict:
     checks = {}
     for name, port in (("frontend", 3000), ("backend", 5001), ("neo4j", 7687)):
@@ -665,7 +967,96 @@ def cmd_doctor(args) -> dict:
         add("logs_dir", "fail", "日志目录不存在",
             "请创建：mkdir -p app/backend/logs")
 
-    return {"checks": checks, "all_ok": all(c["status"] == "pass" for c in checks)}
+    result = {"checks": checks, "all_ok": all(c["status"] == "pass" for c in checks)}
+
+    # --fix：只做「明确安全」的修复，绝不碰用户数据与密钥配置
+    if getattr(args, "fix", False):
+        result["repairs"] = _doctor_autofix(checks)
+        # 修复后重算一次结论，让用户立刻看到改善
+        recheck = {c["name"]: c["status"] for c in checks}
+        result["note"] = "已尝试自动修复，建议重新运行 mirofish doctor 确认"
+        result["all_ok_before_fix"] = all(s == "pass" for s in recheck.values())
+
+    return result
+
+
+def _doctor_autofix(checks: list[dict]) -> list[dict]:
+    """针对体检结果做安全的自动修复。
+
+    只处理确定无副作用的项：建缺失目录、初始化模型配置目录、清理损坏的仿真虚拟环境。
+    绝不自动写入 API 密钥，也绝不删除用户数据。
+    """
+    repairs: list[dict] = []
+    failed = {c["name"] for c in checks if c["status"] in ("fail", "warn")}
+
+    def record(action: str, ok: bool, detail: str = "") -> None:
+        repairs.append({"action": action, "ok": ok, "detail": detail})
+
+    # 1. 日志目录缺失 → 直接创建
+    if "logs_dir" in failed:
+        try:
+            (BACKEND_DIR / "logs").mkdir(parents=True, exist_ok=True)
+            record("创建日志目录 app/backend/logs", True)
+        except Exception as e:
+            record("创建日志目录 app/backend/logs", False, str(e))
+
+    # 2. 数据目录不可写/缺失 → 尝试创建（权限问题无法自动解决，只能如实报告）
+    if "data_dir" in failed:
+        try:
+            (BACKEND_DIR / "data").mkdir(parents=True, exist_ok=True)
+            record("创建数据目录 app/backend/data", True)
+        except Exception as e:
+            record("创建数据目录 app/backend/data", False,
+                   f"{e}（可能是权限问题，需手动 chmod）")
+
+    # 3. 模型注册表缺失 → 建目录并调用现有初始化脚本（不写任何密钥）
+    if "model_registry" in failed:
+        root = BACKEND_DIR.parents[1]
+        try:
+            (root / "app" / "data" / "model-config").mkdir(parents=True, exist_ok=True)
+            init_script = root / "scripts" / "init-models.sh"
+            if init_script.is_file() and os.name != "nt":
+                proc = subprocess.run(["bash", str(init_script)], cwd=str(root),
+                                      capture_output=True, text=True, timeout=120)
+                ok = proc.returncode == 0
+                record("初始化模型配置目录并导入 .env 中的模型设置", ok,
+                       "" if ok else (proc.stderr or "").strip()[:200])
+            else:
+                record("创建模型配置目录 app/data/model-config", True,
+                       "仍需在网页「模型设置」中填入 API Key")
+        except Exception as e:
+            record("初始化模型配置", False, str(e))
+
+    # 4. 损坏的仿真虚拟环境 → 清除以便下次自动重建
+    sim_venv = BACKEND_DIR / ".venv-simulation"
+    if sim_venv.is_dir():
+        py_ok = (sim_venv / "bin" / "python").exists() or (sim_venv / "Scripts" / "python.exe").exists()
+        if not py_ok:
+            try:
+                shutil.rmtree(sim_venv, ignore_errors=True)
+                record("清除损坏的仿真虚拟环境 .venv-simulation", True,
+                       "下次启动会自动重建")
+            except Exception as e:
+                record("清除损坏的仿真虚拟环境", False, str(e))
+
+    # 5. 陈旧字节码缓存 → 清理（曾导致报错指向历史路径，误导排查）
+    try:
+        root = BACKEND_DIR.parents[1]
+        cleaned = 0
+        for p in root.rglob("__pycache__"):
+            s = str(p)
+            if "/.venv" in s or "node_modules" in s:
+                continue
+            shutil.rmtree(p, ignore_errors=True)
+            cleaned += 1
+        if cleaned:
+            record(f"清理 {cleaned} 个陈旧 __pycache__ 缓存目录", True)
+    except Exception as e:
+        record("清理字节码缓存", False, str(e))
+
+    if not repairs:
+        record("无需修复（未发现可自动处理的问题）", True)
+    return repairs
 
 
 def _print_doctor_report(result: dict) -> None:
@@ -684,6 +1075,46 @@ def _print_doctor_report(result: dict) -> None:
         print("总体：系统健康 ✓")
     else:
         print("总体：发现问题，请根据上方提示修复")
+    # 自动修复结果（仅 --fix 时存在）
+    repairs = result.get("repairs")
+    if repairs:
+        print("")
+        print("自动修复：")
+        for r in repairs:
+            mark = "✓" if r.get("ok") else "✗"
+            print(f"  {mark} {r.get('action', '')}")
+            if r.get("detail"):
+                print(f"     {r['detail']}")
+        print("修复后建议重新运行：mirofish doctor")
+
+
+def _print_logs_report(result: dict) -> None:
+    """人类可读的日志输出：先列文件清单，再打印指定文件尾部。"""
+    files = result.get("files") or []
+    if not files:
+        print(result.get("message") or "暂无日志文件")
+        return
+
+    lines = result.get("lines")
+    if lines is None:
+        print("可用日志文件（按最近修改排序）")
+        print("-" * 72)
+        for f in files:
+            print(f"  {f['name']:<28} {f['size_kb']:>9} KB   {f['modified']}")
+        print("-" * 72)
+        print("查看最新日志末尾 100 行：mirofish logs --tail 100")
+        print("只看报错行：           mirofish logs --tail 100 --errors")
+        return
+
+    scope = "（仅 WARNING/ERROR）" if result.get("only_errors") else ""
+    print(f"日志文件：{result.get('target', '')} {scope}")
+    print("-" * 72)
+    if not lines:
+        print("（没有匹配的日志行）")
+    for ln in lines:
+        print(ln)
+    print("-" * 72)
+    print("如需把日志发给维护者，请运行：mirofish report")
 
 
 # ---------------------------------------------------------------------------
@@ -1152,16 +1583,38 @@ def _parser() -> argparse.ArgumentParser:
     h = _add_json(sub.add_parser("health"))
     h.add_argument("--detailed", action="store_true", help="附加模型注册表 verified 检查")
 
-    _add_json(sub.add_parser("doctor"))
+    dr = _add_json(sub.add_parser("doctor", help="环境体检：工具链/端口/配置/目录权限"))
+    dr.add_argument("--fix", action="store_true",
+                    help="尝试自动修复可安全修复的问题（建目录、初始化模型配置、清理损坏仿真环境）")
 
     bk = _add_json(sub.add_parser("backup"))
     bk.add_argument("--output", default="", help="备份输出目录（默认 backups/ 下自动命名）")
 
-    rp = _add_json(sub.add_parser("report"))
+    rp = _add_json(sub.add_parser("report", help="生成错误报告压缩包，供发送给维护者"))
     rp.add_argument("--output", default="", help="报告输出目录（默认桌面）")
     rp.add_argument("--description", default="", help="问题描述（可选，会写入报告）")
     rp.add_argument("--frontend-errors", default="",
                     help="前端错误缓冲 JSON 字符串（可选，会写入报告）")
+
+    ver = _add_json(sub.add_parser("version", help="显示版本信息"))
+    ver.add_argument("--check", action="store_true", help="联网检查是否有新版本")
+
+    lg = _add_json(sub.add_parser("logs", help="查看日志，无需自己找文件路径"))
+    lg.add_argument("--tail", type=int, default=0,
+                    help="打印最后 N 行（不填则只列出日志文件清单）")
+    lg.add_argument("--name", default="", help="指定日志文件名（默认最近修改的那个）")
+    lg.add_argument("--errors", action="store_true", help="只显示 WARNING/ERROR/Traceback 行")
+
+    _add_json(sub.add_parser("config", help="显示生效配置与关键文件位置（不回显密钥）"))
+
+    cl = _add_json(sub.add_parser("clean", help="清理字节码缓存/测试缓存/过旧日志"))
+    cl.add_argument("--yes", action="store_true", help="确认执行删除（默认只预演）")
+    cl.add_argument("--older-than-days", type=int, default=7,
+                    help="日志保留天数，超过则清理（默认 7 天）")
+
+    up = _add_json(sub.add_parser("update", help="执行更新（内部调用 scripts/update.sh）"))
+    up.add_argument("--check-only", action="store_true", help="只检查有无新版本，不实际更新")
+
     return parser
 
 
@@ -1223,6 +1676,19 @@ def main(argv=None) -> int:
             result = cmd_backup(args)
         elif args.command == "report":
             result = cmd_report(args)
+        elif args.command == "version":
+            result = cmd_version(args)
+        elif args.command == "logs":
+            result = cmd_logs(args)
+            if not as_json:
+                _print_logs_report(result)
+                return 0
+        elif args.command == "config":
+            result = cmd_config(args)
+        elif args.command == "clean":
+            result = cmd_clean(args)
+        elif args.command == "update":
+            result = cmd_update(args)
         else:
             raise ValueError(f"未知命令: {args.command}")
         _out({"success": True, "data": result}, as_json)

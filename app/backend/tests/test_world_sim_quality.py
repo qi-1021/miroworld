@@ -99,9 +99,18 @@ def test_merge_simulations_offsets_steps(world_root):
     _make_state("p1", "sim_a", [{"step": 1, "id": "a1"}, {"step": 2, "id": "a2"}])
     _make_state("p1", "sim_b", [{"step": 1, "id": "b1"}])
     merged = WorldSimulationService.merge_simulations("sim_a", "sim_b")
-    assert merged.result["event_count"] == 3
+    # 主线 2 条 + 因果过渡缝合事件 1 条 + 分支 1 条（步号顺延至过渡事件之后）
+    assert merged.result["event_count"] == 4
     steps = [e["step"] for e in merged.result["events"]]
-    assert steps == [1, 2, 3]
+    assert steps == [1, 2, 3, 4]
+    # 过渡事件位于主线末尾之后，且带 causal_transition 标记
+    transition = merged.result["events"][2]
+    assert transition["causal_transition"] is True
+    assert transition["step"] == 3
+    # 分支事件保留来源标记，并前向链接到过渡事件
+    branch_event = merged.result["events"][3]
+    assert branch_event["merged_from_branch"] == "sim_b"
+    assert transition["id"] in branch_event["links"]
     assert merged.result["meta"]["merge_base"] == "sim_a"
     assert merged.result["meta"]["merge_branch"] == "sim_b"
 

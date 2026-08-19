@@ -59,11 +59,17 @@ __pycache__/
 # Node 环境与构建产物
 node_modules/
 app/frontend/dist/
+# 安装脚本生成的项目级 npm 源配置（本地环境相关，不入库）
+app/frontend/.npmrc
 
 # 运行时数据
 app/backend/uploads/
 app/backend/logs/
 app/backend/data/
+# 安装/更新脚本产生的根目录日志（install.log / update.log）
+logs/
+# OpenCode 本地可读性配置（不上传）
+.ignore
 
 # 本地向量模型权重与自动生成的说明（保留占位文件）
 app/models/embeddings/**

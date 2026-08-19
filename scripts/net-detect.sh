@@ -33,16 +33,28 @@ detect_proxy_env() {
 
 # ------------------------------------------------------------------------------
 # 探测常见本地代理工具端口（快速 TCP 连接）
-# 端口：7890 (Clash) / 7897 (Clash Verge) / 10809 (v2rayN) / 1080 (socks) / 8888
-# 输出：第一个开放的端口对应的 http 代理地址，如 http://127.0.0.1:7890
+# 端口：7890 (Clash HTTP) / 7897 (Clash Verge HTTP) / 10809 (v2rayN HTTP)
+#       / 8888 (通用 HTTP) / 1080 (通常是 SOCKS5)
+# 输出：第一个开放端口对应的代理地址；SOCKS 端口输出 socks5h:// 前缀，
+#       避免把 SOCKS 端口当 HTTP 代理用（curl 会报协议错误，反而误判为断网）
 #       若全部未开放则输出 "none"
+# 注：把 1080 排在最后，优先选真正的 HTTP 代理端口
 # ------------------------------------------------------------------------------
 detect_local_proxy() {
-    local ports=(7890 7897 10809 1080 8888)
+    # HTTP 代理端口优先
+    local http_ports=(7890 7897 10809 8888)
+    # SOCKS 端口（curl 需要 socks5h:// 协议前缀才能正确使用）
+    local socks_ports=(1080 1081 10808)
     local port
-    for port in "${ports[@]}"; do
+    for port in "${http_ports[@]}"; do
         if _tcp_port_open "127.0.0.1" "$port"; then
             echo "http://127.0.0.1:$port"
+            return 0
+        fi
+    done
+    for port in "${socks_ports[@]}"; do
+        if _tcp_port_open "127.0.0.1" "$port"; then
+            echo "socks5h://127.0.0.1:$port"
             return 0
         fi
     done
@@ -121,24 +133,65 @@ test_url_speed() {
 }
 
 # ------------------------------------------------------------------------------
-# 从多个候选 URL 中挑选最快的可用镜像
-# 用法：pick_fastest_mirror "url1 url2 url3 ..."
+# 从多个候选 URL 中挑选最快的可用镜像（并行测速）
+# 用法：pick_fastest_mirror "url1 url2 url3 ..." [timeout秒，默认8]
 # 输出：最快的可用 URL；若全部失败则输出空字符串
+# 说明：早期实现串行测速，5 个镜像 × 8 秒超时最差要干等 40 秒；
+#       改为并行后总耗时约等于单次超时时间。
 # ------------------------------------------------------------------------------
 pick_fastest_mirror() {
     local candidates="$1"
-    local best_url=""
-    local best_time=""
-    local url t
-    for url in $candidates; do
-        t=$(test_url_speed "$url" 8)
-        if [ "$t" != "fail" ]; then
-            if [ -z "$best_time" ] || _time_lt "$t" "$best_time"; then
-                best_time="$t"
-                best_url="$url"
+    local timeout="${2:-8}"
+    local tmpdir url idx best_url="" best_time=""
+
+    # 无 mktemp 时退化为串行，保证极简环境下仍可用
+    if ! command -v mktemp >/dev/null 2>&1; then
+        local t
+        # 用换行迭代而非依赖无引号词拆分：zsh 默认不做词拆分，这样 bash/zsh 都正确
+        while IFS= read -r url; do
+            [ -n "$url" ] || continue
+            t=$(test_url_speed "$url" "$timeout")
+            if [ "$t" != "fail" ]; then
+                if [ -z "$best_time" ] || _time_lt "$t" "$best_time"; then
+                    best_time="$t"; best_url="$url"
+                fi
             fi
+        done <<EOF
+$(echo "$candidates" | tr ' \t' '\n\n')
+EOF
+        echo "$best_url"
+        return 0
+    fi
+
+    tmpdir="$(mktemp -d 2>/dev/null)" || { echo ""; return 0; }
+
+    idx=0
+    while IFS= read -r url; do
+        [ -n "$url" ] || continue
+        idx=$((idx + 1))
+        # 每个候选放到后台并行测速，结果写入独立文件（避免输出交错）
+        (
+            t="$(test_url_speed "$url" "$timeout")"
+            printf '%s\t%s\n' "$t" "$url" > "$tmpdir/r$idx"
+        ) &
+    done <<EOF
+$(echo "$candidates" | tr ' \t' '\n\n')
+EOF
+    wait 2>/dev/null || true
+
+    local line t u
+    for line in "$tmpdir"/r*; do
+        [ -f "$line" ] || continue
+        t="$(cut -f1 "$line" 2>/dev/null)"
+        u="$(cut -f2 "$line" 2>/dev/null)"
+        [ -z "$t" ] && continue
+        [ "$t" = "fail" ] && continue
+        if [ -z "$best_time" ] || _time_lt "$t" "$best_time"; then
+            best_time="$t"; best_url="$u"
         fi
     done
+
+    rm -rf "$tmpdir" 2>/dev/null || true
     echo "$best_url"
 }
 

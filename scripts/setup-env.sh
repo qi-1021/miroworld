@@ -191,14 +191,23 @@ log_step "检查前端 Node.js 与静态包构建..."
 if command -v npm >/dev/null 2>&1; then
     cd "$PROJECT_ROOT/app/frontend"
     if [ -f "package.json" ]; then
-        log_to_file "[CMD] npm config set registry https://registry.npmmirror.com"
-        if ! npm config set registry https://registry.npmmirror.com >/dev/null 2>&1; then
-            log_warn "设置 npm 国内镜像源失败（可忽略）"
+        # 用项目级 .npmrc 而非 npm config set：后者写的是用户全局配置，
+        # 会把镜像源强加到用户的其他所有 Node 项目上（安装器不该有这种副作用）。
+        NPM_REGISTRY="https://registry.npmmirror.com"
+        if [ ! -f ".npmrc" ]; then
+            log_to_file "[CMD] 写入项目级 .npmrc registry=$NPM_REGISTRY"
+            if printf 'registry=%s\n' "$NPM_REGISTRY" > .npmrc 2>/dev/null; then
+                log_info "已为本项目配置 npm 国内镜像源（不影响你的其他项目）"
+            else
+                log_warn "写入项目级 .npmrc 失败（将改用命令行参数指定镜像源）"
+            fi
+        else
+            log_info "检测到已有 .npmrc，沿用现有 npm 源配置"
         fi
         if [ ! -d "node_modules" ]; then
             log_step "正在快速安装前端依赖..."
-            log_to_file "[CMD] npm install --no-audit --no-fund"
-            if npm install --no-audit --no-fund; then
+            log_to_file "[CMD] npm install --no-audit --no-fund --registry=$NPM_REGISTRY"
+            if npm install --no-audit --no-fund --registry="$NPM_REGISTRY"; then
                 log_step "前端依赖安装完成" "ok"
             else
                 rc=$?

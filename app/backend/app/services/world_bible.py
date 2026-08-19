@@ -489,7 +489,7 @@ class WorldBibleService:
     def _extract_keywords(text: str, limit: int = 12) -> List[str]:
         """提取块内的高频关键词（中文简化分词：按标点切短语 + 去停用词）"""
         # 按中英文标点切分成短语，保留 2-12 字的短语作为候选关键词
-        phrases = re.split(r'[，。！？；：、,.!?;:\s\n"\'""''（）()【】\[\]「」『』]', text)
+        phrases = re.split(r'''[，。！？；：、,.!?;:\s"'“”‘’（）()【】\[\]「」『』]''', text)
         tokens = []
         for phrase in phrases:
             phrase = phrase.strip()

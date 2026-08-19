@@ -26,6 +26,25 @@ def _ensure_utf8_stdout():
 # 日志目录
 LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'logs')
 
+# 文件日志级别：默认 INFO。
+# 早期默认 DEBUG 会把每个请求/响应都写盘，前端 1~2 秒一次的任务轮询能让单日日志
+# 涨到 8MB 以上（实测 60% 行数来自 request/response 两条 DEBUG），既撑大错误报告
+# 也浪费磁盘。排查问题时用 MIROWORLD_LOG_LEVEL=DEBUG 临时打开即可。
+_LEVEL_NAMES = {
+    'DEBUG': logging.DEBUG,
+    'INFO': logging.INFO,
+    'WARNING': logging.WARNING,
+    'WARN': logging.WARNING,
+    'ERROR': logging.ERROR,
+    'CRITICAL': logging.CRITICAL,
+}
+
+
+def _file_log_level() -> int:
+    """从环境变量读取文件日志级别，非法值回退 INFO。"""
+    raw = (os.environ.get('MIROWORLD_LOG_LEVEL') or '').strip().upper()
+    return _LEVEL_NAMES.get(raw, logging.INFO)
+
 
 def setup_logger(name: str = 'mirofish', level: int = logging.DEBUG) -> logging.Logger:
     """
@@ -71,7 +90,7 @@ def setup_logger(name: str = 'mirofish', level: int = logging.DEBUG) -> logging.
         backupCount=5,
         encoding='utf-8'
     )
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(_file_log_level())
     file_handler.setFormatter(detailed_formatter)
 
     # 2. 控制台处理器 - 简洁日志（INFO及以上）

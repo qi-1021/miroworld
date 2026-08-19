@@ -63,8 +63,59 @@ verify_zip() {
     elif command -v python >/dev/null 2>&1; then
         python -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).testzip()" "$f" >/dev/null 2>&1
     else
+        # 没有 unzip/python 时退化为基础校验：非空 + ZIP magic("PK") 文件头。
+        # 既不假装成功（原来直接 return 0 会让损坏包混过去），
+        # 也不会让缺工具的环境彻底无法更新（全判失败会导致所有镜像都被换掉）。
+        log_warn "系统缺少 unzip 与 python，仅做基础完整性校验（文件头 + 体积）。"
+        log_update "WARN: 无 unzip/python，退化为 PK magic 基础校验"
+        [ -s "$f" ] || return 1
+        local magic
+        magic="$(head -c 2 "$f" 2>/dev/null || echo "")"
+        [ "$magic" = "PK" ]
+    fi
+}
+
+# 可选的 SHA256 校验：仅当远端发布了 SHA256SUMS 时才生效。
+# 结构校验（unzip -t）只能发现损坏，无法发现镜像被投毒；有校验和时做强校验。
+# 远端没有该文件（当前即如此）则跳过并返回成功，不阻塞更新。
+verify_sha256() {
+    local f="$1"
+    local sums="" expected="" actual="" sumurl
+
+    for sumurl in $(github_mirror_urls "qi-1021/miroworld/raw/main/SHA256SUMS"); do
+        # 代理已在前面 export 为 http_proxy/https_proxy，curl 会自动继承
+        sums="$(curl -fsSL -m 15 "$sumurl" 2>/dev/null || true)"
+        [ -n "$sums" ] && break
+    done
+
+    if [ -z "$sums" ]; then
+        log_update "未发布 SHA256SUMS，跳过校验和验证"
         return 0
     fi
+
+    # 取 main.zip 对应的校验和（格式：<sha256>  <文件名>）
+    expected="$(echo "$sums" | awk '/main\.zip/ {print $1; exit}')"
+    if [ -z "$expected" ]; then
+        log_update "SHA256SUMS 中未找到 main.zip 条目，跳过校验和验证"
+        return 0
+    fi
+
+    if command -v shasum >/dev/null 2>&1; then
+        actual="$(shasum -a 256 "$f" 2>/dev/null | awk '{print $1}')"
+    elif command -v sha256sum >/dev/null 2>&1; then
+        actual="$(sha256sum "$f" 2>/dev/null | awk '{print $1}')"
+    else
+        log_update "系统缺少 shasum/sha256sum，跳过校验和验证"
+        return 0
+    fi
+
+    if [ "$actual" = "$expected" ]; then
+        log_update "SHA256 校验通过"
+        return 0
+    fi
+    log_warn "源码包 SHA256 校验和不匹配，可能下载不完整或镜像异常。"
+    log_update "ERROR: SHA256 不匹配 (期望 $expected 实际 $actual)"
+    return 1
 }
 
 # 解压 zip 到指定目录
@@ -183,6 +234,19 @@ git_pull() {
     fi
 }
 
+# 读取远端分支最新 commit（轻量请求，用于判断是否真的有更新）
+# 用法：git_remote_head <remote> <branch>；无法获取时输出空字符串
+git_remote_head() {
+    local remote="$1"
+    local branch="$2"
+    if [ -n "$PROXY" ] && [ "$PROXY" != "none" ]; then
+        git -c http.proxy="$PROXY" -c https.proxy="$PROXY" \
+            ls-remote "$remote" "refs/heads/$branch" 2>/dev/null | awk '{print $1}' | head -1
+    else
+        git ls-remote "$remote" "refs/heads/$branch" 2>/dev/null | awk '{print $1}' | head -1
+    fi
+}
+
 # ==============================================================================
 # 主流程
 # ==============================================================================
@@ -239,6 +303,22 @@ if command -v git >/dev/null 2>&1; then
 
     BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
     log_info "当前分支: $BRANCH"
+
+    # ---- 增量判断：本地 HEAD 与远端一致时无需拉取（慢链接下省掉整次网络往返）----
+    log_step "正在检查是否有新版本..."
+    LOCAL_HEAD="$(git rev-parse HEAD 2>/dev/null || echo "")"
+    REMOTE_HEAD="$(git_remote_head origin "$BRANCH")"
+    if [ -n "$LOCAL_HEAD" ] && [ -n "$REMOTE_HEAD" ] && [ "$LOCAL_HEAD" = "$REMOTE_HEAD" ]; then
+        log_info "✅ 已是最新版本（${LOCAL_HEAD:0:8}），无需更新。"
+        log_update "git 模式：本地与远端一致 ($LOCAL_HEAD)，跳过拉取"
+        echo ""
+        echo "如需强制重新同步依赖，请运行：bash scripts/setup-env.sh"
+        exit 0
+    fi
+    if [ -z "$REMOTE_HEAD" ]; then
+        log_warn "无法获取远端版本信息（网络或代理问题），仍将尝试拉取。"
+        log_update "git 模式：ls-remote 失败，继续尝试 pull"
+    fi
 
     PULL_OK=0
     if git_pull origin "$BRANCH"; then
@@ -347,7 +427,7 @@ else
         log_info "正在从镜像下载源码包: $url"
         log_update "尝试下载: $url"
         if download_zip "$url" "$ZIP_FILE"; then
-            if verify_zip "$ZIP_FILE"; then
+            if verify_zip "$ZIP_FILE" && verify_sha256 "$ZIP_FILE"; then
                 DOWNLOAD_OK=1
                 log_info "✅ 源码包下载并校验成功！"
                 log_update "下载并校验成功: $url"
@@ -420,8 +500,17 @@ fi
 
 # 3. 检查并更新后端 Python 依赖
 log_step "检查并同步后端 Python 环境依赖 (国内镜像加速)..."
-if [ -d "$APP_DIR/backend/.venv-simulation" ]; then
-    rm -rf "$APP_DIR/backend/.venv-simulation" >/dev/null 2>&1 || true
+# 仅在仿真虚拟环境明显损坏时清除（缺少可执行 python 即视为残缺）。
+# 早期版本每次更新都无条件删除，导致慢网络下反复重建、更新奇慢。
+SIM_VENV="$APP_DIR/backend/.venv-simulation"
+if [ -d "$SIM_VENV" ]; then
+    if [ ! -x "$SIM_VENV/bin/python" ] && [ ! -x "$SIM_VENV/Scripts/python.exe" ]; then
+        log_warn "检测到仿真虚拟环境残缺，正在清除以便重建..."
+        log_update "清除损坏的 .venv-simulation"
+        rm -rf "$SIM_VENV" >/dev/null 2>&1 || true
+    else
+        log_update "保留可用的 .venv-simulation（跳过重建）"
+    fi
 fi
 
 if [ -f "$APP_DIR/backend/requirements.txt" ]; then
