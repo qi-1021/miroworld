@@ -7,7 +7,7 @@
 [![Node.js: 18+](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org)
 [![Platform: macOS | Windows | Linux](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-orange.svg)]()
 
-
+> 📖 **第一次用？** 直接看 **[完整使用教程 docs/TUTORIAL.md](docs/TUTORIAL.md)** —— 从零安装到手机远程、从排障到提 Issue，照着做就能通。
 
 ---
 
@@ -21,25 +21,22 @@
 
 ---
 
-## ⚡ 一行命令极速安装（单脚本傻瓜式拉取并自动配置）
+## ⚡ 一行命令极速安装
 
-无需提前克隆代码，打开终端/PowerShell 直接粘贴执行即可完成全套拉取与环境静默安装：
+无需提前克隆，打开终端/PowerShell 直接粘贴即可：
 
-### 🍎 macOS / Linux 用户（一行命令）
+### 🍎 macOS / Linux
 ```bash
-# 官方通道
+# 官方
 curl -fsSL https://raw.githubusercontent.com/qi-1021/miroworld/main/install.sh | bash
-
-# 或者：国内网络高速镜像通道
+# 国内镜像
 curl -fsSL https://ghproxy.net/https://raw.githubusercontent.com/qi-1021/miroworld/main/install.sh | bash
 ```
 
-### 🪟 Windows 用户（PowerShell 一行命令）
+### 🪟 Windows（PowerShell）
 ```powershell
-# 官方通道
 irm https://raw.githubusercontent.com/qi-1021/miroworld/main/install.ps1 | iex
-
-# 或者：国内网络高速镜像通道
+# 国内镜像
 irm https://ghproxy.net/https://raw.githubusercontent.com/qi-1021/miroworld/main/install.ps1 | iex
 ```
 
@@ -47,56 +44,57 @@ irm https://ghproxy.net/https://raw.githubusercontent.com/qi-1021/miroworld/main
 
 ## 🚀 启动与日常运行
 
-安装完成后，直接进入目录即可一键启动（会自动检测并补齐 Python、Node、Java 与 Neo4j）：
-
-### 🍎 macOS / Linux 启动
 ```bash
 cd miroworld
+# macOS / Linux
 ./start.sh
-```
-
-### 🪟 Windows 启动
-```cmd
-cd miroworld
+# Windows
 start.bat
 ```
 
-> 💡 **日常管理与更新（根目录直接运行）**：
-> - **一键无密更新**（自动免 Key 拉取 GitHub 最新代码并重新构建）：
->   - macOS/Linux: `./update.sh`
->   - Windows: 双击 `update.bat`
-> - **停止服务**：
->   - macOS/Linux: 在终端按 `Ctrl+C` 或运行 `./stop.sh`（加 `--all` 停止 Neo4j）
->   - Windows: 双击 `stop.bat`（加 `--all` 停止 Neo4j）
+> 日常：`./update.sh` / `update.bat` 一键更新；`./stop.sh --all` / `stop.bat --all` 停止（含 Neo4j）。详细步骤见 [TUTORIAL 第2章](docs/TUTORIAL.md#2-安装与启动从零到看到界面)。
 
 ---
 
 ## 🌐 访问入口
 
-启动成功后，即可在浏览器直接访问：
-
-| 服务模块 | 访问地址 | 默认账号 / 说明 |
+| 服务 | 地址 | 说明 |
 | :--- | :--- | :--- |
-| 🎨 **Web 用户界面** | [http://localhost:3000](http://localhost:3000) | 交互推演、世界设定、时间线与图谱可视化 |
-| ⚙️ **后端 RESTful API** | [http://localhost:5001](http://localhost:5001) | OpenAPI 接口与详细健康检查 (`/api/health`) |
-| 🗄️ **Neo4j 图数据库** | [http://localhost:7474](http://localhost:7474) | 用户名 `neo4j` / 密码 `password` |
-| 🧩 **模型设置中心** | 前端右下角「模型设置」 | 在线添加并测试 OpenAI / Claude / 深度求索 / 硅基流动 / 本地 Ollama 等模型 |
+| 🎨 **Web 界面** | [http://localhost:3000](http://localhost:3000) | 推演、设定、时间线与图谱 |
+| ⚙️ **后端 API** | [http://localhost:5001](http://localhost:5001) | `/api/health` 健康检查 |
+| 🗄️ **Neo4j** | [http://localhost:7474](http://localhost:7474) | `neo4j / password` |
+| 🧩 **模型设置** | 前端右下角「模型设置」 | 详见下方与 [TUTORIAL 第3章](docs/TUTORIAL.md#3-模型配置3-分钟接好大脑) |
 
 ---
 
-## 🧠 模型配置推荐与最佳实践
+## 🧠 模型配置（极简版）
 
-Miroworld 采用分工协作架构，将模型分为 **主对话/决策 (Primary)**、**沙盘推演 (Simulation)**、**图谱抽取 (Graphiti LLM)** 与 **向量检索 (Embedding)** 4 类角色。
+右下角 **「模型设置」** 添加 OpenAI 兼容连接即可。推荐：主模型 `Opencode go/mimo-v2.5` 或 `DeepSeek-v4-flash-0731`，向量 `硅基流动 BAAI/bge-m3`（免费）。接入方式可直接问任意 AI。**完整 3 分钟配置流程见 [TUTORIAL 第3章](docs/TUTORIAL.md#3-模型配置3-分钟接好大脑)。**
 
-打开系统后点击右下角 **「模型设置」** 即可添加连接，推荐配置如下：
-主模型：
-①Opencode go/mimo-v2.5
-②DeepSeek-v4-flash-0731（无论来源为何）  
-③gpt-5.6-luna（如果你很有钱）
-④自建模型或其他性价比模型（建议智商在qwen 3.6-27b之上，否则可能会出现各种无法解决的问题）
-向量模型：
-硅基流动:BAAI/bge-m3(完全免费的，效果好的，不接受任何反驳）
-所有模型的接入方式，请自行询问身边的AI，豆包都会帮你解决这个问题。
+---
+
+## 🧭 为什么要做这个东西、有什么用、技术上怎么做的
+
+**为什么：** 小说/剧本/TRPG 的世界一旦写长，就会“吃设定”、时间线前后矛盾、人物动机漂移。现有工具要么只管写作排版，要么只做大纲，缺少一个能把“设定+正文”真正跑起来的推演沙盘。Miroworld 想补上这一块。
+
+**有什么用：**
+- **创作者**：一键查设定冲突、理清多线并行的时间线、试“如果主角当时选了另一条路”会怎样。
+- **普通读者/测试者**：把任意长篇丢进去，看机器能否抽出靠谱的时间线与关系图谱，用来验证设定自洽性。
+- **开发者/Agent**：所有能力都有 CLI 与 REST API，可被自动化脚本或 Agent 批量调用。
+
+**技术上怎么做的（简述）：**
+- **本地优先、便携运行**：Flask + Vue3 + Neo4j 全本地，不依赖云端；`app/backend/data/` 与 `neo4j/` 随项目目录走，拷硬盘即走。
+- **设定库与检索**：`WorldBibleService` 对背景/正文分块 + 向量检索（BGE-M3 / 本地 embedding），支撑后续抽取与问答。
+- **时序归一**：`timeline_normalizer` 把“三年后 / 幼年 / 星历2045年”等自然语言时间表达归一到可排序的 `sort_key`，再做多线程/多维度抽取。
+- **知识图谱**：`Graphiti / Zep` 抽本体并写入 Neo4j，`graphiti_patch` 强制关闭思考模型、容错空响应与 JSON 围栏解析。
+- **世界模拟**：独立子进程 `run_world_simulation` 以 `Semaphore(max_concurrency=2)` 限流并发 LLM 决策，避免 429；支持固定分钟/叙事跳跃、变数干预与世界线分叉。
+- **模型分工**：`PRIMARY / SIMULATION / GRAPHITI_LLM / GRAPHITI_EMBEDDING` 四角色绑定，快照 + `GRAPHITI_MAX_CONCURRENCY=1` 串行保障稳定性；LLM 走 OpenCode 网关，SiliconFlow 仅作向量。
+- **双端交付**：所有脚本成对提供 `.sh/.bat/.ps1`，`subst` 虚拟盘符解决 Windows 中文路径，5 源 PyPI 镜像轮询容灾，开箱即用是硬指标。
+
+> 想看端到端操作、手机远程、排障与反馈，请直接进 **[TUTORIAL](docs/TUTORIAL.md)**；想看开发约束，请看 **[DEVELOPMENT](docs/DEVELOPMENT.md)**。
+
+---
+
 ## 🧭 世界推演核心工作流
 
 ```mermaid
@@ -110,94 +108,43 @@ graph TD
     E --> G[世界线分叉推演与回溯]
 ```
 
-1. **设定库导入 (`World Bible`)**：输入世界背景、规则设定与小说正文，支持 txt/pdf/docx 拖拽上传与智能分块。
-2. **时序时间线 (`Timeline`)**：自然篇章叙事流排序算法，精准提取全篇事件，杜绝颠倒倒流与阶段错位。
-3. **世界图谱 (`Knowledge Graph`)**：动态生成实体本体（人物、组织、地理、概念、物品等）并建立语义图谱。
-4. **多智能体仿真推演 (`Simulation`)**：自动为图谱实体注入行为动机与决策规则，执行各轮次移动、协同、警戒、救助与探索。
-5. **分叉世界线 (`Worldline`)**：在任意历史事件节点进行推演分叉，探索“如果当时做出不同抉择”的全新世界走向。
+1. **设定库导入 (`World Bible`)**：拖拽 txt/pdf/docx，分块索引。
+2. **时序时间线 (`Timeline`)**：多线抽取与排序，支持批量修正与分叉。
+3. **世界图谱 (`Knowledge Graph`)**：本体生成与关系补边。
+4. **仿真推演 (`Simulation`)**：多智能体按规则自主决策。
+5. **分叉世界线 (`Worldline`)**：任意事件点开启平行推演。
+> 10 分钟跑通示例见 [TUTORIAL 第4章](docs/TUTORIAL.md#4-第一次推演10-分钟端到端流程)。
 
 ---
 
-## 🛠️ CLI 命令行操作（面向 AI Agent 与批处理）
+## 🛠️ CLI（给 Agent 用，一句话）
 
-项目提供统一 CLI 入口 `app/backend/scripts/mirofish_cli.py`：
-
-```bash
-# 使用后端 Python 虚拟环境
-PYTHON="app/backend/.venv/bin/python"  # Windows 下为 app\backend\.venv\Scripts\python.exe
-CLI="app/backend/scripts/mirofish_cli.py"
-
-# 1. 查看项目列表
-$PYTHON $CLI project list --json
-
-# 2. 导入世界设定与正文
-$PYTHON $CLI world save --project-id <PROJ_ID> --background "..." --story "..." --json
-
-# 3. 抽取并排序时间线（阻塞等待并返回事件流）
-$PYTHON $CLI timeline extract --project-id <PROJ_ID> --source story --wait --json
-
-# 4. 构建世界知识图谱
-$PYTHON $CLI graph build-world --project-id <PROJ_ID> --wait --json
-
-# 5. 启动多轮世界推演（实时流式输出各角色行为决策）
-$PYTHON $CLI sim start --project-id <PROJ_ID> --steps 6 --goal "推演主角决策发展" --wait --json
-```
+`app/backend/scripts/mirofish_cli.py` 提供 `project/world/timeline/graph/sim/assistant` 全链路 CLI，全部支持 `--json` 与 `--wait` 流式。示例与参数详见 [TUTORIAL 第6章](docs/TUTORIAL.md#6-助手与-cli)。
 
 ---
 
-## 📂 项目结构全景
+## 📂 项目结构（简版）
 
 ```
-mirofish-portable/
-├── app/
-│   ├── backend/                 # Python Flask 后端系统
-│   │   ├── app/
-│   │   │   ├── api/             # RESTful 接口（world, timeline, graph, sim, assistant...）
-│   │   │   ├── services/        # 核心服务层（时序归一化、推演引擎、图谱更新器）
-│   │   │   ├── models/          # 任务管理与实体数据模型
-│   │   │   └── utils/           # 原子写盘、跨平台 Logger、LLM 客户端
-│   │   ├── scripts/             # 推演子进程与 CLI 脚本
-│   │   ├── data/                # 本地持久化数据目录（世界设定、任务状态、推演事件）
-│   │   └── requirements.txt     # 后端主环境依赖
-│   └── frontend/                # Vue 3 + Vite 前端系统
-│       ├── src/
-│       │   ├── views/           # 推演看板、时间线、世界图谱可视化页面
-│       │   └── components/      # 交互组件与节点图
-│       └── package.json
-├── neo4j/                       # 本地 Neo4j 便携数据库目录（随项目移动）
-├── scripts/                     # 跨平台一键启动与维护脚本
-│   ├── start.sh / start.bat     # macOS/Linux/Windows 傻瓜式一键启动入口
-│   ├── stop.sh / stop.bat       # 跨平台安全停机与残留清理脚本
-│   ├── setup-env.sh / .bat      # 依赖环境一键搭建
-│   ├── install-neo4j.sh / .bat  # Neo4j 国内多源极速下载安装脚本
-│   ├── init-models.sh / .bat    # 模型配置与注册表初始化
-│   └── smoke.sh / smoke.bat     # 全流程端到端自动化冒烟测试
-└── README.md                    # 本文档
+miroworld/
+├── app/backend/        # Flask 后端（api/services/models/utils）
+├── app/frontend/       # Vue3 + Vite 前端
+├── app/backend/data/   # 本地数据（world/timeline/sim/graph/task-manager）
+├── neo4j/              # 便携 Neo4j
+├── scripts/            # start/stop/smoke/setup-env/install-neo4j（成对 .sh/.bat）
+└── docs/               # TUTORIAL / DEVELOPMENT / DEPLOYMENT 等
 ```
+> 完整结构见 [docs/PROJECT-STRUCTURE.md](docs/PROJECT-STRUCTURE.md)。
 
 ---
 
-## ❓ 常见问题排障 (FAQ)
+## ❓ 常见问题（极简，更多见教程）
 
-### Q1: 运行脚本下载依赖非常慢或卡住？
-> **A**: 系统已内置国内镜像加速：
-> - Python 依赖默认走清华大学镜像站；
-> - 前端依赖默认走 npmmirror 官方镜像；
-> - Neo4j 自动在华为云、中科院软件所及官方镜像间容灾切换。
-> 只要网络能够连通国内互联网，无需梯子即可秒级完成下载。
+- **下载慢/卡住？** 已内置国内镜像，无需梯子；详见 [TUTORIAL 第8章](docs/TUTORIAL.md#8-如何发现错误日志在哪看什么)。
+- **U 盘随身带？** 可以，`neo4j/` 与 `app/backend/data/` 随项目走。
+- **端口占用？** `lsof -i :3000` / `netstat -ano | findstr :3000` 查 PID 后 `kill`。
 
-### Q2: 可以在移动硬盘或 U 盘中随身携带使用吗？
-> **A**: **完全可以！** 
-> 整个项目采用便携设计，数据库数据全部持久化在项目文件夹内（`neo4j/` 与 `app/backend/data/`）。拷入移动硬盘即可在任意电脑上即插即用。
-
-### Q3: Windows 11 运行 `stop.bat` 提示找不到 wmic？
-> **A**: 最新版本的 `stop.bat` 已原生支持 PowerShell `Get-CimInstance` 进程管理，无需依赖已被 Win11 弃用的 `wmic`，可完美停止并清理所有子进程。
-
-### Q4: 如何运行自动化测试套件？
-```bash
-cd app/backend
-.venv/bin/pytest tests/ -q  # 670+ 个单元测试用例 100% 绿色全通
-```
+---
 
 ## ✍️ 作者言
 
@@ -238,4 +185,3 @@ cd app/backend
 ## 📄 开源许可证
 
 本项目遵循 [AGPL-3.0 License](LICENSE) 开源协议。
-
