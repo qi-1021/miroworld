@@ -25,6 +25,17 @@ LOG_DIR="$APP_DIR/backend/logs"
 BACKEND_LOG="$LOG_DIR/start-backend.log"
 FRONTEND_LOG="$LOG_DIR/start-frontend.log"
 
+# 端口配置（默认值；首次启动自动检测后由 env-config.json 覆盖）
+BACKEND_PORT="${BACKEND_PORT:-5001}"
+FRONTEND_PORT="${FRONTEND_PORT:-3000}"
+NEO4J_PORT="${NEO4J_PORT:-7687}"
+
+# 环境检测共享库（首次启动自动配置 / 端口读取）
+if [ -f "$SCRIPT_DIR/detect-env.sh" ]; then
+    # shellcheck source=detect-env.sh
+    source "$SCRIPT_DIR/detect-env.sh"
+fi
+
 # 建图 LLM 并发（属性/摘要调用并行度）：默认 2 保留性能调优；
 # 网关不稳时可用 GRAPHITI_MAX_CONCURRENCY=1 bash scripts/start.sh 降回串行。
 export GRAPHITI_MAX_CONCURRENCY="${GRAPHITI_MAX_CONCURRENCY:-2}"
@@ -183,6 +194,40 @@ check_and_auto_install_dependencies() {
 # 检查依赖别名封装
 check_dependencies() {
     check_and_auto_install_dependencies
+}
+
+# 首次启动环境自动检测与预配置（复用 scripts/detect-env.sh）
+# 无 env-config.json 时自动检测代理/镜像/端口/工具链并持久化；
+# 已有配置则直接读取其中的端口，供后续服务启动使用。
+auto_init_environment() {
+    local config_file="$APP_DIR/data/env-config.json"
+
+    if [ -f "$config_file" ]; then
+        log_info "已存在环境配置 $config_file，跳过自动检测"
+    else
+        log_info "首次启动，正在自动检测环境配置（代理/镜像/端口/工具链）..."
+        detect_and_persist || log_warn "环境自动检测未完全成功，将使用默认配置继续"
+        if [ -f "$config_file" ]; then
+            log_info "✓ 环境配置已生成：$config_file"
+        else
+            log_warn "环境配置生成失败，将使用默认配置继续"
+        fi
+    fi
+
+    # 读取配置中的端口（含默认值兜底）
+    BACKEND_PORT="$(get_config_value backend "$BACKEND_PORT")"
+    FRONTEND_PORT="$(get_config_value frontend "$FRONTEND_PORT")"
+    NEO4J_PORT="$(get_config_value neo4j "$NEO4J_PORT")"
+    export BACKEND_PORT FRONTEND_PORT NEO4J_PORT
+
+    log_info "端口配置：后端 ${BACKEND_PORT} / 前端 ${FRONTEND_PORT} / Neo4j ${NEO4J_PORT}"
+    if [ "$BACKEND_PORT" != "5001" ]; then
+        log_warn "后端端口已改为 ${BACKEND_PORT}，前端 /api 代理默认仍指向 5001，如需联调请调整 app/frontend/vite.config.js 的 proxy target"
+    fi
+
+    # 记录自动检测日志
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 环境自动检测完成: backend=${BACKEND_PORT} frontend=${FRONTEND_PORT} neo4j=${NEO4J_PORT} config=${config_file}" >> "$LOG_DIR/start.log" 2>/dev/null || true
 }
 
 # 检查并启动 Neo4j
@@ -369,27 +414,38 @@ start_app() {
     # 而 pyproject 中 graphiti/oasis 两个 extra 声明了互相冲突的 neo4j 版本，
     # 导致 "No solution found" 解析失败。这里直接使用已同步好的 .venv 解释器，
     # 与 setup-env.sh / init-models.sh 保持一致，绕过 uv 解析。
-    log_info "启动后端 (Flask) → 日志 $BACKEND_LOG"
+    log_info "启动后端 (Flask, 端口 ${BACKEND_PORT}) → 日志 $BACKEND_LOG"
     cd "$APP_DIR/backend"
     if [ ! -x ".venv/bin/python" ]; then
         log_error "未找到 backend/.venv/bin/python。请先运行 bash scripts/setup-env.sh 搭建环境"
         exit 1
     fi
-    nohup .venv/bin/python run.py > "$BACKEND_LOG" 2>&1 &
+    FLASK_PORT="$BACKEND_PORT" nohup .venv/bin/python run.py > "$BACKEND_LOG" 2>&1 &
     BACKEND_PID=$!
-    wait_for_port 5001 "后端" "$BACKEND_LOG"
+    wait_for_port "$BACKEND_PORT" "后端" "$BACKEND_LOG"
 
     # 启动前端（独立后台 + 独立日志）
-    log_info "启动前端 (Vue3) → 日志 $FRONTEND_LOG"
+    log_info "启动前端 (Vue3, 端口 ${FRONTEND_PORT}) → 日志 $FRONTEND_LOG"
     cd "$APP_DIR/frontend"
-    nohup npm run dev > "$FRONTEND_LOG" 2>&1 &
+    nohup npm run dev -- --port "$FRONTEND_PORT" > "$FRONTEND_LOG" 2>&1 &
     FRONTEND_PID=$!
-    wait_for_port 3000 "前端" "$FRONTEND_LOG"
+    wait_for_port "$FRONTEND_PORT" "前端" "$FRONTEND_LOG"
+
+    # 后端健康检查
+    if command -v curl >/dev/null 2>&1; then
+        local http_code
+        http_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 -m 10 "http://localhost:${BACKEND_PORT}/health" 2>/dev/null || echo 000)"
+        if [ "$http_code" = "200" ]; then
+            log_info "✓ 后端健康检查通过（GET /health → 200）"
+        else
+            log_warn "后端健康检查未通过（GET /health → HTTP ${http_code}），请查看日志 $BACKEND_LOG"
+        fi
+    fi
 
     echo ""
     log_info "所有服务已就绪！"
-    log_info "前端:   http://localhost:3000"
-    log_info "后端:   http://localhost:5001 (健康检查 /health)"
+    log_info "前端:   http://localhost:${FRONTEND_PORT}"
+    log_info "后端:   http://localhost:${BACKEND_PORT} (健康检查 /health)"
     log_info "Neo4j:  http://localhost:7474 (neo4j/password)"
     log_info "模型设置: 打开前端后点击右下角「模型设置」"
     echo ""
@@ -404,9 +460,17 @@ start_app() {
 # 否则"端口被占用"会导致新后端绑定失败、前端被连带杀掉，表现为"打不开"。
 # 只清理本项目进程（run.py/vite/concurrently/npm run dev），不误杀占用同端口的无关程序。
 cleanup_previous() {
-    log_info "清理上一次运行残留（端口 3000/5001）..."
+    # 优先使用已持久化的端口（若有），保证清理的是实际使用过的端口
+    local c_fe c_be
+    c_fe="${FRONTEND_PORT:-3000}"
+    c_be="${BACKEND_PORT:-5001}"
+    if [ -f "$APP_DIR/data/env-config.json" ]; then
+        c_fe="$(get_config_value frontend "$c_fe")"
+        c_be="$(get_config_value backend "$c_be")"
+    fi
+    log_info "清理上一次运行残留（端口 $c_fe/$c_be）..."
     local port pid cmd found=""
-    for port in 3000 5001; do
+    for port in "$c_fe" "$c_be"; do
         local pids
         pids=$(lsof -nP -iTCP:$port -sTCP:LISTEN -t 2>/dev/null || true)
         [ -z "$pids" ] && continue
@@ -446,14 +510,14 @@ cleanup_previous() {
     # 等待端口释放（最多 15 秒）
     local i
     for i in $(seq 1 15); do
-        if ! port_listening 3000 && ! port_listening 5001; then
+        if ! port_listening "$c_fe" && ! port_listening "$c_be"; then
             log_info "✓ 端口已释放"
             return 0
         fi
         sleep 1
     done
     # 超时后强制结束仍占用的本项目进程
-    for port in 3000 5001; do
+    for port in "$c_fe" "$c_be"; do
         for pid in $(lsof -nP -iTCP:$port -sTCP:LISTEN -t 2>/dev/null || true); do
             cmd=$(ps -p "$pid" -o command= 2>/dev/null | head -1)
             case "$cmd" in
@@ -465,7 +529,7 @@ cleanup_previous() {
         done
     done
     sleep 2
-    log_warn "端口未完全释放，将继续尝试启动（若失败请手动检查占用：lsof -i :3000 -i :5001）"
+    log_warn "端口未完全释放，将继续尝试启动（若失败请手动检查占用：lsof -i :${c_fe} -i :${c_be}）"
 }
 
 # 主程序
@@ -479,6 +543,9 @@ main() {
     echo ""
 
     cleanup_previous
+    echo ""
+
+    auto_init_environment
     echo ""
 
     start_neo4j

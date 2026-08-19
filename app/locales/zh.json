@@ -1468,5 +1468,25 @@
     "forkTimeout": "分叉推演超时",
     "startFork": "开始分叉演进",
     "cancel": "取消"
+  },
+  "feedback": {
+    "title": "遇到问题了吗？",
+    "titleManual": "问题反馈",
+    "body": "我们可以一键生成一份报告，帮助维护者更快地定位并修复问题。",
+    "textareaLabel": "你刚才在做什么？（可选）",
+    "textareaPlaceholder": "例如：我正在上传文件、点击了“开始模拟”按钮……",
+    "primaryButton": "生成错误报告",
+    "generating": "正在生成…",
+    "successTitle": "报告已生成",
+    "successBody": "报告文件已保存到本地：",
+    "copyPath": "复制路径",
+    "copied": "已复制",
+    "sendInstructions": "请把这个文件发送给维护者（微信 / 邮件均可）。",
+    "privacyNote": "报告包含系统信息和运行日志，不含你的 API 密钥。",
+    "errorTitle": "生成失败",
+    "errorBody": "暂时无法生成报告，请检查后端服务是否运行，或稍后重试。",
+    "retry": "重试",
+    "close": "关闭",
+    "entryButton": "问题反馈"
   }
 }

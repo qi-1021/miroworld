@@ -1,6 +1,7 @@
 # 本地配置和秘密
 .env
 data/model-config/
+data/env-config.json
 
 # 本地模型权重与自动生成的模型说明
 models/embeddings/**

@@ -4,12 +4,13 @@
 所有子命令支持 --json 输出，便于脚本与 Agent 解析；成功输出 {"success":true,"data":...}，
 失败输出 {"success":false,"error":...}；退出码 0=成功、非 0=失败。
 
-命令：project / models / health / world / timeline / conflict / graph / sim / assistant。
+命令：project / models / health / doctor / world / timeline / conflict / graph / sim / assistant / report。
 完整用法与 AI 全流程见 docs/CLI.md。
 
 示例：
   python scripts/mirofish_cli.py models registry --json
   python scripts/mirofish_cli.py health --detailed --json
+  python scripts/mirofish_cli.py doctor --json
   python scripts/mirofish_cli.py project list --json
   python scripts/mirofish_cli.py world save --project-id proj_xxx --background "..." --story "..."
   python scripts/mirofish_cli.py timeline extract --project-id proj_xxx --source bg --wait
@@ -18,6 +19,7 @@
   python scripts/mirofish_cli.py graph build-world --project-id proj_xxx --wait --json
   python scripts/mirofish_cli.py sim favorite --simulation-id sim_xxx --value 1 --json
   python scripts/mirofish_cli.py assistant ask --project-id proj_xxx --question "..."
+  python scripts/mirofish_cli.py report --output /path/to/dir
 """
 
 from __future__ import annotations
@@ -25,8 +27,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import socket
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -442,6 +446,39 @@ def cmd_backup(args) -> dict:
     return {"backup_dir": str(out_dir), "copied": copied}
 
 
+def cmd_report(args) -> dict:
+    """生成错误报告压缩包（系统信息 + 日志 + 失败任务），供手动发送给维护者。
+
+    成功时向 stderr 打印友好中文提示（不影响 stdout 的 JSON 输出），
+    返回 dict 由 main() 统一包裹 {"success": true, "data": {...}}。
+    失败时抛出中文 ValueError，由 main() 统一输出错误并返回退出码 1。
+    """
+    from app.utils.report import build_report
+    try:
+        frontend_errors = None
+        if getattr(args, "frontend_errors", ""):
+            try:
+                frontend_errors = json.loads(args.frontend_errors)
+            except Exception:
+                raise ValueError("--frontend-errors 需要是合法的 JSON 字符串")
+        result = build_report(
+            output_dir=getattr(args, "output", "") or None,
+            description=getattr(args, "description", "") or "",
+            frontend_errors=frontend_errors,
+        )
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(f"生成错误报告失败：{e}") from e
+
+    print(
+        f"✅ 错误报告已生成：{result['report_path']}\n"
+        f"请将此文件发送给维护者（微信/邮件均可）。报告包含系统信息与日志，不含任何 API 密钥。",
+        file=sys.stderr,
+    )
+    return result
+
+
 def cmd_health(args) -> dict:
     checks = {}
     for name, port in (("frontend", 3000), ("backend", 5001), ("neo4j", 7687)):
@@ -465,6 +502,188 @@ def cmd_health(args) -> dict:
             result["models"] = {"error": str(e)}
             result["all_ok"] = False
     return result
+
+
+# ---------------------------------------------------------------------------
+# doctor：环境体检（工具链 / 端口 / 模型注册表 / 配置 / 目录可写性）
+# ---------------------------------------------------------------------------
+ENV_CONFIG_FILE = BACKEND_DIR.parent / "data" / "env-config.json"
+
+DOCTOR_LABELS = {
+    "python": "Python 版本",
+    "node": "Node.js 版本",
+    "java": "Java 版本",
+    "backend": "后端服务",
+    "frontend": "前端服务",
+    "neo4j": "Neo4j 数据库",
+    "model_registry": "模型注册表",
+    "env_file": "LLM API 配置",
+    "data_dir": "数据目录",
+    "logs_dir": "日志目录",
+}
+
+
+def _cmd_version(command: list) -> str:
+    """安全执行版本命令，返回第一行输出（失败/缺失返回空）。"""
+    try:
+        p = subprocess.run(command, capture_output=True, text=True, timeout=5)
+        out = (p.stdout or p.stderr or "").strip().splitlines()
+        return out[0].strip() if out else ""
+    except Exception:
+        return ""
+
+
+def _parse_major_minor(text: str) -> tuple:
+    m = re.search(r"(\d+)\.(\d+)", text or "")
+    if m:
+        return (int(m.group(1)), int(m.group(2)))
+    return (0, 0)
+
+
+def _tcp_reachable(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=1):
+            return True
+    except Exception:
+        return False
+
+
+def _configured_port(name: str, default: int) -> int:
+    """读取 env-config.json 中的端口（存在则用配置值，否则用默认值）。"""
+    try:
+        if ENV_CONFIG_FILE.exists():
+            data = json.loads(ENV_CONFIG_FILE.read_text(encoding="utf-8"))
+            p = data.get("ports", {}).get(name)
+            if p:
+                return int(p)
+    except Exception:
+        pass
+    return default
+
+
+def cmd_doctor(args) -> dict:
+    """环境体检：工具链版本 / 服务端口 / 模型注册表 / 配置 / 目录可写性。"""
+    checks: list[dict] = []
+
+    def add(name: str, status: str, message: str, fix: str = "") -> None:
+        checks.append({"name": name, "status": status, "message": message, "fix": fix})
+
+    # 1. Python >= 3.11
+    py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    if (sys.version_info.major, sys.version_info.minor) >= (3, 11):
+        add("python", "pass", f"Python {py_ver}", "")
+    else:
+        add("python", "warn", f"Python {py_ver}（需要 3.11+）",
+            "请升级到 Python 3.11 或更高版本，推荐使用 uv 自动托管")
+
+    # 2. Node >= 18
+    node_line = _cmd_version(["node", "--version"])
+    if not node_line:
+        add("node", "warn", "Node.js 未安装",
+            "请安装 Node.js 18+：https://nodejs.org")
+    elif _parse_major_minor(node_line)[0] >= 18:
+        add("node", "pass", f"Node.js {node_line.lstrip('v')}", "")
+    else:
+        add("node", "warn", f"Node.js {node_line.lstrip('v')}（需要 >= 18）",
+            "请升级到 Node.js 18 或更高版本：https://nodejs.org")
+
+    # 3. Java（缺失仅警告，非关键）
+    java_line = _cmd_version(["java", "-version"])
+    if java_line:
+        add("java", "pass", f"Java {java_line}", "")
+    else:
+        add("java", "warn", "Java 未安装（Neo4j 需要 JVM）",
+            "请安装 Java 17+：https://adoptium.net")
+
+    # 4-6. 服务端口（优先使用 env-config.json 中的配置端口）
+    port_cfg = {
+        "backend": ("后端服务", 5001),
+        "frontend": ("前端服务", 3000),
+        "neo4j": ("Neo4j 数据库", 7687),
+    }
+    for name, (label, default_port) in port_cfg.items():
+        port = _configured_port(name, default_port)
+        if _tcp_reachable("127.0.0.1", port):
+            add(name, "pass", f"{label}端口 {port} 可访问", "")
+        else:
+            add(name, "fail", f"{label}端口 {port} 未监听",
+                "请运行 bash scripts/start.sh 启动服务")
+
+    # 7. 模型注册表
+    registry_file = BACKEND_DIR.parent / "data" / "model-config" / "registry.json"
+    try:
+        if registry_file.exists():
+            reg = json.loads(registry_file.read_text(encoding="utf-8"))
+            count = len(reg.get("models", []) or []) + len(reg.get("connections", []) or [])
+            if count > 0:
+                add("model_registry", "pass", f"模型注册表正常（{count} 条记录）", "")
+            else:
+                add("model_registry", "warn", "模型注册表为空",
+                    "请在前端「模型设置」中配置并验证至少一个模型")
+        else:
+            add("model_registry", "warn", "模型注册表文件不存在",
+                "请在前端「模型设置」中配置并验证至少一个模型")
+    except Exception as e:
+        add("model_registry", "warn", f"模型注册表读取失败：{e}",
+            "请检查 app/data/model-config/registry.json")
+
+    # 8. .env + LLM_API_KEY
+    env_file = BACKEND_DIR.parent / ".env"
+    if env_file.exists():
+        api_key = ""
+        for line in env_file.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if line.startswith("LLM_API_KEY="):
+                api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                break
+        if api_key and api_key not in ("your_api_key_here", ""):
+            add("env_file", "pass", "LLM_API_KEY 已配置", "")
+        else:
+            add("env_file", "warn", "LLM_API_KEY 未配置或为默认值",
+                "请在 app/.env 或前端「模型设置」中配置有效的 API Key")
+    else:
+        add("env_file", "warn", "app/.env 不存在",
+            "请运行 bash scripts/setup-env.sh 生成配置，或在前端「模型设置」中配置")
+
+    # 9. 数据目录可写（写探测文件）
+    data_dir = BACKEND_DIR / "data"
+    probe = data_dir / ".doctor-write-probe"
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        add("data_dir", "pass", "数据目录可写", "")
+    except Exception as e:
+        add("data_dir", "fail", f"数据目录不可写：{e}",
+            "请检查 app/backend/data 目录权限（chmod）")
+
+    # 10. 日志目录
+    logs_dir = BACKEND_DIR / "logs"
+    if logs_dir.is_dir():
+        add("logs_dir", "pass", "日志目录存在", "")
+    else:
+        add("logs_dir", "fail", "日志目录不存在",
+            "请创建：mkdir -p app/backend/logs")
+
+    return {"checks": checks, "all_ok": all(c["status"] == "pass" for c in checks)}
+
+
+def _print_doctor_report(result: dict) -> None:
+    """人类可读的体检表格输出。"""
+    symbols = {"pass": "✓", "warn": "⚠", "fail": "✗"}
+    print("Miroworld 环境体检")
+    print("-" * 56)
+    for c in result["checks"]:
+        sym = symbols.get(c["status"], "?")
+        label = DOCTOR_LABELS.get(c["name"], c["name"])
+        print(f"  {sym} {label:<12} {c['message']}")
+        if c.get("fix"):
+            print(f"     修复：{c['fix']}")
+    print("-" * 56)
+    if result["all_ok"]:
+        print("总体：系统健康 ✓")
+    else:
+        print("总体：发现问题，请根据上方提示修复")
 
 
 # ---------------------------------------------------------------------------
@@ -933,8 +1152,16 @@ def _parser() -> argparse.ArgumentParser:
     h = _add_json(sub.add_parser("health"))
     h.add_argument("--detailed", action="store_true", help="附加模型注册表 verified 检查")
 
+    _add_json(sub.add_parser("doctor"))
+
     bk = _add_json(sub.add_parser("backup"))
     bk.add_argument("--output", default="", help="备份输出目录（默认 backups/ 下自动命名）")
+
+    rp = _add_json(sub.add_parser("report"))
+    rp.add_argument("--output", default="", help="报告输出目录（默认桌面）")
+    rp.add_argument("--description", default="", help="问题描述（可选，会写入报告）")
+    rp.add_argument("--frontend-errors", default="",
+                    help="前端错误缓冲 JSON 字符串（可选，会写入报告）")
     return parser
 
 
@@ -965,6 +1192,13 @@ def main(argv=None) -> int:
 
     args = _parser().parse_args(argv)
     try:
+        if args.command == "doctor":
+            result = cmd_doctor(args)
+            if as_json:
+                _out({"success": True, "data": result}, True)
+            else:
+                _print_doctor_report(result)
+            return 0
         if args.command == "project":
             result = cmd_project(args)
         elif args.command == "world":
@@ -987,6 +1221,8 @@ def main(argv=None) -> int:
             result = cmd_health(args)
         elif args.command == "backup":
             result = cmd_backup(args)
+        elif args.command == "report":
+            result = cmd_report(args)
         else:
             raise ValueError(f"未知命令: {args.command}")
         _out({"success": True, "data": result}, as_json)

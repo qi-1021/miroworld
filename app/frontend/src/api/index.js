@@ -75,4 +75,15 @@ export const requestWithRetry = async (requestFn, maxRetries = 3, delay = 1000) 
   }
 }
 
+/**
+ * 生成支持报告（错误反馈包）
+ * @param {Object} params - { description, frontendErrors }
+ */
+export const generateSupportReport = ({ description, frontendErrors }) => {
+  return service.post('/api/support/report', {
+    description: description || '',
+    frontend_errors: frontendErrors || []
+  })
+}
+
 export default service

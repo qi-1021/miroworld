@@ -14,6 +14,11 @@
     @close="modelSettingsOpen = false"
     @updated="handleModelUpdate"
   />
+  <ErrorReportDialog
+    :open="errorReportOpen"
+    :triggered-by-error="errorReportTriggeredByError"
+    @close="errorReportOpen = false"
+  />
   <!--
     Miroworld 液态玻璃 SVG 滤镜定义（隐藏，供 CSS 通过 url(#...) 引用）。
     以 GitHub nikdelvin/liquid-glass（纯 CSS+SVG 复刻 Apple iOS 26 Liquid Glass）为蓝本：
@@ -21,6 +26,17 @@
       - #lg-gloss  ：feSpecularLighting 镜面高光，还原玻璃光泽。
     纯 CSS + 内联 SVG，无 npm 依赖、无 WebGL。
   -->
+  <button
+    type="button"
+    class="feedback-launcher"
+    :title="$t('feedback.entryButton')"
+    :aria-label="$t('feedback.entryButton')"
+    @click="openErrorReport"
+  >
+    <MessageSquare :size="18" :stroke-width="1.8" />
+    <span class="feedback-label">{{ $t('feedback.entryButton') }}</span>
+  </button>
+
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
     <defs>
       <filter id="lg-morph" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
@@ -44,6 +60,8 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import ModelSettingsDrawer from './components/model-settings/ModelSettingsDrawer.vue'
 import ModelSettingsLauncher from './components/model-settings/ModelSettingsLauncher.vue'
+import ErrorReportDialog from './components/ErrorReportDialog.vue'
+import { MessageSquare } from '@lucide/vue'
 import { getModelRegistry, getProjectModelBindings } from './api/models'
 import { getReport } from './api/report'
 import { getSimulation } from './api/simulation'
@@ -54,6 +72,8 @@ const modelSettingsOpen = ref(false)
 const modelSummary = ref(t('modelSettings.notConfigured'))
 const modelStatus = ref('idle')
 const resolvedProjectId = ref('')
+const errorReportOpen = ref(false)
+const errorReportTriggeredByError = ref(false)
 
 const modelContext = computed(() => {
   if (route.params.projectId && route.params.projectId !== 'new') {
@@ -129,14 +149,29 @@ function handleOpenModelSettings() {
   modelSettingsOpen.value = true
 }
 
+function openErrorReport() {
+  errorReportTriggeredByError.value = false
+  errorReportOpen.value = true
+}
+
+function handleOpenErrorReport(event) {
+  // 若对话框已打开，避免重复弹窗；错误仍会被主.js 的缓冲区收集
+  if (errorReportOpen.value) return
+  errorReportTriggeredByError.value = event.detail?.triggeredByError || false
+  errorReportOpen.value = true
+}
+
 onMounted(() => {
   refreshModelSummary()
   // 供其他页面通过 window 事件一键打开模型设置
   window.addEventListener('open-model-settings', handleOpenModelSettings)
+  // 全局错误报告入口：由 main.js 的错误处理器或 window.openErrorReport() 触发
+  window.addEventListener('open-error-report', handleOpenErrorReport)
 })
 
 onUnmounted(() => {
   window.removeEventListener('open-model-settings', handleOpenModelSettings)
+  window.removeEventListener('open-error-report', handleOpenErrorReport)
 })
 </script>
 
@@ -411,5 +446,46 @@ input[type="email"], input[type="search"] {
   }
 }
 
+
+/* 问题反馈入口：固定在左下角，与右上角模型设置入口形成视觉平衡 */
+.feedback-launcher {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  z-index: 890;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: saturate(160%) blur(12px);
+  -webkit-backdrop-filter: saturate(160%) blur(12px);
+  color: var(--mf-ink);
+  box-shadow: 0 6px 18px rgba(16, 32, 58, 0.12);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.feedback-launcher:hover {
+  border-color: #4f6ef7;
+  background: rgba(255, 255, 255, 0.85);
+  transform: translateY(-2px);
+}
+
+@media (max-width: 600px) {
+  .feedback-launcher {
+    left: 12px;
+    bottom: 12px;
+    padding: 10px;
+  }
+
+  .feedback-label {
+    display: none;
+  }
+}
 
 </style>

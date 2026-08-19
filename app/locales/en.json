@@ -1467,5 +1467,25 @@
     "forkTimeout": "Fork simulation timed out",
     "startFork": "Start Fork Simulation",
     "cancel": "Cancel"
+  },
+  "feedback": {
+    "title": "Something went wrong?",
+    "titleManual": "Send feedback",
+    "body": "We can generate a report with one click to help the maintainer find and fix the issue faster.",
+    "textareaLabel": "What were you doing? (optional)",
+    "textareaPlaceholder": "For example: uploading files, clicking “Start simulation”…",
+    "primaryButton": "Generate error report",
+    "generating": "Generating…",
+    "successTitle": "Report generated",
+    "successBody": "The report file has been saved locally:",
+    "copyPath": "Copy path",
+    "copied": "Copied",
+    "sendInstructions": "Please send this file to the maintainer (WeChat or email).",
+    "privacyNote": "The report includes system info and logs, but not your API key.",
+    "errorTitle": "Generation failed",
+    "errorBody": "Could not generate the report right now. Please check that the backend is running, then try again.",
+    "retry": "Retry",
+    "close": "Close",
+    "entryButton": "Feedback"
   }
 }

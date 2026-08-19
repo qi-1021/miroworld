@@ -3,6 +3,7 @@ Miroworld Backend - Flask应用工厂
 """
 
 import gzip
+import json
 import os
 import warnings
 
@@ -15,6 +16,28 @@ from flask_cors import CORS
 
 from .config import Config
 from .utils.logger import setup_logger, get_logger
+
+# 请求/响应体中可能携带密钥的字段名（大小写不敏感，匹配即打码）
+_SENSITIVE_KEYS = {
+    "api_key", "api_keys", "secret", "token",
+    "password", "authorization", "bearer",
+}
+
+
+def _redact_secrets(data):
+    """递归遍历 dict/list，把敏感字段的值替换为 [REDACTED]，防止密钥进入日志。
+
+    保留整体结构与其余字段，便于调试时仍能看清请求/响应内容。
+    """
+    if isinstance(data, dict):
+        return {
+            key: ("[REDACTED]" if str(key).lower() in _SENSITIVE_KEYS
+                  else _redact_secrets(value))
+            for key, value in data.items()
+        }
+    if isinstance(data, list):
+        return [_redact_secrets(item) for item in data]
+    return data
 
 
 def create_app(config_class=Config):
@@ -82,22 +105,36 @@ def create_app(config_class=Config):
         except Exception as e:
             logger.warning(f"通用任务持久化初始化失败（忽略）: {e}")
 
-    # 请求日志中间件
+    # 请求日志中间件（敏感字段打码后再记录，避免密钥进入日志并被错误报告收集）
     @app.before_request
     def log_request():
         logger = get_logger('mirofish.request')
         logger.debug(f"请求: {request.method} {request.path}")
         if request.content_type and 'json' in request.content_type:
-            logger.debug(f"请求体: {request.get_json(silent=True)}")
+            logger.debug(f"请求体: {_redact_secrets(request.get_json(silent=True))}")
 
     @app.after_request
     def log_response(response):
         logger = get_logger('mirofish.request')
         logger.debug(f"响应: {response.status_code}")
+        # 响应体同样打码后再记录；已 gzip 压缩的先解压再解析，失败则跳过（不影响主流程）
+        try:
+            body = None
+            if not response.is_streamed:
+                if response.headers.get("Content-Encoding") == "gzip":
+                    raw = gzip.decompress(response.get_data())
+                    body = json.loads(raw.decode("utf-8"))
+                else:
+                    body = response.get_json(silent=True)
+            if body is not None:
+                logger.debug(f"响应体: {_redact_secrets(body)}")
+        except Exception:
+            pass
         return response
 
     # 注册蓝图
-    from .api import graph_bp, simulation_bp, report_bp, models_bp, world_bp, timeline_bp, assistant_bp
+    from .api import (graph_bp, simulation_bp, report_bp, models_bp, world_bp,
+                      timeline_bp, assistant_bp, support_bp)
     app.register_blueprint(graph_bp, url_prefix='/api/graph')
     app.register_blueprint(simulation_bp, url_prefix='/api/simulation')
     app.register_blueprint(report_bp, url_prefix='/api/report')
@@ -105,6 +142,7 @@ def create_app(config_class=Config):
     app.register_blueprint(world_bp, url_prefix='/api/world')
     app.register_blueprint(timeline_bp, url_prefix='/api/timeline')
     app.register_blueprint(assistant_bp, url_prefix='/api/assistant')
+    app.register_blueprint(support_bp, url_prefix='/api/support')
 
     # 健康检查
     @app.route('/health')
