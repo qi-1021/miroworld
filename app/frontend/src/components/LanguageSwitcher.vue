@@ -117,7 +117,8 @@ onUnmounted(() => {
 }
 
 .switcher-option.active {
-  color: var(--orange, #FF4500);
+  color: var(--accent, #a1c50a);
+  font-weight: 600;
 }
 
 
