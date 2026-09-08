@@ -1472,4 +1472,6 @@ class WorldSimulationService:
         for c in candidates:
             if os.path.isfile(c):
                 return c
+        import sys
+        import sys
         return sys.executable or 'python'

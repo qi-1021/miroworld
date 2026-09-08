@@ -56,7 +56,8 @@ if errorlevel 1 (
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%port%" ^| findstr "LISTENING"') do (
     set "_pid=%%a"
     set "_islocal=0"
-    for /f "delims=" %%c in ('wmic process where "ProcessId=!_pid!" get CommandLine /value 2^>nul ^| find "CommandLine="') do (
+    REM 优先使用 PowerShell (Get-CimInstance) 进行全版本原生识别
+    for /f "delims=" %%c in ('powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=!_pid!').CommandLine" 2^>nul') do (
         set "_cmd=%%c"
         echo !_cmd! | find /i "mirofish"      >nul 2>nul && set "_islocal=1"
         echo !_cmd! | find /i "run.py"       >nul 2>nul && set "_islocal=1"
@@ -64,9 +65,9 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%port%" ^| findstr "LISTENI
         echo !_cmd! | find /i "concurrently" >nul 2>nul && set "_islocal=1"
         echo !_cmd! | find /i "npm run dev"  >nul 2>nul && set "_islocal=1"
     )
-    REM 如果 wmic 为空（Win11 默认无 wmic），使用 PowerShell 兜底识别
+    REM 若 PowerShell 未获取到，使用 wmic 兜底（老版本 Windows）
     if "!_islocal!"=="0" (
-        for /f "delims=" %%c in ('powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=!_pid!').CommandLine" 2^>nul') do (
+        for /f "delims=" %%c in ('wmic process where "ProcessId=!_pid!" get CommandLine /value 2^>nul ^| find "CommandLine="') do (
             set "_cmd=%%c"
             echo !_cmd! | find /i "mirofish"      >nul 2>nul && set "_islocal=1"
             echo !_cmd! | find /i "run.py"       >nul 2>nul && set "_islocal=1"
