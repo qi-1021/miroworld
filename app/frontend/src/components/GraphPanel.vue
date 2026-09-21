@@ -1171,7 +1171,20 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
-  if (currentSimulation) currentSimulation.stop()
+  if (currentSimulation) {
+    currentSimulation.stop()
+    currentSimulation = null
+  }
+  if (currentSvgSelection) {
+    currentSvgSelection.on('.zoom', null)
+    currentSvgSelection.selectAll('*').remove()
+    currentSvgSelection = null
+  }
+  currentActiveNodes = []
+  currentActiveEdges = []
+  currentGSelection = null
+  nodeSelectionRef = null
+  rawNodeMap = {}
 })
 </script>
 

@@ -1835,6 +1835,18 @@ def _new_task(prefix: str, message: str) -> str:
             "elapsed": 0.0,
             "error": "",
         }
+        # 内存泄漏防护：若内存中任务累积超过 200 个，清理淘汰最旧的已完成/失败任务
+        if len(_tasks) > 200:
+            done_tids = [
+                (tid, t.get("started_at", ""))
+                for tid, t in _tasks.items()
+                if t.get("status") in ("completed", "failed", "interrupted")
+            ]
+            if len(done_tids) > 100:
+                done_tids.sort(key=lambda x: x[1])
+                for tid, _ in done_tids[: len(done_tids) - 100]:
+                    _tasks.pop(tid, None)
+
     _persist_task(task_id)
     return task_id
 
