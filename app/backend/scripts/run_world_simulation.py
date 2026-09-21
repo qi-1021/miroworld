@@ -758,9 +758,40 @@ class WorldEnv:
             print(f"\n{'='*56}\n第 {step} 步 · {self.time_str()}\n{'='*56}")
 
             active_chars = [c for c in self.characters.values() if c.active]
-            # 1. 感知与提示词准备（本地计算，顺序执行；过滤信息按角色留存）
-            prepared = []
+            
+            # ---- LOD (Level of Detail) 动态注意力调度判定 ----
+            # 若角色总数 <= 4，保持全量深度决策；若角色较多，区分核心焦点角色与背景挂起角色
+            focus_chars = []
+            ambient_chars = []
+            
+            # 提取近期有剧情冲突或互动的焦点地点与关键角色
+            recent_active_locs = {e.location for e in self.events[-5:] if e.location}
+            recent_active_char_ids = {e.character_id for e in self.events[-4:]}
+            
             for char in active_chars:
+                loc_obj = self.locations.get(char.location)
+                loc_name = loc_obj.name if loc_obj else ""
+                # 判定为焦点角色的条件：
+                # 1. 有全局重大突发变数（上帝干预）；
+                # 2. 角色自身有明确短期目标；
+                # 3. 角色处于最近有大事件发生的地点；
+                # 4. 角色在最近两轮中有过互动/行动；
+                # 5. 总人数较少时默认全部为焦点。
+                is_focus = (
+                    len(active_chars) <= 4 or
+                    bool(self.active_variables) or
+                    (bool(char.goal) and char.goal != "按人设自然行动") or
+                    (loc_name in recent_active_locs) or
+                    (char.id in recent_active_char_ids)
+                )
+                if is_focus:
+                    focus_chars.append(char)
+                else:
+                    ambient_chars.append(char)
+
+            # 1. 感知与提示词准备（仅针对焦点角色组装昂贵的全局长提示词）
+            prepared = []
+            for char in focus_chars:
                 observation = self.observe(char)
                 filtered = list(self._last_filtered)
                 _goal = (char.goal or "").strip() or "按人设自然行动"
@@ -792,7 +823,7 @@ class WorldEnv:
                 )
                 prepared.append((char, observation, prompt, filtered))
 
-            # 2. 同一步内多角色并行 LLM 决策（大幅提升效率）
+            # 2. 焦点角色执行 LLM 并发决策
             sem = asyncio.Semaphore(max(1, self.max_concurrency))
 
             async def _decide(prompt):
@@ -803,10 +834,26 @@ class WorldEnv:
                         print(f"  ⚠ LLM 调用失败: {e}")
                         return "我停下来等待。"
 
-            decisions = await asyncio.gather(*(_decide(p) for _, _, p, _ in prepared))
+            focus_decisions = await asyncio.gather(*(_decide(p) for _, _, p, _ in prepared))
+
+            # 背景角色（Ambient Tier）采用轻量状态机惯性推演，0 次 LLM 开销
+            ambient_prepared_and_decisions = []
+            for amb_char in ambient_chars:
+                loc_obj = self.locations.get(amb_char.location)
+                loc_name = loc_obj.name if loc_obj else "当前地点"
+                # 根据角色身份生成惯性动作
+                first_persona = self._persona_first_sentence(amb_char)
+                amb_decision = f"在{loc_name}继续处理手头事务，保持警惕与日常巡视。"
+                amb_observation = f"在{loc_name}。环境安静，暂无异动。"
+                ambient_prepared_and_decisions.append((
+                    (amb_char, amb_observation, "", []),
+                    amb_decision
+                ))
+
+            all_executions = list(zip(prepared, focus_decisions)) + ambient_prepared_and_decisions
 
             # 3. 顺序执行动作（决策基于同一时刻世界状态，执行串行保证状态一致）
-            for (char, observation, _prompt, filtered), decision in zip(prepared, decisions):
+            for (char, observation, _prompt, filtered), decision in all_executions:
                 # 解析
                 action = parse_action(decision)
                 # 3b. 修正：move 的目标是角色名 → 实际是交谈

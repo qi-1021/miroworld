@@ -260,6 +260,23 @@ class GraphitiClient(ZepClientAdapter):
             # 获取底层 Neo4j driver 用于直接查询
             self._driver = self._graphiti.driver
 
+            # 自动预创核心业务索引，消除跨图检索与按 group_id / name 过滤的全图扫描开销
+            async def _create_business_indices():
+                try:
+                    queries = [
+                        "CREATE INDEX entity_name_idx IF NOT EXISTS FOR (n:Entity) ON (n.name)",
+                        "CREATE INDEX entity_group_idx IF NOT EXISTS FOR (n:Entity) ON (n.group_id)",
+                        "CREATE INDEX entity_uuid_idx IF NOT EXISTS FOR (n:Entity) ON (n.uuid)",
+                        "CREATE INDEX episodic_group_idx IF NOT EXISTS FOR (n:Episodic) ON (n.group_id)",
+                    ]
+                    for q in queries:
+                        await self._driver.execute_query(q)
+                    logger.info("✓ Neo4j 核心业务索引初始化/校验成功")
+                except Exception as idx_err:
+                    logger.warning(f"Neo4j 业务索引创建提示（非致命）: {idx_err}")
+
+            _run_async(_create_business_indices())
+
             self._initialized = True
             logger.info("Graphiti 客户端初始化完成")
 

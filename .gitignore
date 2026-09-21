@@ -77,3 +77,15 @@ app/models/embeddings/**
 **/mirofish-model.json
 app/backend/data/world/
 app/backend/data/world-sim/
+
+# 息壤隔离区（息壤当前仍处于孵化演进态，严禁随 MiroWorld 上传至 Git）
+xirang*
+zen_*
+.xirang/
+.zen_*/
+使用息壤配置.bat
+run_xirang.sh
+xirang_config.json
+zen_config.json
+*.key
+

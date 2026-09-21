@@ -835,6 +835,14 @@ const renderGraph = () => {
     .scaleExtent([0.1, 4])
     .on('zoom', (event) => {
       g.attr('transform', event.transform)
+      // 视口动态 LOD：缩小至全景 (k < 0.65) 且节点众多时隐藏非焦点边文本，释放图形渲染压力
+      if (nodes.length > 40) {
+        if (event.transform.k < 0.65 && !focusedNodeId.value) {
+          linkLabelGroup.style('display', 'none')
+        } else {
+          linkLabelGroup.style('display', '')
+        }
+      }
     })
 
   svg.call(zoom)
@@ -1087,6 +1095,17 @@ const renderGraph = () => {
     .style('pointer-events', 'none')
     .style('font-family', 'system-ui, sans-serif')
 
+  // 根据节点数量自适应调优收敛速率与单跳阻尼，大图加速收敛避免持续占用 CPU
+  if (nodes.length > 50) {
+    simulation.alphaDecay(0.045) // 加速物理收敛
+  } else {
+    simulation.alphaDecay(0.028)
+  }
+
+  // 缓存边文字宽高的测量结果，避免在每一帧 tick 中调用昂贵的 getBBox 触发浏览器重排(reflow)
+  const labelBboxCache = new Map()
+  let hasMeasuredBbox = false
+
   simulation.on('tick', () => {
     link.attr('d', d => getLinkPath(d))
 
@@ -1097,9 +1116,19 @@ const renderGraph = () => {
 
     linkLabelBg.each(function(d, i) {
       const mid = getLinkMidpoint(d)
-      const textEl = linkLabels.nodes()[i]
-      if (textEl) {
-        const bbox = textEl.getBBox()
+      let bbox = labelBboxCache.get(i)
+      if (!bbox && !hasMeasuredBbox) {
+        const textEl = linkLabels.nodes()[i]
+        if (textEl) {
+          try {
+            bbox = textEl.getBBox()
+            labelBboxCache.set(i, bbox)
+          } catch (e) {
+            bbox = { width: 30, height: 12 }
+          }
+        }
+      }
+      if (bbox) {
         d3.select(this)
           .attr('x', mid.x - bbox.width / 2 - 3)
           .attr('y', mid.y - bbox.height / 2 - 2)
@@ -1107,8 +1136,16 @@ const renderGraph = () => {
           .attr('height', bbox.height + 4)
       }
     })
+    if (!hasMeasuredBbox && labelBboxCache.size > 0) {
+      hasMeasuredBbox = true
+    }
 
     node.attr('transform', d => `translate(${d.x},${d.y})`)
+  })
+
+  // 收敛稳定后停止计算，降低 CPU 消耗
+  simulation.on('end', () => {
+    simulation.stop()
   })
 
   if (focusedNodeId.value) {
